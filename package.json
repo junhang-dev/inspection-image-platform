@@ -1,0 +1,56 @@
+{
+  "name": "inspection-image-platform",
+  "version": "0.1.0",
+  "description": "검사 사진 업로드 → 대상·포인트 연결 → AI의 부식 형상 1~5등급 판독 → 필요한 엔지니어 확인·수정과 후속 판단 → 결과·이력 조회를 만드는 랄프톤 프로젝트입니다. AI 결과를 바로 사용할 수 있으며 사람 검수는 필수 관문이 아닙니다.",
+  "scripts": {
+    "dev": "concurrently --kill-others \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "NEXT_TELEMETRY_DISABLED=1 next dev --hostname 127.0.0.1",
+    "dev:api": "node --watch server/index.mjs",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "start": "node scripts/start-web.mjs",
+    "start:api": "node server/index.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "setup": "node scripts/setup.mjs",
+    "infra:up": "docker compose up -d mysql minio",
+    "infra:stop": "docker compose stop",
+    "stack:up": "docker compose --profile app up -d --build",
+    "smoke": "node scripts/smoke.mjs",
+    "format": "prettier --write src server scripts tests next.config.ts tsconfig.json compose.yaml"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/junhang-dev/inspection-image-platform.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/junhang-dev/inspection-image-platform/issues"
+  },
+  "homepage": "https://github.com/junhang-dev/inspection-image-platform#readme",
+  "dependencies": {
+    "cors": "2.8.6",
+    "dotenv": "18.0.1",
+    "express": "5.2.1",
+    "lucide-react": "1.47.0",
+    "minio": "8.0.7",
+    "multer": "2.4.0",
+    "mysql2": "3.24.4",
+    "next": "16.3.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "sharp": "0.35.4",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "concurrently": "10.0.5",
+    "prettier": "3.9.8",
+    "typescript": "7.0.2"
+  },
+  "private": true
+}

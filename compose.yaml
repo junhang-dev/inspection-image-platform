@@ -1,0 +1,63 @@
+name: inspection-platform
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: inspection
+      MYSQL_USER: inspection
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Run npm run setup}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Run npm run setup}
+    ports: ["127.0.0.1:3307:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?Run npm run setup}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?Run npm run setup}
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: ["minio-data:/data"]
+    restart: unless-stopped
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    env_file: .env
+    environment:
+      API_HOST: 0.0.0.0
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MINIO_ENDPOINT: minio
+      MODEL_API_URL: ${MODEL_DOCKER_API_URL:-http://host.docker.internal:8001}
+    ports: ["127.0.0.1:4000:4000"]
+    depends_on:
+      mysql: { condition: service_healthy }
+      minio: { condition: service_started }
+    restart: unless-stopped
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
+        NEXT_PUBLIC_DEMO_ONLY: ${NEXT_PUBLIC_DEMO_ONLY:-0}
+    environment:
+      API_INTERNAL_BASE_URL: http://api:4000
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [api]
+    restart: unless-stopped
+volumes:
+  mysql-data:
+  minio-data:
