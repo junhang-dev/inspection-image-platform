@@ -1,15 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 const base = process.env.TEST_API_URL || "http://127.0.0.1:4000/api";
-test("공개 데모에서 허용 사진과 비허용 바이트의 혼합 묶음을 전부 거절한다", async (t) => {
-  const health = await (await fetch(`${base}/health`)).json();
-  if (!health.demoMode) {
-    t.skip("일반 로컬 모드는 demo allowlist를 적용하지 않습니다.");
-    return;
-  }
+test("시연 사진 요청은 사용자 파일 경로나 URL을 받지 않는다", async () => {
+  const response = await fetch(`${base}/demo-inspections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pointId: null, file: "unapproved.jpg" }),
+  });
+  assert.equal(response.status, 422);
+});
+test("시연 요청은 허용 사진과 비허용 바이트의 혼합 묶음을 전부 거절한다", async () => {
   const before = await (await fetch(`${base}/inspections`)).json();
   const approved = await (await fetch(`${base}/demo/demo-01.jpg`)).blob();
   const body = new FormData();
+  body.append("demo", "1");
   body.append("images", approved, "renamed-approved.jpg");
   body.append(
     "images",

@@ -20,6 +20,7 @@ import {
 
 const app = express();
 const demoMode = process.env.PUBLIC_DEMO_ONLY === "1";
+const publicUploadsAllowed = process.env.PUBLIC_UPLOADS_ALLOWED === "1";
 const demoFiles = JSON.parse(
   await readFile(
     new URL("../src/lib/demo-allowlist.json", import.meta.url),
@@ -119,6 +120,7 @@ app.get("/api/health", async (req, res) => {
     storage: "MySQL · MinIO",
     model,
     demoMode,
+    publicUploadsAllowed,
   });
 });
 app.get("/api/demo/:name", async (req, res) => {
@@ -164,24 +166,119 @@ app.get("/api/points/:id/history", async (req, res) =>
 app.get("/api/inspections", async (req, res) =>
   res.json(await list("inspection")),
 );
-app.post("/api/inspections", upload.array("images", 10), async (req, res) => {
-  if (!req.files?.length)
-    throw fail(400, "사진이 없습니다. JPG 또는 PNG 사진을 선택하세요.");
-  if (
-    demoMode &&
-    req.files.some(
-      (file) =>
-        !allowedHashes.has(
-          createHash("sha256").update(file.buffer).digest("hex"),
-        ),
-    )
-  ) {
-    throw fail(422, "공개 데모에서는 제공된 시연 사진만 업로드할 수 있습니다.");
+async function withDemoLock(callback) {
+  const connection = await pool.getConnection();
+  const name = `${process.env.MYSQL_DATABASE || "inspection"}:demo-upload`;
+  let locked = false;
+  try {
+    const [rows] = await connection.execute(
+      "SELECT GET_LOCK(?, 0) AS acquired",
+      [name],
+    );
+    locked = rows[0].acquired === 1;
+    if (!locked)
+      throw fail(
+        409,
+        "다른 시연 사진 요청을 처리 중입니다. 잠시 후 다시 눌러 주세요.",
+      );
+    return await callback();
+  } finally {
+    try {
+      if (locked) await connection.execute("SELECT RELEASE_LOCK(?)", [name]);
+      connection.release();
+    } catch {
+      connection.destroy();
+    }
   }
-  const pointId = req.body.pointId || null;
-  if (pointId && !(await get("point", pointId)))
-    throw fail(422, "연결할 포인트가 없습니다. 다시 선택하세요.");
-  for (const file of req.files) {
+}
+async function saveUploads(files, pointId, reuseDemo) {
+  const byHash = new Map();
+  if (reuseDemo) {
+    const [rows] = await pool.execute(
+      `SELECT data FROM entities WHERE kind = 'inspection'
+      AND COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.pointId')), 'null'), '') = ?
+      ORDER BY created_at ASC`,
+      [pointId || ""],
+    );
+    for (const row of rows) {
+      const photo =
+        typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+      if (!byHash.has(photo.sha256)) byHash.set(photo.sha256, photo);
+    }
+  }
+  const unique = new Set();
+  const toSave = files.filter((file) => {
+    if (!reuseDemo) return true;
+    if (byHash.has(file.hash) || unique.has(file.hash)) return false;
+    unique.add(file.hash);
+    return true;
+  });
+  const objectsWritten = [];
+  const inputs = [];
+  let created = [];
+  try {
+    for (const file of toSave) {
+      const key = `${new Date().toISOString().slice(0, 10)}/${randomUUID()}`;
+      await objects.putObject(bucket, key, file.buffer, file.size, {
+        "Content-Type": file.mime,
+      });
+      objectsWritten.push(key);
+      inputs.push({
+        name: Buffer.from(file.originalname, "latin1")
+          .toString("utf8")
+          .slice(0, 200),
+        objectKey: key,
+        sha256: file.hash,
+        size: file.size,
+        mime: file.mime,
+        pointId,
+        status: "pending",
+        ai: null,
+        humanGrade: null,
+        retake: false,
+        retakeReason: "",
+        labeling: false,
+        error: null,
+      });
+    }
+    if (inputs.length)
+      created = await insertBatch(
+        "inspection",
+        inputs,
+        "현업 엔지니어",
+        "사진 업로드",
+      );
+  } catch (error) {
+    if (!error.commitUncertain)
+      await Promise.allSettled(
+        objectsWritten.map((key) => objects.removeObject(bucket, key)),
+      );
+    else
+      console.error(
+        "업로드 COMMIT 결과 불확실: 원본 객체를 보존했습니다. 목록과 저장소를 확인하세요.",
+      );
+    throw error;
+  }
+  if (!reuseDemo)
+    return created.map((photo) => ({ ...photo, uploadOutcome: "created" }));
+  const newIds = new Set(created.map((photo) => photo.id));
+  for (const photo of created) byHash.set(photo.sha256, photo);
+  return files.map((file) => {
+    const photo = byHash.get(file.hash);
+    const wasCreated = newIds.delete(photo.id);
+    return { ...photo, uploadOutcome: wasCreated ? "created" : "existing" };
+  });
+}
+async function validateImages(files, demoRequest) {
+  for (const file of files)
+    file.hash = createHash("sha256").update(file.buffer).digest("hex");
+  if (demoRequest && files.some((file) => !allowedHashes.has(file.hash))) {
+    throw fail(
+      422,
+      "시연 사진 불러오기는 제공된 시연 사진만 사용할 수 있습니다.",
+    );
+  }
+  for (const file of files) {
     try {
       const meta = await sharp(file.buffer, {
         limitInputPixels: 40_000_000,
@@ -196,52 +293,70 @@ app.post("/api/inspections", upload.array("images", 10), async (req, res) => {
       );
     }
   }
-  const objectsWritten = [];
-  const inputs = [];
-  let created;
-  try {
-    for (const file of req.files) {
-      const key = `${new Date().toISOString().slice(0, 10)}/${randomUUID()}`;
-      await objects.putObject(bucket, key, file.buffer, file.size, {
-        "Content-Type": file.mime,
-      });
-      objectsWritten.push(key);
-      inputs.push({
-        name: Buffer.from(file.originalname, "latin1")
-          .toString("utf8")
-          .slice(0, 200),
-        objectKey: key,
-        sha256: createHash("sha256").update(file.buffer).digest("hex"),
-        size: file.size,
-        mime: file.mime,
-        pointId,
-        status: "pending",
-        ai: null,
-        humanGrade: null,
-        retake: false,
-        retakeReason: "",
-        labeling: false,
-        error: null,
-      });
-    }
-    created = await insertBatch(
-      "inspection",
-      inputs,
-      "현업 엔지니어",
-      "사진 업로드",
-    );
-  } catch (error) {
-    if (!error.commitUncertain)
-      await Promise.allSettled(
-        objectsWritten.map((key) => objects.removeObject(bucket, key)),
+}
+app.post("/api/demo-inspections", async (req, res) => {
+  const { pointId } = z
+    .object({ pointId: z.string().uuid().nullable().default(null) })
+    .strict()
+    .parse(req.body);
+  if (pointId && !(await get("point", pointId)))
+    throw fail(422, "연결할 포인트가 없습니다. 다시 선택하세요.");
+  const files = await Promise.all(
+    demoFiles.map(async (file) => {
+      const buffer = await readFile(
+        new URL(`../image/demo/${file.name}`, import.meta.url),
       );
-    else
-      console.error(
-        "업로드 COMMIT 결과 불확실: 원본 객체를 보존했습니다. 목록과 저장소를 확인하세요.",
-      );
-    throw error;
+      return { buffer, size: buffer.length, originalname: file.name };
+    }),
+  );
+  await validateImages(files, true);
+  const result = await withDemoLock(() => saveUploads(files, pointId, true));
+  res
+    .status(
+      result.some((photo) => photo.uploadOutcome === "created") ? 201 : 200,
+    )
+    .json(result);
+});
+app.post("/api/inspections", upload.array("images", 10), async (req, res) => {
+  if (!req.files?.length)
+    throw fail(400, "사진이 없습니다. JPG 또는 PNG 사진을 선택하세요.");
+  const demoRequest = demoMode || req.body.demo === "1";
+  const pointId = req.body.pointId || null;
+  if (pointId && !(await get("point", pointId)))
+    throw fail(422, "연결할 포인트가 없습니다. 다시 선택하세요.");
+  await validateImages(req.files, demoRequest);
+  const save = () => saveUploads(req.files, pointId, demoRequest);
+  const result = demoRequest ? await withDemoLock(save) : await save();
+  res
+    .status(
+      result.some((photo) => photo.uploadOutcome === "created") ? 201 : 200,
+    )
+    .json(result);
+});
+const thumbnails = new Map();
+app.get("/api/inspections/:id/thumbnail", async (req, res) => {
+  const item = await get("inspection", req.params.id);
+  if (!item) throw fail(404, "사진이 없습니다.");
+  let thumbnail = thumbnails.get(item.sha256);
+  if (!thumbnail) {
+    thumbnail = (async () => {
+      const stream = await objects.getObject(bucket, item.objectKey);
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      return sharp(Buffer.concat(chunks), { limitInputPixels: 40_000_000 })
+        .rotate()
+        .resize(320, 200, { fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 75 })
+        .toBuffer();
+    })();
+    thumbnails.set(item.sha256, thumbnail);
+    thumbnail.catch(() => thumbnails.delete(item.sha256));
+    if (thumbnails.size > 128)
+      thumbnails.delete(thumbnails.keys().next().value);
   }
-  res.status(201).json(created);
+  const bytes = await thumbnail;
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  res.type("image/webp").send(bytes);
 });
 app.get("/api/inspections/:id/image", async (req, res) => {
   const item = await get("inspection", req.params.id);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-const base = "http://127.0.0.1:4000/api";
+const base = process.env.TEST_API_URL || "http://127.0.0.1:4000/api";
 const read = async (path) => {
   const response = await fetch(base + path);
   assert.ok(response.ok, `${path}: ${response.status}`);
@@ -27,7 +27,8 @@ for (const kind of ["inspections", "points", "plans"]) {
     }
   }
 }
-const file = "records/platform-persistence.local.json";
+const file =
+  process.env.PERSISTENCE_REPORT || "records/platform-persistence.local.json";
 if (process.argv.includes("--capture")) {
   await writeFile(file, JSON.stringify(state, null, 2));
   console.log("재시작 전 사진·포인트·계획·전체 이력·원본 해시 저장 완료");

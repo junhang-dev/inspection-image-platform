@@ -1,5 +1,7 @@
 "use client";
 import demoAllowlist from "@/lib/demo-allowlist.json";
+import { conceptPosition, visibleMapPoints } from "@/lib/concept-map";
+import { requestJson } from "@/lib/api";
 
 import {
   useCallback,
@@ -83,10 +85,16 @@ type Audit = {
   before: Record<string, unknown> | null;
   after: Record<string, unknown>;
 };
-type Health = { demoMode: boolean; ready: boolean; model: { ready: boolean } };
+type Health = {
+  publicUploadsAllowed: boolean;
+  demoMode: boolean;
+  ready: boolean;
+  model: { ready: boolean };
+};
 type Tab = "dashboard" | "plans" | "photos" | "points" | "worklist" | "labels";
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const publicDemo = process.env.NEXT_PUBLIC_DEMO_ONLY === "1";
+const publicUploads = process.env.NEXT_PUBLIC_PUBLIC_UPLOADS_ALLOWED === "1";
 const statusName = {
   none: "미지정",
   review: "보수 검토",
@@ -102,19 +110,7 @@ const nav = [
   { id: "labels", label: "라벨링 후보", icon: Tag },
 ] as const;
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${apiBase}/api${path}`, {
-    ...options,
-    headers: {
-      ...(options.body instanceof FormData
-        ? {}
-        : { "Content-Type": "application/json" }),
-      ...options.headers,
-    },
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(data.error || "요청을 처리하지 못했습니다.");
-  return data;
+  return requestJson<T>(`${apiBase}/api${path}`, options);
 }
 const pointName = (point?: Point) =>
   point
@@ -179,6 +175,8 @@ export default function Home() {
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
   const [mapPoint, setMapPoint] = useState("");
+  const selectedMapPoint = points.find((point) => point.id === mapPoint);
+  const displayedMapPoints = visibleMapPoints(points, mapPoint);
   const loading = useRef(false);
   const refresh = useCallback(async () => {
     if (loading.current) return;
@@ -461,7 +459,7 @@ export default function Home() {
                         검사 포인트 맵{" "}
                         <span className="badge muted">예시 3D</span>
                       </h2>
-                      <p>입력한 설비·랙·포인트를 개념 위치에 연결합니다.</p>
+                      <p>설비·랙별 모형 위치입니다. 실제 좌표가 아닙니다.</p>
                     </div>
                     <select
                       aria-label="맵 포인트 선택"
@@ -480,7 +478,7 @@ export default function Home() {
                     <div className="map-grid" />
                     <svg
                       viewBox="0 0 760 340"
-                      role="img"
+                      role="group"
                       aria-label="실제 좌표와 무관한 검사 포인트 예시 3D 설비"
                     >
                       <defs>
@@ -565,16 +563,27 @@ export default function Home() {
                           stroke="#d8e7e1"
                           strokeWidth="4"
                         />
-                        {points.slice(0, 12).map((point, i) => (
+                        {displayedMapPoints.map((point) => (
                           <g
                             key={point.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`${pointName(point)} 상세 보기`}
                             onClick={() => {
                               setMapPoint(point.id);
                               void selectPoint(point);
                             }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setMapPoint(point.id);
+                                void selectPoint(point);
+                              }
+                            }}
                             style={{ cursor: "pointer" }}
-                            transform={`translate(${235 + (i % 4) * 58} ${96 + Math.floor(i / 4) * 53})`}
+                            transform={`translate(${conceptPosition(point)!.x} ${conceptPosition(point)!.y})`}
                           >
+                            <title>{pointName(point)} · 개념 위치</title>
                             <circle
                               r={mapPoint === point.id ? 18 : 13}
                               fill="#1a7c65"
@@ -590,6 +599,17 @@ export default function Home() {
                               stroke="white"
                               strokeWidth="3"
                             />
+                            <text
+                              x="11"
+                              y="-12"
+                              fontSize="10"
+                              fill="#244b42"
+                              stroke="white"
+                              strokeWidth="3"
+                              paintOrder="stroke"
+                            >
+                              {point.equipment} · {point.rack} 랙
+                            </text>
                           </g>
                         ))}
                       </g>
@@ -600,18 +620,26 @@ export default function Home() {
                     </span>
                     <div className="map-legend">
                       <i />
-                      등록 포인트 {points.length}개
+                      표시 {displayedMapPoints.length}개 / 등록 {points.length}
+                      개 · 선택으로 개별 조회
                     </div>
                   </div>
                   <div className="map-footer">
                     <MapPin size={16} />
                     <span>
-                      {mapPoint
-                        ? pointName(points.find((p) => p.id === mapPoint))
-                        : "위치가 확인되지 않은 사진은 미확인으로 보존합니다."}
+                      {selectedMapPoint
+                        ? `${pointName(selectedMapPoint)}${conceptPosition(selectedMapPoint) ? " · 모형 위치" : " · 설비·랙 위치 미확인"}`
+                        : "최대 12개를 표시합니다. 설비·랙 미확인은 배치하지 않습니다."}
                     </span>
-                    <button onClick={() => go("points")}>
-                      포인트 보기 <ArrowRight size={14} />
+                    <button
+                      onClick={() =>
+                        selectedMapPoint
+                          ? void selectPoint(selectedMapPoint)
+                          : go("points")
+                      }
+                    >
+                      {selectedMapPoint ? "선택 포인트 보기" : "포인트 보기"}{" "}
+                      <ArrowRight size={14} />
                     </button>
                   </div>
                 </section>
@@ -968,6 +996,10 @@ export default function Home() {
       {uploadOpen && (
         <UploadDialog
           demoOnly={publicDemo || health?.demoMode === true}
+          publicUploadsAllowed={
+            publicUploads || health?.publicUploadsAllowed === true
+          }
+          openExisting={selectPhoto}
           points={points}
           close={() => setUploadOpen(false)}
           done={notify}
@@ -1032,7 +1064,7 @@ function PhotoTable({
               <td>
                 <button className="photo-name" onClick={() => onSelect(photo)}>
                   <img
-                    src={`${apiBase}/api/inspections/${photo.id}/image`}
+                    src={`${apiBase}/api/inspections/${photo.id}/thumbnail`}
                     alt="검사 사진 축소 이미지"
                   />
                   <span>
@@ -1149,48 +1181,68 @@ function UploadDialog({
   close,
   done,
   demoOnly,
+  publicUploadsAllowed,
+  openExisting,
 }: {
+  publicUploadsAllowed: boolean;
+  openExisting: (photo: Photo) => Promise<void>;
   demoOnly: boolean;
   points: Point[];
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
   const [files, setFiles] = useState<File[]>([]);
+  const [demoSelection, setDemoSelection] = useState(false);
   const [pointId, setPointId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState("");
+  const selectedNames = demoSelection
+    ? demoAllowlist.map((demo) => demo.name)
+    : files.map((file) => file.name);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
-    if (!files.length) return setError("업로드할 사진을 선택하세요.");
+    if (!selectedNames.length) return setError("업로드할 사진을 선택하세요.");
     if (files.length > 10 || files.some((f) => f.size > 20 * 1024 * 1024))
       return setError("한 번에 10장, 사진당 20MB까지 가능합니다.");
     const values = new FormData(e.currentTarget);
     setBusy(true);
+    setProgress(0);
+    setStage(
+      demoSelection ? "시연 사진을 확인하는 중…" : "업로드를 준비하는 중…",
+    );
     const started = performance.now();
     try {
-      const mode = await api<Health>("/health");
-      if (demoOnly || mode.demoMode) {
-        const hashes = await Promise.all(
-          files.map(async (file) =>
-            Array.from(
-              new Uint8Array(
-                await crypto.subtle.digest("SHA-256", await file.arrayBuffer()),
-              ),
-            )
-              .map((b) => b.toString(16).padStart(2, "0"))
-              .join(""),
-          ),
-        );
-        if (
-          hashes.some(
-            (hash) => !demoAllowlist.some((demo) => demo.sha256 === hash),
-          )
-        )
-          throw new Error(
-            "공개 데모에서는 제공된 시연 사진만 업로드할 수 있습니다.",
+      if (!demoSelection) {
+        const mode = await api<Health>("/health", {
+          signal: AbortSignal.timeout(10000),
+        });
+        if (demoOnly || mode.demoMode) {
+          const hashes = await Promise.all(
+            files.map(async (file) =>
+              Array.from(
+                new Uint8Array(
+                  await crypto.subtle.digest(
+                    "SHA-256",
+                    await file.arrayBuffer(),
+                  ),
+                ),
+              )
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(""),
+            ),
           );
+          if (
+            hashes.some(
+              (hash) => !demoAllowlist.some((demo) => demo.sha256 === hash),
+            )
+          )
+            throw new Error(
+              "공개 데모에서는 제공된 시연 사진만 업로드할 수 있습니다.",
+            );
+        }
       }
       let id = pointId;
       if (pointId === "new") {
@@ -1201,42 +1253,87 @@ function UploadDialog({
             rack: values.get("rack"),
             name: values.get("name"),
           }),
+          signal: AbortSignal.timeout(15000),
         });
         id = point.id;
       }
-      const payload = new FormData();
-      for (const file of files) payload.append("images", file);
-      if (id) payload.append("pointId", id);
-      await new Promise((resolve, reject) => {
-        const request = new XMLHttpRequest();
-        request.open("POST", `${apiBase}/api/inspections`);
-        request.upload.onprogress = (event) => {
-          if (event.lengthComputable)
-            setProgress(Math.round((event.loaded / event.total) * 100));
-        };
-        request.onload = () => {
-          try {
-            const data = JSON.parse(request.responseText);
-            if (request.status >= 400) reject(new Error(data.error));
-            else resolve(data);
-          } catch {
-            reject(new Error("업로드 응답을 확인할 수 없습니다."));
-          }
-        };
-        request.onerror = () =>
-          reject(
-            new Error(
-              "API 연결이 끊겼습니다. 저장된 목록을 확인한 후 다시 시도하세요.",
-            ),
-          );
-        request.send(payload);
-      });
+      type UploadResult = Photo & { uploadOutcome?: "created" | "existing" };
+      let results: UploadResult[];
+      if (demoSelection) {
+        results = await api<UploadResult[]>("/demo-inspections", {
+          method: "POST",
+          body: JSON.stringify({ pointId: id || null }),
+          signal: AbortSignal.timeout(30000),
+        });
+      } else {
+        const payload = new FormData();
+        for (const file of files) payload.append("images", file);
+        if (id) payload.append("pointId", id);
+        if (demoOnly) payload.append("demo", "1");
+        setStage("uploading");
+        results = await new Promise<UploadResult[]>((resolve, reject) => {
+          const request = new XMLHttpRequest();
+          request.open("POST", `${apiBase}/api/inspections`);
+          request.timeout = 180000;
+          request.upload.onprogress = (event) => {
+            if (event.lengthComputable)
+              setProgress(Math.round((event.loaded / event.total) * 100));
+          };
+          request.onload = () => {
+            if (request.status >= 500) {
+              reject(
+                new Error(
+                  `서버 처리 중 문제가 발생했습니다. (${request.status}) 저장된 목록에서 반영 여부를 확인한 후 다시 시도하세요.`,
+                ),
+              );
+              return;
+            }
+            try {
+              const data = JSON.parse(request.responseText);
+              if (request.status >= 400) reject(new Error(data.error));
+              else if (Array.isArray(data)) resolve(data);
+              else throw new Error();
+            } catch {
+              reject(
+                new Error(
+                  "업로드 응답을 확인할 수 없습니다. 저장된 목록에서 반영 여부를 확인한 후 다시 시도하세요.",
+                ),
+              );
+            }
+          };
+          request.onerror = () =>
+            reject(
+              new Error(
+                "API 연결이 끊겼습니다. 저장된 목록을 확인한 후 다시 시도하세요.",
+              ),
+            );
+          request.ontimeout = () =>
+            reject(
+              new Error(
+                "응답이 지연되고 있습니다. 저장된 목록을 확인한 후 다시 시도하세요.",
+              ),
+            );
+          request.send(payload);
+        });
+      }
+      const created = results.filter(
+        (photo) => photo.uploadOutcome !== "existing",
+      );
+      const reused = results.length - created.length;
+      setStage("저장된 목록을 확인하는 중…");
       await done(
-        `${files.length}장 업로드 완료 · ${((performance.now() - started) / 1000).toFixed(1)}초 · AI 판독은 백그라운드에서 진행됩니다.`,
+        created.length
+          ? `${created.length}장 새로 저장 · ${reused ? `중복 ${reused}장 제외 · ` : ""}${((performance.now() - started) / 1000).toFixed(1)}초 · AI 판독은 백그라운드에서 진행됩니다.`
+          : `이미 등록된 시연 사진 ${reused}장입니다. 새로 저장하지 않고 기존 사진과 결과를 엽니다.`,
       );
       close();
+      if (!created.length && results[0]) await openExisting(results[0]);
     } catch (cause) {
-      setError((cause as Error).message);
+      setError(
+        (cause as Error).name === "TimeoutError"
+          ? "응답이 지연되고 있습니다. 저장된 목록을 확인한 후 다시 시도하세요."
+          : (cause as Error).message,
+      );
     } finally {
       setBusy(false);
     }
@@ -1245,48 +1342,40 @@ function UploadDialog({
     <Modal title="검사 사진 업로드" close={busy ? () => {} : close}>
       <form onSubmit={submit}>
         <p className="form-intro">
-          사진을 원본 그대로 저장하고 포인트에 연결합니다.
+          {publicUploadsAllowed
+            ? "공개 가능한 사진만 선택하세요. 선택한 사진은 링크를 가진 사람이 조회할 수 있습니다."
+            : demoOnly
+              ? "공개 demo에서는 제공된 시연 사진만 업로드할 수 있습니다."
+              : "사진을 원본 그대로 저장하고 포인트에 연결합니다."}
         </p>
-        {demoOnly ? (
+        {(demoOnly || publicUploadsAllowed) && (
           <div className="dropzone">
             <ShieldCheck size={28} />
-            <strong>공개 데모 · 승인된 시연 사진만 사용</strong>
+            <strong>
+              {demoOnly
+                ? "공개 데모 · 제공된 시연 사진만 사용"
+                : "시연 사진으로 먼저 둘러보기"}
+            </strong>
             <span>
-              {files.length
-                ? `${files.length}장 선택됨`
-                : "실제 회사 원본은 선택하거나 전송하지 않습니다."}
+              {demoSelection
+                ? "시연 사진 5장 선택됨"
+                : "같은 포인트의 시연 사진은 기존 결과를 사용합니다."}
             </span>
             <button
               type="button"
               className="button secondary"
               disabled={busy}
-              onClick={async () => {
-                setBusy(true);
+              onClick={() => {
                 setError("");
-                try {
-                  const selected = await Promise.all(
-                    demoAllowlist.map(async (demo) => {
-                      const response = await fetch(
-                        `${apiBase}/api/demo/${demo.name}`,
-                      );
-                      if (!response.ok)
-                        throw new Error("시연 사진을 불러오지 못했습니다.");
-                      const blob = await response.blob();
-                      return new File([blob], demo.name, { type: blob.type });
-                    }),
-                  );
-                  setFiles(selected);
-                } catch (cause) {
-                  setError((cause as Error).message);
-                } finally {
-                  setBusy(false);
-                }
+                setFiles([]);
+                setDemoSelection(true);
               }}
             >
               시연 사진 5장 선택
             </button>
           </div>
-        ) : (
+        )}
+        {!demoOnly && (
           <label className="dropzone">
             <Upload size={32} />
             <strong>
@@ -1300,15 +1389,18 @@ function UploadDialog({
               type="file"
               multiple
               accept="image/jpeg,image/png"
-              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              onChange={(e) => {
+                setFiles(Array.from(e.target.files || []));
+                setDemoSelection(false);
+              }}
               disabled={busy}
             />
           </label>
         )}
-        {files.length > 0 && (
+        {selectedNames.length > 0 && (
           <div className="file-list">
-            {files.map((f, i) => (
-              <span key={i}>{f.name}</span>
+            {selectedNames.map((name, i) => (
+              <span key={i}>{name}</span>
             ))}
           </div>
         )}
@@ -1354,9 +1446,16 @@ function UploadDialog({
         </div>
         {busy && (
           <div className="upload-progress">
-            <progress value={progress} max={100} />
+            <progress
+              value={stage === "uploading" ? progress : undefined}
+              max={100}
+            />
             <span>
-              {progress < 100 ? `업로드 ${progress}%` : "이미지 확인·저장 중…"}
+              {stage === "uploading"
+                ? progress < 100
+                  ? `업로드 ${progress}%`
+                  : "이미지 확인·저장 중…"
+                : stage}
             </span>
           </div>
         )}
@@ -1380,7 +1479,13 @@ function UploadDialog({
             ) : (
               <Upload size={16} />
             )}
-            {busy ? "저장 중" : "업로드 시작"}
+            {busy
+              ? demoSelection
+                ? "불러오는 중"
+                : "저장 중"
+              : demoSelection
+                ? "시연 사진 열기"
+                : "업로드 시작"}
           </button>
         </div>
       </form>
@@ -1766,7 +1871,7 @@ function PointDialog({
             {photos.map((p) => (
               <div key={p.id}>
                 <img
-                  src={`${apiBase}/api/inspections/${p.id}/image`}
+                  src={`${apiBase}/api/inspections/${p.id}/thumbnail`}
                   alt={p.name}
                 />
                 <Grade photo={p} />
