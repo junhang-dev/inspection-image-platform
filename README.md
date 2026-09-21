@@ -17,7 +17,7 @@
 
 샘플은 사용자가 공개 활용을 허용한 과제 사진입니다. 중립적인 이름으로 복제했으며 정답·성능 평가용 테스트 세트가 아닙니다. 원본 300장과 부가 자료·기존 분리 목록은 Jun이 로컬에서 보존합니다. 고정 test 10장은 샘플 선정이나 튜닝에 사용하지 않습니다.
 
-제품 코드·실행 안내는 [플랫폼 브랜치](https://github.com/junhang-dev/inspection-image-platform/tree/codex/jun/platform-foundation), 모델 코드·실제 성능은 [모델 브랜치](https://github.com/junhang-dev/inspection-image-platform/tree/codex/jun/model-bootstrap)에 공개했습니다. `main` 통합 여부는 GitHub의 현재 상태를 확인하세요. Jun의 Mac에서 Next.js·API·실제 모델과 Docker Compose의 MySQL·MinIO를 연결해 검증했으며, 전체 앱의 Compose 실행은 별도 검증 중입니다.
+제품·모델·목표 문서는 PR #1·#2·#3으로 `main`에 병합되었습니다(2026-09-21 확인 커밋 `64221ad`). [제품 실행 안내](https://github.com/junhang-dev/inspection-image-platform/blob/main/records/platform-runbook.md), [모델 실행 안내](https://github.com/junhang-dev/inspection-image-platform/blob/main/ml/README.md), [모델 최종 평가](https://github.com/junhang-dev/inspection-image-platform/blob/main/records/model-final-evaluation.md)를 확인하세요. Jun의 Mac에서 Next.js·API·실제 모델과 Docker Compose의 MySQL·MinIO를 연결해 검증했으며, 전체 앱의 Compose 실행은 별도 검증 중입니다.
 
 현재 모델은 **train 99.57%로 90% 기준 PASS, 고정 test 60%로 70% 기준 FAIL**입니다. 파일 업로드·저장·실제 추론 연결 성공과 모델 성능 합격을 구분합니다. 공개 저장소에 원본 데이터와 학습 가중치는 없으므로 코드 복제만으로 Jun의 실행 환경과 동일한 모델이 준비되는 것은 아닙니다. 각각의 브랜치에 있는 실행 안내와 `records/`의 한계를 함께 확인하세요.
 
