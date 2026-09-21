@@ -129,4 +129,6 @@ services:
 - 동일container stop→미준비확인→start후같은bytes3장응답완전보존. 검증container정리후기존8001유지,로컬이미지만보존.
 - 제품Compose에model서비스를실제통합한검증은별도제품담당범위다. 이작업에서제품Compose나현재8001을교체하지않았다.
 
-위 Linux 이미지 ID와 수치 대조는 스트리밍 변경 이전 검증이다. 최신 스트리밍 API의 Mac 검증 및 적용 상태는 [스트리밍 기록](../records/model-streaming-upload.md)을 따른다. 제품 Compose의 임시 디스크 볼륨 연결과 새 이미지 실행은 제품 통합 시 검증해야 한다.
+위 Linux 이미지 ID와 수치 대조는 스트리밍 변경 이전 검증이다. 최신 스트리밍 API의 Mac 검증은 [스트리밍 기록](../records/model-streaming-upload.md), 정확한 `f89d970` 소스의 새 Linux 이미지·UID10001·96MiB 실제 디스크 스풀 검증은 [Docker 후속 기록](../records/model-streaming-docker.md)을 따른다. 후속 검증은 전용 named volume을 사용했다. 이 문서의 host bind 예제와 제품 Compose 통합은 별도 검증 대상이다.
+
+TMPDIR 설정만으로 저장 위치를 확정하지 않는다. Python은 잘못된 임시 경로에서 다른 경로를 선택할 수 있으므로 실제 실행UID로 `tempfile.gettempdir()`와 임시 파일 생성·쓰기·정리를 확인한다. 초기화 helper에서 소유권을 넘긴 뒤 권한을 변경하면 최소 capability 구성에서는 실패할 수 있다. 권한을 먼저 설정하고 소유권을 마지막에 넘기거나, 넘긴 뒤 해당UID로 권한을 설정한다.
