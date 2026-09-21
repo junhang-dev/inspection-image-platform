@@ -32,7 +32,11 @@ python3 -m labeling.bridge prepare --manifest /absolute/path/split.local.json
 python3 -m labeling.bridge import --snapshot SNAPSHOT_SHA256
 ```
 
-prepare는 localhost4000 후보 목록을 읽는다. 최신1000개 제한에 도달하면 전체성 문제가 있으므로 실패하며 제품의 페이징 후보 API가 필요하다. 승인 demo 이름·고정 SHA·symlink 여부와 기존 동결 manifest SHA·분리 구조를 먼저 검사한다. 후보 bytes를 다시 해시하고 같은 SHA는 하나의 원본으로 묶는다. snapshot은 당시 backend ID/수정 시각/원래 AI/사람 수정값을 보존한다. 원본 사진·test pixels는 열지 않는다.
+prepare는 localhost4000의 `/api/inspections/query`를 pageSize100으로 끝까지 읽는다. 매 요청에 `labeling=true`, `visibility=visible`, 모든 팀·랙·계획·포인트 및 분류 범위를 명시한다. `engineer_review_pending`은 `recordPurpose=inspection`만 허용한다. `workflow_test`는 `recordPurpose=all`로 조회하되 각 행의 목적을 inspection/presentation/verification 세 값으로 검사한다. 이는 아직 inspection으로 남은 기존 검증 후보를 포함하기 위한 허브 합의이며, 승인 demo5개의 SHA/train 제한은 그대로다. 별도 수동 목적·ID 옵션은 추가하지 않는다.
+
+페이지별 total/pages/page/pageSize/scope와 항목 수를 검사하고 고유UUID수=total이어야 진행한다. 중복·범위 밖 목적/hidden·페이지 보정/정체·조기 빈 페이지·총수 변동은 재시도 가능한 오류로 중단한다. 전체 페이지를 검증하기 전 이미지를 다운로드하거나 snapshot을 쓰지 않으며, 구 배열 API로 fallback하지 않는다. 실패하면 원인을 확인한 뒤 prepare 전체를 새로 실행한다. 서버는 응답 하나의 snapshot만 보장하므로 같은 total을 유지한 동시 교체까지 한 시점의 전체 후보라고 증명하지는 않는다.
+
+승인 demo 이름·고정 SHA·symlink 여부와 기존 동결 manifest SHA·분리 구조도 먼저 검사한다. 후보 bytes를 다시 해시하고 같은 SHA는 하나의 원본으로 묶는다. snapshot은 명시 조회범위·전체수/고유UUID수·페이지 수, 각 후보의 backend ID/수정 시각/목적/visibility/원래 AI/사람 수정값을 보존한다. training_eligible=false이며 원본 사진·test pixels는 열지 않는다. 기존 snapshot/export/검토 registry는 다시 쓰거나 승격하지 않는다.
 
 import는 실제 프로젝트와 후보 전용 Local Files storage를 등록한다. 이미지 URL만 넣으면 LS1.23의 프로젝트 파일 권한 검사에서404가 나므로 storage가 필수다. 실패한 import receipt는 보존되며 같은 snapshot의 무조건 재import를 막는다. 현재 초기404 진단용 프로젝트1은 기록으로 남겼고, 수정된 프로젝트2에서2개 제출/내보내기를 확인했다.
 

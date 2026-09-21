@@ -65,6 +65,84 @@ def approved_demo_hashes(directory=None):
             raise ValueError('Approved demo bytes changed')
     return set(expected.values())
 
+class CandidateQueryError(ValueError):
+    """No partial snapshot is safe; the caller may retry the whole prepare later."""
+
+def candidate_scope(purpose):
+    if purpose not in {'workflow_test', 'engineer_review_pending'}:
+        raise ValueError('Invalid labeling purpose')
+    return {'planId': 'all', 'pointId': 'all', 'teamId': 'all', 'rackId': 'all',
+            'search': '', 'classification': 'all', 'labeling': 'true',
+            'visibility': 'visible',
+            'recordPurpose': 'all' if purpose == 'workflow_test' else 'inspection'}
+
+def candidate_pages(client, purpose, page_size=100):
+    """Validate full candidate coverage before any image download or snapshot write.
+
+    The API has a snapshot per response, not across requests. Detect observable
+    changes; equal totals cannot prove a single point-in-time dataset snapshot.
+    """
+    scope = candidate_scope(purpose)
+    if type(page_size) is not int or not 1 <= page_size <= 100:
+        raise ValueError('Invalid candidate page size')
+    allowed = {'inspection', 'presentation', 'verification'} if purpose == 'workflow_test' else {'inspection'}
+    rows, seen = [], set()
+    total, pages, page = None, None, 1
+
+    def fail(reason):
+        raise CandidateQueryError('Candidate query incomplete or changed; retry prepare: ' + reason)
+
+    while True:
+        requested = {**scope, 'page': page, 'pageSize': page_size}
+        result = client.request('/api/inspections/query?' + urllib.parse.urlencode(requested))
+        if not isinstance(result, dict) or not isinstance(result.get('items'), list):
+            fail('expected paged response')
+        for name in ['total', 'page', 'pages', 'pageSize']:
+            if type(result.get(name)) is not int:
+                fail('invalid numeric page metadata')
+        count = result['total']
+        if count < 0 or result['page'] != page or result['pageSize'] != page_size:
+            fail('negative total, clamped page, or changed page size')
+        expected_pages = max(1, (count + page_size - 1) // page_size)
+        if result['pages'] != expected_pages:
+            fail('page count does not match total')
+        if total is None:
+            total, pages = count, expected_pages
+        elif (count, expected_pages) != (total, pages):
+            fail('total or pages changed between responses')
+        if result.get('scope') != requested or encoded(result['scope']) != encoded(requested):
+            fail('response scope differs from explicit query')
+        expected_count = min(page_size, max(0, total - (page - 1) * page_size))
+        if len(result['items']) != expected_count:
+            fail('empty, short, or oversized page')
+        for row in result['items']:
+            if not isinstance(row, dict):
+                fail('invalid candidate row')
+            if (not isinstance(row.get('recordPurpose'), str) or row['recordPurpose'] not in allowed
+                    or row.get('visibility') != 'visible'
+                    or row.get('labeling') is not True):
+                fail('candidate outside permitted purpose, visibility, or labeling scope')
+            try:
+                if not isinstance(row.get('id'), str):
+                    raise ValueError('not a UUID string')
+                identity = str(uuid.UUID(row['id']))
+            except ValueError:
+                fail('invalid candidate UUID')
+            if identity in seen:
+                fail('duplicate UUID or stalled page')
+            seen.add(identity)
+            rows.append({**row, 'id': identity})
+        if len(seen) > total:
+            fail('unique UUID count exceeds total')
+        if page == pages:
+            if len(seen) != total:
+                fail('unique UUID count differs from total')
+            return rows, {'endpoint': '/api/inspections/query', 'filters': scope,
+                          'allowed_record_purposes': sorted(allowed), 'total': total,
+                          'unique_uuid_count': len(seen), 'pages': pages, 'page_size': page_size,
+                          'consistency': 'per_response_snapshot_only'}
+        page += 1
+
 def prepare(manifest_path, backend='http://127.0.0.1:4000', purpose='workflow_test'):
     if purpose not in {'workflow_test', 'engineer_review_pending'}:
         raise ValueError('Invalid labeling purpose')
@@ -82,9 +160,7 @@ def prepare(manifest_path, backend='http://127.0.0.1:4000', purpose='workflow_te
         raise ValueError('Duplicate SHA in fixed split')
     approved = approved_demo_hashes()
     client = Client(backend)
-    rows = client.request('/api/inspections')
-    if not isinstance(rows, list) or len(rows) >= 1000:
-        raise ValueError('Candidate list may be truncated; require a paginated candidate API')
+    rows, query_scope = candidate_pages(client, purpose)
     grouped = {}
     for row in rows:
         sha = row.get('sha256')
@@ -110,11 +186,12 @@ def prepare(manifest_path, backend='http://127.0.0.1:4000', purpose='workflow_te
         item = grouped.setdefault(sha, {'source_id': entry['id'], 'sha256': sha, 'split': 'train',
             'image': '/data/local-files/?d=approved/' + sha + '.img', 'inspections': []})
         item['inspections'].append({'inspection_id': inspection_id, 'updated_at': row.get('updatedAt'),
-            'original_ai': row.get('ai'), 'human_correction': row.get('humanGrade')})
+            'original_ai': row.get('ai'), 'human_correction': row.get('humanGrade'),
+            'record_purpose': row['recordPurpose'], 'visibility': row['visibility']})
     if not grouped:
         raise ValueError('No approved demo candidates')
     snapshot = {'schema': 1, 'created_at': now(), 'manifest_sha256': digest(raw),
-        'annotation_provenance': purpose, 'training_eligible': False,
+        'annotation_provenance': purpose, 'training_eligible': False, 'candidate_query': query_scope,
         'items': sorted(grouped.values(), key=lambda x: x['sha256'])}
     key = digest(encoded(snapshot))
     save_new(STATE / 'snapshots' / f'{key}.json', snapshot)
