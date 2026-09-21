@@ -70,3 +70,23 @@ npm start
 - 예시 맵은 설비 식별자를 3개 모형 구역에, 랙을 5개 모형 슬롯에 결정적으로 배치한다. 실제 설비 도면이나 측정 좌표와 무관하며, 같은 슬롯에 서로 다른 입력이 대응할 수 있다. 설비 또는 랙 입력이 없으면 위치를 만들지 않는다.
 - 포인트 추가나 목록 순서 변경으로 기존 좌표가 움직이지 않는다. 기본 표시 수는 12개이며, 선택한 포인트는 순서와 무관하게 단독 표시한다. 마커와 ‘선택 포인트 보기’는 해당 ID의 상세·연결 사진을 연다.
 - 재시작 검증은 `scripts/verify-persistence.mjs --capture`로 전체 메타데이터·이력·원본 해시를 저장한 뒤, 재시작 후 같은 스크립트로 비교한다. `TEST_API_URL`과 `PERSISTENCE_REPORT`로 별도 검증 환경과 Git 제외 기록 파일을 지정한다. 원본 볼륨은 제거하지 않는다.
+
+## 선택 사항: 모델까지 함께 시작·종료
+
+`compose.model.yaml`을 추가하면 웹·API·MySQL·MinIO·모델 5개 서비스를 함께 실행한다. 이 구성의 소스 빌드는 **모델 작업 PR #6의 `ml/` 코드가 같은 체크아웃에 통합된 뒤** 가능하다. 다른 작업의 파일을 복사하지 않는다.
+
+1. Git에서 제외된 `.env`에 `MODEL_WEIGHTS_PATH`와 `MODEL_CONTRACT_PATH`를 실제 동결 가중치·계약 파일의 절대경로로 설정한다. 파일은 복제하거나 이미지에 넣지 않고 읽기 전용으로 연결한다.
+2. 기존 Mac 웹/API가 3000/4000 포트를 사용 중이면 먼저 운영 전환 시점을 정한다. 현재 공유 중인 프로세스를 자동으로 교체하지 않는다.
+3. `npm run stack:model:up`으로 5개 서비스를 빌드·기동한다. API는 Docker 내부의 `http://model:8001`로 연결하며 모델 포트를 외부에 공개하지 않는다.
+4. 명령 반환만으로 준비 완료를 판단하지 않는다. 아래 상태 조회에서 5개 서비스가 실행 중이고 모델이 `healthy`인지 확인한다. API health의 `ready`와 `model.ready`가 모두 `true`이며, 모델·전처리 버전과 체크포인트 해시가 로컬 동결 계약과 같은지도 확인한다.
+5. `npm run stack:model:stop`으로 같은 5개 서비스를 중지한다. 다시 `npm run stack:model:up`하면 기존 MySQL·MinIO 볼륨으로 재개한다.
+
+```sh
+docker compose -f compose.yaml -f compose.model.yaml --profile app ps
+curl --fail --silent http://127.0.0.1:4000/api/health
+docker compose -f compose.yaml -f compose.model.yaml --profile app exec -T model python -m ml.healthcheck --port 8001 --contract /models/final-freeze.json
+```
+
+모델의 시작 검사와 healthcheck는 모델·전처리 버전·체크포인트 해시를 동결 계약과 비교한다. 가중치와 계약이 없거나 맞지 않으면 모델이 정상으로 표시되지 않는다. 모델 컨테이너는 CPU 2개·메모리 2GiB 제한, 읽기 전용 루트, 비루트 사용자로 실행한다. 이 옵션은 재학습이나 현재 공유 모델의 자동 교체를 수행하지 않는다.
+
+격리 환경에서 실제 5서비스 시작·추론·전체 재시작 및 데이터 보존을 확인했다. 사용 이미지·검사 결과·미검증 항목은 [실행 기록](platform-model-compose.md)에 구분했다.
