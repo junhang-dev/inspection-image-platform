@@ -26,19 +26,24 @@ export async function initializeStore() {
 }
 const decode = (value) =>
   typeof value === "string" ? JSON.parse(value) : value;
+export function decodeEntity(value) {
+  const data = decode(value);
+  return { ...data, editVersion: data.editVersion ?? 0 };
+}
+const fail = (status, message) => Object.assign(new Error(message), { status });
 export async function list(kind) {
   const [rows] = await pool.execute(
     "SELECT data FROM entities WHERE kind = ? ORDER BY created_at DESC LIMIT 1000",
     [kind],
   );
-  return rows.map((row) => decode(row.data));
+  return rows.map((row) => decodeEntity(row.data));
 }
 export async function get(kind, id) {
   const [rows] = await pool.execute(
     "SELECT data FROM entities WHERE kind = ? AND id = ?",
     [kind, id],
   );
-  return rows[0] ? decode(rows[0].data) : null;
+  return rows[0] ? decodeEntity(rows[0].data) : null;
 }
 export async function events(id) {
   const [rows] = await pool.execute(
@@ -74,6 +79,7 @@ export async function insert(
 export async function insertBatch(kind, inputs, actor, reason) {
   const items = inputs.map((input) => ({
     ...input,
+    editVersion: 0,
     id: randomUUID(),
     createdAt: new Date().toISOString(),
   }));
@@ -99,7 +105,34 @@ export async function insertBatch(kind, inputs, actor, reason) {
     connection.release();
   }
 }
-export async function update(kind, id, patch, actor, reason, action = "수정") {
+export async function update(
+  kind,
+  id,
+  patch,
+  actor,
+  reason,
+  { expectedVersion, inference = false } = {},
+) {
+  if ("editVersion" in patch || "expectedVersion" in patch)
+    throw fail(422, "수정 버전은 직접 변경할 수 없습니다.");
+  // Only explicit server calls may update inference fields without a human edit.
+  // Never infer this privilege from the user-supplied actor name.
+  if (inference) {
+    if (
+      kind !== "inspection" ||
+      Object.keys(patch).some((key) => !["status", "ai", "error"].includes(key))
+    )
+      throw fail(422, "판독 처리로 업무 판단을 변경할 수 없습니다.");
+  } else if (
+    !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 0 ||
+    expectedVersion >= Number.MAX_SAFE_INTEGER
+  ) {
+    throw fail(
+      422,
+      "화면 정보가 오래되었거나 올바르지 않습니다. 입력 내용을 별도로 보관한 뒤 새로고침하고 다시 시도하세요.",
+    );
+  }
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -111,18 +144,24 @@ export async function update(kind, id, patch, actor, reason, action = "수정") 
       await connection.rollback();
       return null;
     }
-    const before = decode(rows[0].data);
+    const before = decodeEntity(rows[0].data);
+    if (!inference && before.editVersion !== expectedVersion)
+      throw fail(
+        409,
+        "다른 화면에서 이 항목을 수정하여 저장하지 못했습니다. 입력 내용은 유지됩니다. 필요한 내용을 복사한 뒤 창을 닫고 새로고침하여 최신 내용을 확인해 주세요.",
+      );
     const after = {
       ...before,
       ...patch,
       id: before.id,
+      editVersion: inference ? before.editVersion : before.editVersion + 1,
       updatedAt: new Date().toISOString(),
     };
     await connection.execute(
       "UPDATE entities SET data = ? WHERE kind = ? AND id = ?",
       [JSON.stringify(after), kind, id],
     );
-    await append(connection, id, action, before, after, actor, reason);
+    await append(connection, id, "수정", before, after, actor, reason);
     await connection.commit();
     return after;
   } catch (error) {

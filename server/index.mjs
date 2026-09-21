@@ -16,6 +16,7 @@ import {
   update,
   events,
   pool,
+  decodeEntity,
 } from "./store.mjs";
 
 const app = express();
@@ -56,6 +57,13 @@ const upload = multer({
 const field = z.string().trim().max(120);
 const actor = z.string().trim().min(1, "수정자를 입력하세요.").max(60);
 const reason = z.string().trim().min(1, "변경 사유를 입력하세요.").max(1000);
+const versionMessage =
+  "화면 정보가 오래되었거나 올바르지 않습니다. 입력 내용을 별도로 보관한 뒤 새로고침하고 다시 시도하세요.";
+const expectedVersion = z
+  .number({ error: versionMessage })
+  .int({ error: versionMessage })
+  .min(0, { error: versionMessage })
+  .max(Number.MAX_SAFE_INTEGER - 1, { error: versionMessage });
 const pointSchema = z.object({
   equipment: field.default(""),
   rack: field.default(""),
@@ -69,6 +77,7 @@ const pointPatch = z
     repairStatus: z.enum(["none", "review", "progress", "done"]).optional(),
     managed: z.boolean().optional(),
     ta: z.boolean().optional(),
+    expectedVersion,
     actor,
     reason,
   })
@@ -80,6 +89,7 @@ const inspectionPatch = z
     retake: z.boolean().optional(),
     retakeReason: z.string().trim().max(1000).optional(),
     labeling: z.boolean().optional(),
+    expectedVersion,
     actor,
     reason,
   })
@@ -155,8 +165,12 @@ app.post("/api/points", async (req, res) => {
     );
 });
 app.patch("/api/points/:id", async (req, res) => {
-  const { actor, reason, ...patch } = pointPatch.parse(req.body);
-  const result = await update("point", req.params.id, patch, actor, reason);
+  const { actor, reason, expectedVersion, ...patch } = pointPatch.parse(
+    req.body,
+  );
+  const result = await update("point", req.params.id, patch, actor, reason, {
+    expectedVersion,
+  });
   if (!result) throw fail(404, "포인트를 찾을 수 없습니다.");
   res.json(result);
 });
@@ -201,8 +215,7 @@ async function saveUploads(files, pointId, reuseDemo) {
       [pointId || ""],
     );
     for (const row of rows) {
-      const photo =
-        typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+      const photo = decodeEntity(row.data);
       if (!byHash.has(photo.sha256)) byHash.set(photo.sha256, photo);
     }
   }
@@ -373,7 +386,9 @@ app.get("/api/inspections/:id/history", async (req, res) =>
   res.json(await events(req.params.id)),
 );
 app.patch("/api/inspections/:id", async (req, res) => {
-  const { actor, reason, ...patch } = inspectionPatch.parse(req.body);
+  const { actor, reason, expectedVersion, ...patch } = inspectionPatch.parse(
+    req.body,
+  );
   const current = await get("inspection", req.params.id);
   if (!current) throw fail(404, "사진을 찾을 수 없습니다.");
   if (patch.pointId && !(await get("point", patch.pointId)))
@@ -383,7 +398,11 @@ app.patch("/api/inspections/:id", async (req, res) => {
     !(patch.retakeReason ?? current.retakeReason).trim()
   )
     throw fail(422, "재촬영 사유를 입력하세요.");
-  res.json(await update("inspection", req.params.id, patch, actor, reason));
+  res.json(
+    await update("inspection", req.params.id, patch, actor, reason, {
+      expectedVersion,
+    }),
+  );
 });
 app.post("/api/inspections/:id/retry", async (req, res) => {
   const current = await get("inspection", req.params.id);
@@ -397,6 +416,7 @@ app.post("/api/inspections/:id/retry", async (req, res) => {
       { status: "pending", error: null },
       "현업 엔지니어",
       "AI 판독 재요청",
+      { inference: true },
     ),
   );
 });
@@ -433,7 +453,13 @@ app.post("/api/plans", async (req, res) => {
 });
 app.patch("/api/plans/:id", async (req, res) => {
   const input = z
-    .object({ status: z.enum(["planned", "done", "cancelled"]), actor, reason })
+    .object({
+      status: z.enum(["planned", "done", "cancelled"]),
+      expectedVersion,
+      actor,
+      reason,
+    })
+    .strict()
     .parse(req.body);
   const result = await update(
     "plan",
@@ -441,6 +467,7 @@ app.patch("/api/plans/:id", async (req, res) => {
     { status: input.status },
     input.actor,
     input.reason,
+    { expectedVersion: input.expectedVersion },
   );
   if (!result) throw fail(404, "계획이 없습니다.");
   res.json(result);
@@ -495,6 +522,7 @@ async function processNext() {
       { status: "processing" },
       "AI 서비스",
       "백그라운드 판독 시작",
+      { inference: true },
     );
     try {
       const stream = await objects.getObject(bucket, next.objectKey);
@@ -519,6 +547,7 @@ async function processNext() {
         { status: "done", ai: result, error: null },
         "AI 서비스",
         "실제 이미지 모델 판독 완료",
+        { inference: true },
       );
     } catch (error) {
       await update(
@@ -533,6 +562,7 @@ async function processNext() {
         },
         "AI 서비스",
         "실제 판독 실패",
+        { inference: true },
       );
     }
   } catch (error) {

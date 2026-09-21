@@ -63,10 +63,41 @@ test("사람 수정 API로 원래 AI 결과를 주입할 수 없다", async () =
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ai: { grade: 5 },
+        expectedVersion: 0,
         actor: "검증",
         reason: "잘못된 주입 검증",
       }),
     },
   );
   assert.equal(response.status, 422);
+});
+
+test("업무 수정 API는 버전 누락·잘못된 버전·내부 옵션 주입을 거절한다", async () => {
+  for (const kind of ["points", "inspections", "plans"]) {
+    for (const invalid of [
+      {},
+      { expectedVersion: -1 },
+      { expectedVersion: 0.5 },
+      { expectedVersion: "0" },
+      { expectedVersion: 0, editVersion: 99 },
+      { expectedVersion: 0, inference: true },
+    ]) {
+      const response = await fetch(
+        `${base}/${kind}/00000000-0000-0000-0000-000000000000`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(kind === "plans" ? { status: "done" } : {}),
+            actor: "AI 서비스",
+            reason: "잘못된 수정 버전 검증",
+            ...invalid,
+          }),
+        },
+      );
+      assert.equal(response.status, 422, `${kind}: ${JSON.stringify(invalid)}`);
+      if (!("expectedVersion" in invalid))
+        assert.match((await response.json()).error, /새로고침/);
+    }
+  }
 });

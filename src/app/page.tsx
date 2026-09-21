@@ -45,6 +45,7 @@ import {
 
 type Point = {
   id: string;
+  editVersion: number;
   equipment: string;
   rack: string;
   name: string;
@@ -54,6 +55,7 @@ type Point = {
 };
 type Photo = {
   id: string;
+  editVersion: number;
   name: string;
   pointId: string | null;
   status: "pending" | "processing" | "done" | "error";
@@ -72,6 +74,7 @@ type Photo = {
 };
 type Plan = {
   id: string;
+  editVersion: number;
   title: string;
   date: string;
   pointId: string | null;
@@ -988,6 +991,7 @@ export default function Home() {
                               method: "PATCH",
                               body: JSON.stringify({
                                 status: "done",
+                                expectedVersion: p.editVersion,
                                 actor: "현업 엔지니어",
                                 reason: "검사 계획 이행 확인",
                               }),
@@ -1727,6 +1731,8 @@ function PhotoDialog({
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
+  // Keep the editable values and their version together while polling refreshes AI.
+  const [initial] = useState(photo);
   const [retake, setRetake] = useState(photo.retake);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1798,6 +1804,7 @@ function PhotoDialog({
               await api(`/inspections/${photo.id}`, {
                 method: "PATCH",
                 body: JSON.stringify({
+                  expectedVersion: initial.editVersion,
                   pointId: form.get("pointId") || null,
                   humanGrade: form.get("grade")
                     ? Number(form.get("grade"))
@@ -1819,7 +1826,7 @@ function PhotoDialog({
         >
           <label className="field">
             연결 포인트
-            <select name="pointId" defaultValue={photo.pointId || ""}>
+            <select name="pointId" defaultValue={initial.pointId || ""}>
               <option value="">위치 미확인</option>
               {points.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -1830,7 +1837,7 @@ function PhotoDialog({
           </label>
           <label className="field">
             사람 수정 등급
-            <select name="grade" defaultValue={photo.humanGrade || ""}>
+            <select name="grade" defaultValue={initial.humanGrade || ""}>
               <option value="">AI 결과 그대로 사용</option>
               {[1, 2, 3, 4, 5].map((g) => (
                 <option key={g} value={g}>
@@ -1854,7 +1861,7 @@ function PhotoDialog({
               name="retakeReason"
               rows={2}
               required={retake}
-              defaultValue={photo.retakeReason}
+              defaultValue={initial.retakeReason}
               maxLength={1000}
               placeholder="흐림, 가림 등 구체적인 사유"
             />
@@ -1863,7 +1870,7 @@ function PhotoDialog({
             <input
               name="labeling"
               type="checkbox"
-              defaultChecked={photo.labeling}
+              defaultChecked={initial.labeling}
             />
             <span>학습 라벨링 후보로 지정</span>
           </label>
@@ -1913,6 +1920,7 @@ function PointDialog({
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
+  const [initial] = useState(point);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const history = useAuditHistory(
@@ -1953,6 +1961,7 @@ function PointDialog({
               await api(`/points/${point.id}`, {
                 method: "PATCH",
                 body: JSON.stringify({
+                  expectedVersion: initial.editVersion,
                   equipment: form.get("equipment"),
                   rack: form.get("rack"),
                   name: form.get("name"),
@@ -1976,22 +1985,22 @@ function PointDialog({
               설비번호
               <input
                 name="equipment"
-                defaultValue={point.equipment}
+                defaultValue={initial.equipment}
                 maxLength={120}
               />
             </label>
             <label className="field">
               랙 번호
-              <input name="rack" defaultValue={point.rack} maxLength={120} />
+              <input name="rack" defaultValue={initial.rack} maxLength={120} />
             </label>
           </div>
           <label className="field">
             포인트 이름
-            <input name="name" defaultValue={point.name} maxLength={120} />
+            <input name="name" defaultValue={initial.name} maxLength={120} />
           </label>
           <label className="field">
             보수 상태
-            <select name="repairStatus" defaultValue={point.repairStatus}>
+            <select name="repairStatus" defaultValue={initial.repairStatus}>
               {Object.entries(statusName).map(([value, label]) => (
                 <option value={value} key={value}>
                   {label}
@@ -2003,12 +2012,12 @@ function PointDialog({
             <input
               type="checkbox"
               name="managed"
-              defaultChecked={point.managed}
+              defaultChecked={initial.managed}
             />
             <span>관리 워크리스트에 포함</span>
           </label>
           <label className="checkbox">
-            <input type="checkbox" name="ta" defaultChecked={point.ta} />
+            <input type="checkbox" name="ta" defaultChecked={initial.ta} />
             <span>TA 워크리스트에 포함</span>
           </label>
           <div className="divider" />
