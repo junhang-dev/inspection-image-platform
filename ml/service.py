@@ -10,21 +10,33 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
-from ml.runtime import MAX_BYTES, Predictor
+from ml.runtime import MAX_BYTES, PREPROCESSING_VERSION, Predictor
+from ml.contract import load_verified_predictor
 
 predictor = None
+serving_identity = None
 prediction_lock = threading.Lock()
 
 
 @asynccontextmanager
 async def lifespan(app):
-    global predictor
+    global predictor, serving_identity
+    predictor, serving_identity = None, None
     try:
-        predictor = Predictor(os.environ.get("MODEL_PATH", str(Path(__file__).parent / "artifacts/model.pt")))
+        checkpoint = os.environ.get("MODEL_PATH", str(Path(__file__).parent / "artifacts/model.pt"))
+        contract_path = os.environ.get("MODEL_CONTRACT_FILE")
+        if contract_path:
+            predictor, serving_identity = load_verified_predictor(checkpoint, contract_path)
+        elif os.environ.get("MODEL_REQUIRE_CONTRACT") == "1":
+            raise ValueError("Serving contract is required")
+        else:
+            predictor = Predictor(checkpoint)
     except Exception:
         logging.exception("Model unavailable; predictions will return 503")
+        if os.environ.get("MODEL_REQUIRE_CONTRACT") == "1":
+            raise
     yield
-    predictor = None
+    predictor, serving_identity = None, None
 
 
 class BodyLimit:
@@ -74,7 +86,9 @@ class Prediction(BaseModel):
 @app.get("/health")
 def health():
     return {"ready": predictor is not None,
-            "model_version": predictor.model_version if predictor else None}
+            "model_version": predictor.model_version if predictor else None,
+            "preprocessing_version": PREPROCESSING_VERSION if predictor else None,
+            "checkpoint_sha256": serving_identity["checkpoint_sha256"] if serving_identity else None}
 
 
 def infer(data):

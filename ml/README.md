@@ -2,16 +2,22 @@
 
 사진 픽셀을 MobileNetV3 Small 특징으로 바꾸고 train에서 학습한 선형 분류기로 1~5등급을 추론한다. confidence는 보정하지 않은 softmax 점수이며 실제 정답 확률로 보장하지 않는다. 파일명·설비번호·포인트는 추론에 전달하지 않는다.
 
-## 설치와 실행
+## 동결 모델 실행
+
+운영 시작에는 **학습을 다시 하지 않는다**. [운영 인계](OPERATIONS.md)에 가중치 확인·시작·종료·health·재시작과 선택적 Docker 계약을 정리했다.
 
 ```sh
 python3 -m venv ml/.venv
 ml/.venv/bin/python -m pip install -r ml/requirements.txt
-ml/.venv/bin/python -m ml.train --manifest /absolute/path/to/split.local.json
-ml/.venv/bin/python -m uvicorn ml.service:app --host 127.0.0.1 --port 8001
+ml/.venv/bin/python -m ml.serve --check
+ml/.venv/bin/python -m ml.serve --port 8001
+# 별도 터미널
+ml/.venv/bin/python -m ml.healthcheck --port 8001
 ```
 
-서비스는 기본 `ml/artifacts/model.pt`를 읽는다. 다른 위치는 `MODEL_PATH` 환경변수로 지정한다. 학습 시 공개 ImageNet 가중치를 내려받아 프로젝트 안에 캐시한다. 추론 서비스는 가중치를 자동 다운로드하지 않는다. 원본 사진은 외부로 전송하지 않는다.
+현재 로컬에 이미 있는 동결 가중치가 필요하다. 새 Git 복제본에는 가중치가 없으므로 로컬 인계 경로를 `--checkpoint`로 지정한다. 개발 실험은 `ml.train`/`ml.finetune`의 별도 승인 범위이며 운영 시작 절차에 포함하지 않는다.
+
+새 `ml.serve`의 기본은 동결된 `ml/artifacts/finetune.local/model.pt`와 `ml/model-contract.json`이다. 기존 직접 `uvicorn ml.service:app` 실행은 `MODEL_PATH`가 없으면 초기 `ml/artifacts/model.pt`를 읽으므로 운영 인계에서는 새 진입점을 사용한다. 학습 시 공개 ImageNet 가중치를 내려받아 프로젝트 안에 캐시한다. 추론 서비스는 가중치를 자동 다운로드하지 않는다. 원본 사진은 외부로 전송하지 않는다.
 
 - 공개 가중치 출처: https://download.pytorch.org/models/mobilenet_v3_small-047dcff4.pth
 - 공식 모델 설명: https://docs.pytorch.org/vision/stable/models/generated/torchvision.models.mobilenet_v3_small.html

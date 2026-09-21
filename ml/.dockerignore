@@ -1,0 +1,12 @@
+# This file applies ONLY when the build context is ml/, never the repository root.
+**
+!Dockerfile
+!.dockerignore
+!requirements-runtime.txt
+!__init__.py
+!runtime.py
+!service.py
+!contract.py
+!serve.py
+!healthcheck.py
+!model-contract.json
