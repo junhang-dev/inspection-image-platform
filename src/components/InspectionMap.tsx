@@ -57,6 +57,18 @@ function projection(point: InspectionMapPoint, rack: Rack) {
   };
 }
 
+function teamFrame(racks: readonly Rack[]) {
+  const xs = racks.map((rack) => rack.x), ys = racks.map((rack) => rack.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const size = Math.max(maxX - minX, maxY - minY) + 0.15;
+  return {
+    left: Math.max(0, Math.min(1 - size, (minX + maxX - size) / 2)),
+    top: Math.max(0, Math.min(1 - size, (minY + maxY - size) / 2)),
+    size,
+  };
+}
+
 function photoTotal(points: readonly InspectionMapPoint[], counts: InspectionMapProps["pointCounts"]) {
   if (!counts || points.some((point) => !Number.isSafeInteger(counts[point.id]) || counts[point.id] < 0)) return null;
   return points.reduce((total, point) => total + counts[point.id], 0);
@@ -89,6 +101,7 @@ export default function InspectionMap({
   const team = locations.teams.find((item) => item.id === selectedTeamId);
   const rack = locations.racks.find((item) => item.id === selectedRackId && item.teamId === team?.id);
   const teamRacks = locations.racks.filter((item) => item.teamId === team?.id);
+  const frame = team && !rack ? teamFrame(teamRacks) : null;
   const rackPoints = rack ? points.filter((point) => point.rackId === rack.id) : [];
   const unknownPoints = points.filter((point) => !placedRack(point));
   const activePoint = points.find((point) => point.id === selectedPointId);
@@ -161,6 +174,8 @@ export default function InspectionMap({
               {/* Native img preserves the full reference frame, including its source markings. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img key={imageUrl} ref={backgroundRef} className={styles.background} src={imageUrl}
+                style={frame ? { width: `${100 / frame.size}%`, height: `${100 / frame.size}%`,
+                  left: `${-frame.left * 100 / frame.size}%`, top: `${-frame.top * 100 / frame.size}%` } : undefined}
                 alt={rack ? "파이프랙의 AI 보강 시각 참고 이미지" : "전체 공장의 AI 보강 시각 참고 이미지"}
                 onError={() => setFailedImage(imageUrl)} draggable={false} />
               {!team && locations.teams.map((item) => {
@@ -174,10 +189,10 @@ export default function InspectionMap({
                   <span>{item.name}<small>파이프랙 {racks.length}개</small></span>
                 </button>;
               })}
-              {team && !rack && teamRacks.map((item) => <button type="button" key={item.id} className={styles.rackMarker}
-                style={{ left: `${item.x * 100}%`, top: `${item.y * 100}%` }}
-                onClick={() => select({ teamId: team.id, rackId: item.id, pointId: null })} aria-label={`${team.name} ${item.name} 선택`}>
-                <span aria-hidden="true">⌖</span><strong>{item.name}</strong>
+              {team && frame && teamRacks.map((item, index) => <button type="button" key={item.id} className={styles.rackMarker}
+                style={{ left: `${(item.x - frame.left) * 100 / frame.size}%`, top: `${(item.y - frame.top) * 100 / frame.size}%` }}
+                onClick={() => select({ teamId: team.id, rackId: item.id, pointId: null })} aria-label={`${team.name} ${item.name} 선택`} title={item.name}>
+                <strong aria-hidden="true">{index + 1}</strong>
               </button>)}
               {rack && rackPoints.filter((point) => placedRack(point)).map((point) => <button type="button" key={point.id}
                 className={`${styles.pointMarker} ${point.id === selectedPointId ? styles.selectedMarker : ""}`}
@@ -187,7 +202,7 @@ export default function InspectionMap({
               </button>)}
             </div>}
         </div>
-        <div className={styles.mapFooter}><span><i aria-hidden="true" />{rack ? "가상 포인트 · 겹친 위치는 목록에서 선택" : "가상 구역 · 팀과 랙을 순서대로 선택"}</span>
+        <div className={styles.mapFooter}><span><i aria-hidden="true" />{rack ? "가상 포인트 · 겹친 위치는 목록에서 선택" : team ? "가상 팀 구역 · 파이프랙 번호를 눌러 선택" : "가상 구역 · 팀과 랙을 순서대로 선택"}</span>
           {zoom > 1 && <span>지도 안에서 스크롤하여 이동</span>}
         </div>
       </div>

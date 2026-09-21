@@ -40,7 +40,7 @@
 .zoom button:not(:disabled):hover { background: #e9f3f2; }
 .zoom output { font-size: 13px; text-align: center; min-width: 44px; font-variant-numeric: tabular-nums; }
 .viewport { width: 100%; overflow: auto; overscroll-behavior: contain; background: #243b46; }
-.canvas { position: relative; min-width: 100%; isolation: isolate; }
+.canvas { position: relative; min-width: 100%; isolation: isolate; overflow: hidden; }
 .overviewCanvas { aspect-ratio: 1189 / 1323; }
 .rackCanvas { aspect-ratio: 1403 / 1121; }
 .background { position: absolute; width: 100%; height: 100%; object-fit: fill; inset: 0; display: block; user-select: none; }
@@ -48,10 +48,9 @@
 .teamZone:hover { background: #056b65a8; border-color: #fff; }
 .teamZone > span { display: block; padding: 8px 10px; border-radius: 7px; background: #073f44f2; font-weight: 750; font-size: 17px; line-height: 1.25; white-space: nowrap; box-shadow: 0 2px 10px #001e2855; }
 .teamZone small { display: block; color: #d5eeee; font-size: 12px; font-weight: 500; margin-top: 4px; }
-.rackMarker { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 6px; min-height: 44px; color: #fff; background: #084e53f5; border: 2px solid #d4faf6; border-radius: 9px; padding: 6px 10px; box-shadow: 0 3px 12px #00252970; white-space: nowrap; }
+.rackMarker { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; width: 44px; height: 44px; color: #fff; background: #084e53f5; border: 2px solid #d4faf6; border-radius: 50%; padding: 0; box-shadow: 0 3px 12px #00252970; }
 .rackMarker:hover { background: #087e78; }
-.rackMarker strong { font-size: 15px; }
-.rackMarker > span { font-size: 24px; line-height: 1; }
+.rackMarker strong { font-size: 17px; line-height: 1; }
 .pointMarker { position: absolute; transform: translate(-50%, -50%); width: 38px; height: 38px; border: 3px solid #fff; border-radius: 50%; background: #086b68; color: #fff; box-shadow: 0 2px 10px #112e4a99; z-index: 1; padding: 0; display: grid; place-items: center; }
 .pointMarker span { font-size: 26px; line-height: 1; }
 .pointMarker:hover, .pointMarker:focus-visible { background: #124bbb; z-index: 4; }
@@ -112,9 +111,6 @@
   .teamZone > span { font-size: 14px; padding: 6px 7px; }
   .teamZone small { font-size: 11px; }
   .teamZone { border-radius: 7px; }
-  .rackMarker { min-height: 40px; padding: 5px 7px; gap: 3px; }
-  .rackMarker strong { font-size: 12px; }
-  .rackMarker > span { font-size: 20px; }
   .locationList { grid-template-columns: minmax(0, 1fr); }
   .locationRow { min-height: 76px; }
   .pointList { max-height: 360px; }
