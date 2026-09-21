@@ -4,6 +4,8 @@
 
 2026-09-21 추가된 최종 제품 요구는 [제품 확장 설계·검증 기준](docs/product-v2.md)에 모았습니다. 계획에서 사진을 올리는 흐름, 가상 팀 구역 지도, 사진 삭제·복원, 보수 방법별 워크리스트, 업로드 제한 개선과 화면 정리를 단계적으로 구현합니다. 아래 기존 수행 결과와 새 요구의 구현 상태는 구분하며, 문서 반영만으로 새 기능을 완료 처리하지 않습니다.
 
+**현재 공유 사이트의 코드 기준(2026-09-21 22:10 KST):** [계획 중심 첫 구현 PR #14](https://github.com/junhang-dev/inspection-image-platform/pull/14)의 `0159062`입니다. PlantPilot 이름, 팀·랙 연결, 계획 상세에서 포인트·사진 추가, 같은 포인트의 계획별 사진 분리를 반영했습니다. 실제 파일·화면·충돌 복구 결과는 [QA 기록 PR #4](https://github.com/junhang-dev/inspection-image-platform/pull/4), 추가 설계와 보강 지도 자산은 [PR #5](https://github.com/junhang-dev/inspection-image-platform/pull/5)에 있습니다. 초안 PR 게시와 `main` 병합은 다르며, 업로드 제한 개선·삭제·워크리스트·새 지도 화면까지 완료됐다는 뜻은 아닙니다.
+
 **2026-09-21 구현을 시작했습니다. 실제 제품 기동·모델 성능·외부 접속의 완료 여부는 수행 기록으로 확인합니다.** 먼저 최신 [목표·범위·완료 기준](docs/goal.md)을 읽고, AI와 작업할 때는 [AGENTS.md](AGENTS.md)를 따릅니다.
 
 ## 들어 있는 것
@@ -31,6 +33,14 @@
 로컬 Label Studio와 재학습 관리의 구현·검증은 [PR #9](https://github.com/junhang-dev/inspection-image-platform/pull/9)에 있습니다. 실제 시연 후보 표시·라벨 제출·내보내기와 제한된 후보 학습을 확인했으며, 검증용 라벨을 학습에 넣거나 서비스 모델을 교체하지 않았습니다. 19:00 KST 네트워크 복구 점검에서 기존 공유 주소·모델·DB가 정상임을 확인했고, Label Studio의 일부 접속 오류도 프록시 수정 후 정상화했습니다.
 
 ## 팀원이 시작하는 방법
+
+현재 공유 버전의 코드를 자료 작성·검증에 쓰려면 **새 폴더에** 해당 브랜치를 복제합니다. 출력된 커밋이 위 기준과 같은지 확인하고, 실행 절차는 해당 브랜치의 `records/platform-runbook.md`와 `records/platform-plan-workflow-v2.md`를 함께 읽으세요. 로컬 원본·DB·학습 가중치는 Git에 없으므로 이 명령만으로 운영 데이터와 모델이 준비되지는 않습니다.
+
+```sh
+git clone --branch codex/jun/platform-plan-workflow-v2 https://github.com/junhang-dev/inspection-image-platform.git inspection-image-platform-review
+cd inspection-image-platform-review
+git rev-parse HEAD
+```
 
 새 폴더에서 시작하려면 다음과 같이 복제합니다.
 
