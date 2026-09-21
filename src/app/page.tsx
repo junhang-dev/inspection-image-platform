@@ -156,6 +156,48 @@ function Empty({ text, action }: { text: string; action?: React.ReactNode }) {
   );
 }
 
+function useAuditHistory(path: string, reportError: (message: string) => void) {
+  const [history, setHistory] = useState<Audit[]>([]);
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    setHistory([]);
+    void api<Audit[]>(path, {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+    })
+      .then((events) => {
+        if (active) setHistory(events);
+      })
+      .catch(() => {
+        if (active)
+          reportError("이력을 불러오지 못했습니다. 다시 열어 주세요.");
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [path, reportError]);
+  return history;
+}
+
+function useDialogCompletion(
+  done: (message: string) => Promise<void>,
+  close: () => void,
+) {
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  return async (message: string) => {
+    if (!active.current) return;
+    await done(message);
+    if (active.current) close();
+  };
+}
+
 export default function Home() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -170,7 +212,6 @@ export default function Home() {
   const [planOpen, setPlanOpen] = useState(false);
   const [detail, setDetail] = useState<Photo | null>(null);
   const [pointDetail, setPointDetail] = useState<Point | null>(null);
-  const [history, setHistory] = useState<Audit[]>([]);
   const [planHistory, setPlanHistory] = useState<{
     title: string;
     events: Audit[];
@@ -220,26 +261,14 @@ export default function Home() {
     setToast({ tone, message });
     await refresh();
   };
+  const reportHistoryError = useCallback((message: string) => {
+    setToast({ tone: "error", message });
+  }, []);
   const selectPhoto = async (photo: Photo) => {
     setDetail(photo);
-    setHistory([]);
-    try {
-      setHistory(await api<Audit[]>(`/inspections/${photo.id}/history`));
-    } catch {
-      setToast({
-        tone: "error",
-        message: "이력을 불러오지 못했습니다. 다시 열어 주세요.",
-      });
-    }
   };
   const selectPoint = async (point: Point) => {
     setPointDetail(point);
-    setHistory([]);
-    try {
-      setHistory(await api<Audit[]>(`/points/${point.id}/history`));
-    } catch {
-      setToast({ tone: "error", message: "이력을 불러오지 못했습니다." });
-    }
   };
   const active = photos.filter((p) => (gradeOf(p) || 0) >= 3);
   const pending = photos.filter((p) =>
@@ -1042,7 +1071,7 @@ export default function Home() {
           key={detail.id}
           photo={photos.find((p) => p.id === detail.id) || detail}
           points={points}
-          history={history}
+          reportHistoryError={reportHistoryError}
           close={() => setDetail(null)}
           done={notify}
         />
@@ -1052,7 +1081,7 @@ export default function Home() {
           key={pointDetail.id}
           point={pointDetail}
           photos={photos.filter((p) => p.pointId === pointDetail.id)}
-          history={history}
+          reportHistoryError={reportHistoryError}
           close={() => setPointDetail(null)}
           done={notify}
         />
@@ -1529,6 +1558,7 @@ function PlanDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const complete = useDialogCompletion(done, close);
   return (
     <Modal title="검사 계획 만들기" close={close}>
       <form
@@ -1547,8 +1577,7 @@ function PlanDialog({
                 note: data.get("note"),
               }),
             });
-            await done("검사 계획을 저장했습니다.");
-            close();
+            await complete("검사 계획을 저장했습니다.");
           } catch (cause) {
             setError((cause as Error).message);
           } finally {
@@ -1688,19 +1717,24 @@ function AuditList({ history }: { history: Audit[] }) {
 function PhotoDialog({
   photo,
   points,
-  history,
+  reportHistoryError,
   close,
   done,
 }: {
   photo: Photo;
   points: Point[];
-  history: Audit[];
+  reportHistoryError: (message: string) => void;
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
   const [retake, setRetake] = useState(photo.retake);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const history = useAuditHistory(
+    `/inspections/${photo.id}/history`,
+    reportHistoryError,
+  );
+  const complete = useDialogCompletion(done, close);
   return (
     <Modal title="사진 판독·후속 관리" wide close={close}>
       <div className="detail-grid">
@@ -1742,8 +1776,7 @@ function PhotoDialog({
                     await api(`/inspections/${photo.id}/retry`, {
                       method: "POST",
                     });
-                    await done("판독을 다시 요청했습니다.");
-                    close();
+                    await complete("판독을 다시 요청했습니다.");
                   } catch (cause) {
                     setError((cause as Error).message);
                   }
@@ -1776,8 +1809,7 @@ function PhotoDialog({
                   reason: form.get("reason"),
                 }),
               });
-              await done("사진 판단과 변경 이력을 저장했습니다.");
-              close();
+              await complete("사진 판단과 변경 이력을 저장했습니다.");
             } catch (cause) {
               setError((cause as Error).message);
             } finally {
@@ -1871,18 +1903,23 @@ function PhotoDialog({
 function PointDialog({
   point,
   photos,
-  history,
+  reportHistoryError,
   close,
   done,
 }: {
   point: Point;
   photos: Photo[];
-  history: Audit[];
+  reportHistoryError: (message: string) => void;
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const history = useAuditHistory(
+    `/points/${point.id}/history`,
+    reportHistoryError,
+  );
+  const complete = useDialogCompletion(done, close);
   return (
     <Modal title="포인트 관리·보수 이력" wide close={close}>
       <div className="detail-grid">
@@ -1926,8 +1963,7 @@ function PointDialog({
                   reason: form.get("reason"),
                 }),
               });
-              await done("포인트 상태와 이력을 저장했습니다.");
-              close();
+              await complete("포인트 상태와 이력을 저장했습니다.");
             } catch (cause) {
               setError((cause as Error).message);
             } finally {
