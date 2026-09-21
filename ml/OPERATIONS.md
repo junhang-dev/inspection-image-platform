@@ -51,7 +51,7 @@ Mac 전경 모델 프로세스는 `docker compose up/down`에 포함되지 않�
 
 ## 선택적인 Linux CPU 컨테이너 제안
 
-현재 추론 코드는 CPU를 사용한다. 따라서 MPS 의존성 없이 Linux CPU 실행을 시도할 수 있지만 **이 Dockerfile의 build/run과 Linux 수치 일치는 아직 미검증**이다. 모델 파일은 약3.8MB지만 PyTorch/Python 이미지·의존성은 그보다 훨씬 크며, 처음 빌드에는 추가 다운로드·시간·디스크가 필요하다. Python base tag는3.11-slim-bookworm이며 digest까지 고정한 완전 재현 이미지는 아니다. 실제 빌드 후 digest와 환경을 기록해야 한다.
+현재 추론 코드는 CPU를 사용한다. 따라서 MPS 의존성 없이 Linux CPU 실행을 시도할 수 있지만 **Linux ARM64에서 실제 build/run, demo3장 수치 비교, stop/start를 검증했다**. 모델 파일은약3.8MB, 로컬이미지는1,034,742,007bytes(약0.964GiB)다. 최초패키지설치단계159초, 기동후메모리snapshot364.7MiB였다. 공식Python베이스는확인한digest로고정했다. Linux AMD64나미검증사진전체의수치동일성을주장하지않는다.
 
 공식 Python 이미지, PyTorch CPU index, PyPI 패키지를 받는 구성만 준비했다. 원본·가중치·manifest를 이미지에 넣거나 registry로 push하지 않는다.
 
@@ -64,7 +64,9 @@ docker run --name inspection-model-check --rm \
   --read-only --tmpfs /tmp:rw,nosuid,size=64m \
   --cap-drop ALL --security-opt no-new-privileges \
   --mount type=bind,src=/absolute/path/model.pt,dst=/models/model.pt,readonly \
-  -p 127.0.0.1:8002:8001 inspection-model:local
+  --mount type=bind,src=/absolute/path/final-freeze.local.json,dst=/models/final-freeze.json,readonly \
+  -p 127.0.0.1:8002:8001 inspection-model:local \
+  --host 0.0.0.0 --port 8001 --checkpoint /models/model.pt --contract /models/final-freeze.json
 ```
 
 `ml/.dockerignore`는 기본 전부 제외 후 명시된 추론 코드·계약·의존성 파일10개만 허용한다. Dockerfile의 COPY도 같은 파일로 제한한다. 가중치는 **읽기 전용 bind mount**로만 제공한다. non-root UID10001이 읽을 수 있는 로컬 파일인지 확인한다. 파일이 없거나 해시가 다르면 시작 실패가 정상이다. Linux에서도 모델·전처리 버전뿐 아니라 승인 demo의 등급·점수를 Mac 결과와 대조한 뒤 채택한다.
@@ -85,6 +87,13 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      - type: bind
+        source: ${MODEL_CONTRACT_PATH:?Set absolute local frozen contract path}
+        target: /models/final-freeze.json
+        read_only: true
+        bind:
+          create_host_path: false
+    command: ["--host", "0.0.0.0", "--port", "8001", "--checkpoint", "/models/model.pt", "--contract", "/models/final-freeze.json"]
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,size=64m
@@ -101,4 +110,10 @@ services:
 - 기존8001과8002의 승인 demo3장 응답 전체가 일치. 재시작 후에도 같은3장 응답이 보존됨.
 - 기존8001은 계속 ready, 가중치 SHA-256 불변. test 접근·재학습 없음.
 - 운영계약/기존API 테스트9개 통과, 독립 코드 검토에서 중요결함 없음.
-- Docker allowlist 정적 검사 통과. 실제 Docker build/run·Linux wheel 호환성·컨테이너 수치 일치는 미검증.
+- Docker allowlist 정적 검사 및 실제 Linux ARM64 build/run 통과. 실제 build context 전송12.17kB. 이미지 자체에가중치·비공개freeze·artifacts없음확인.
+- 공식Python base digest `sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b`.
+- 로컬image ID `sha256:7cccccbf011893a98eff0afa5c449741e0610ad940486f62f80f66f8b66aa76f`. Python3.11.16,torch2.14.0+cpu,torchvision0.29.0+cpu,Pillow12.3.0.
+- weights와비공개동결계약은실행시에만readonly bind mount. container readonly root, UID10001, CPU2/memory2GiB, 127.0.0.1:8002로검증.
+- Mac vs Linux demo3장 grade/model/preprocessing완전일치,confidence최대차1.1920928955078125e-7(사전허용오차1e-5이하).
+- 동일container stop→미준비확인→start후같은bytes3장응답완전보존. 검증container정리후기존8001유지,로컬이미지만보존.
+- 제품Compose에model서비스를실제통합한검증은별도제품담당범위다. 이작업에서제품Compose나현재8001을교체하지않았다.

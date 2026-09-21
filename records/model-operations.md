@@ -39,3 +39,7 @@ Mac모델프로세스는Compose라이프사이클밖이다. 터미널종료·Mac
 선택컨테이너는ml/만buildcontext로사용하고가중치를readonly mount해야한다. rootcontext/registry push/원본전송은수행하지않았다. basePython tag는digest고정상태가아니므로실제채택시이미지digest·플랫폼·패키지·demo응답동일성을기록해야한다.
 
 모델성능은기존train99.57% PASS / test60%(기준70%) FAIL 그대로다. 운영재현성PASS를성능합격으로해석하지않는다. Git전담과슬롯조율후공개코드·요약기록만커밋한다.
+
+## 후속 승인에 따른 실제 Linux 검증
+
+위 최초 인계 이후 허브가 같은 로컬 범위의 Docker build/run까지 명시 승인했다. 실제 Linux ARM64 검증이 완료되어 앞의 Docker 미검증 항목은 후속 검증 범위에 한해 해소됐다. 상세는 `records/model-docker-verification.md`와 최신 `ml/OPERATIONS.md`를 참조한다. 제품 Compose에 모델 서비스를 통합하거나 현재8001을 교체한 것은 아니다.
