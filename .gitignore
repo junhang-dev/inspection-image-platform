@@ -1,5 +1,23 @@
-# 회사 사진·참고 그림·학습 자료는 로컬에서만 사용한다.
-/image/
+# 원본은 로컬 보존. 공개 사진은 지정한 demo 복제본만 허용한다.
+/image/*
+!/image/demo/
+/image/demo/*
+!/image/demo/demo-01.jpg
+!/image/demo/demo-02.png
+!/image/demo/demo-03.jpg
+!/image/demo/demo-04.jpg
+!/image/demo/demo-05.jpg
+
+# 합의한 참고 그림만 공유한다. 파일명은 그대로 유지한다.
+/ref/*
+!/ref/before.png
+!/ref/after.png
+!/ref/inspection-image-platform-architecture.png
+!/ref/등급판정기준.png
+!/ref/3d map.png
+!/ref/map 기반 드론 자동 점검 연동 향후 계획.png
+
+# 로컬 데이터·업로드·DB·모델 산출물
 /images/
 /data/
 /datasets/
@@ -13,43 +31,21 @@
 /private/
 /work/
 /outputs/
-*.local
-*.local.*
-*.[pP][nN][gG]
-*.[jJ][pP][gG]
-*.[jJ][pP][eE][gG]
-*.[gG][iI][fF]
-*.[wW][eE][bB][pP]
-*.[bB][mM][pP]
-*.[tT][iI][fF]
-*.[tT][iI][fF][fF]
-*.[hH][eE][iI][cC]
-*.[hH][eE][iI][fF]
-*.[aA][vV][iI][fF]
-*.[mM][pP][oO]
-*.csv
-*.tsv
-*.xlsx
-*.xls
-*.parquet
-*.arrow
-*.feather
-*.ipynb
-*.pdf
-*.pptx
-*.mp4
-*.mov
-*.zip
-*.tar
-*.gz
-
-# 모델 가중치·학습 산출물. 모델 구현 코드는 검토 후 기록 가능하다.
+/logs/
 /weights/
 /model-weights/
 /checkpoints/
 /runs/
 /wandb/
 /mlruns/
+*.local
+*.local.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 *.pt
 *.pth
 *.ckpt
@@ -69,7 +65,8 @@
 *.pickle
 *.joblib
 
-# 비밀·인증 파일. 예제는 가짜 값만 사용하고 추가 전 내용을 확인한다.
+# 개인 실행 설정·비밀. .env.example에는 가짜 값만 작성한다.
+.codex/
 .env
 .env.*
 !.env.example
@@ -85,7 +82,7 @@ service-account*.json
 .aws/
 .ssh/
 
-# 의존성·캐시·빌드·실행 결과
+# 의존성·캐시·빌드. records/의 실제 행사 기록은 별도로 검토해 추가한다.
 node_modules/
 .pnpm-store/
 .next/
@@ -108,13 +105,6 @@ htmlcov/
 coverage/
 dist/
 build/
-*.log
-*.db
-*.db-*
-*.sqlite
-*.sqlite-*
-*.sqlite3
-*.sqlite3-*
 .DS_Store
 .idea/
 .vscode/
