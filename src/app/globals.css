@@ -9,6 +9,79 @@
     Inter, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
     "Noto Sans KR", "Malgun Gothic", sans-serif;
 }
+.plan-title-link {
+  text-align: left;
+  font-weight: 650;
+  white-space: normal;
+}
+.plan-list .plan-title-link {
+  flex: 1;
+}
+.photo-plan-name {
+  display: block;
+  margin-bottom: 5px;
+}
+.plan-detail-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.plan-detail-summary h3 {
+  margin: 10px 0 6px;
+  font-size: 23px;
+}
+.plan-detail-summary p,
+.plan-point-row p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.plan-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  margin-top: 24px;
+}
+.plan-points h3,
+.plan-point-entry h3,
+.plan-photos h3 {
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+.plan-point-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 15px;
+  margin-top: 12px;
+}
+.plan-point-row p {
+  margin: 5px 0;
+}
+.plan-point-row button {
+  margin-top: 12px;
+}
+.plan-point-entry fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.plan-point-entry h4 {
+  margin: 0 0 16px;
+}
+.plan-photos {
+  margin: 26px 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 800px) {
+  .plan-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 * {
   box-sizing: border-box;
 }

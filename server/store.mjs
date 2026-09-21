@@ -1,5 +1,6 @@
 import mysql from "mysql2/promise";
 import { randomUUID } from "node:crypto";
+import { planPointIds } from "./relations.mjs";
 
 export const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || "127.0.0.1",
@@ -26,24 +27,44 @@ export async function initializeStore() {
 }
 const decode = (value) =>
   typeof value === "string" ? JSON.parse(value) : value;
-export function decodeEntity(value) {
+export function decodeEntity(value, kind) {
   const data = decode(value);
-  return { ...data, editVersion: data.editVersion ?? 0 };
+  return {
+    ...data,
+    editVersion: data.editVersion ?? 0,
+    ...(kind === "plan" ? { pointIds: planPointIds(data) } : {}),
+    ...(kind === "inspection" ? { planId: data.planId ?? null } : {}),
+    ...(kind === "point"
+      ? {
+          rackId: data.rackId ?? null,
+          virtualPosition: data.virtualPosition ?? null,
+          locationSource: data.locationSource ?? "unconfirmed",
+        }
+      : {}),
+  };
 }
 const fail = (status, message) => Object.assign(new Error(message), { status });
-export async function list(kind) {
+export async function list(kind, filters = {}) {
+  const where = ["kind = ?"];
+  const values = [kind];
+  if (kind === "inspection" && Object.hasOwn(filters, "planId")) {
+    where.push(
+      "COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.planId')), 'null'), '') = ?",
+    );
+    values.push(filters.planId || "");
+  }
   const [rows] = await pool.execute(
-    "SELECT data FROM entities WHERE kind = ? ORDER BY created_at DESC LIMIT 1000",
-    [kind],
+    `SELECT data FROM entities WHERE ${where.join(" AND ")} ORDER BY created_at DESC LIMIT 1000`,
+    values,
   );
-  return rows.map((row) => decodeEntity(row.data));
+  return rows.map((row) => decodeEntity(row.data, kind));
 }
 export async function get(kind, id) {
   const [rows] = await pool.execute(
     "SELECT data FROM entities WHERE kind = ? AND id = ?",
     [kind, id],
   );
-  return rows[0] ? decodeEntity(rows[0].data) : null;
+  return rows[0] ? decodeEntity(rows[0].data, kind) : null;
 }
 export async function events(id) {
   const [rows] = await pool.execute(
@@ -144,7 +165,7 @@ export async function update(
       await connection.rollback();
       return null;
     }
-    const before = decodeEntity(rows[0].data);
+    const before = decodeEntity(rows[0].data, kind);
     if (!inference && before.editVersion !== expectedVersion)
       throw fail(
         409,

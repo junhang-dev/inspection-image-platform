@@ -18,6 +18,7 @@ import {
   pool,
   decodeEntity,
 } from "./store.mjs";
+import { locations, planPointIds, pointLocation } from "./relations.mjs";
 
 const app = express();
 const demoMode = process.env.PUBLIC_DEMO_ONLY === "1";
@@ -67,12 +68,14 @@ const expectedVersion = z
 const pointSchema = z.object({
   equipment: field.default(""),
   rack: field.default(""),
+  rackId: z.string().nullable().default(null),
   name: field.default(""),
 });
 const pointPatch = z
   .object({
     equipment: field.optional(),
     rack: field.optional(),
+    rackId: z.string().nullable().optional(),
     name: field.optional(),
     repairStatus: z.enum(["none", "review", "progress", "done"]).optional(),
     managed: z.boolean().optional(),
@@ -85,6 +88,7 @@ const pointPatch = z
 const inspectionPatch = z
   .object({
     pointId: z.string().uuid().nullable().optional(),
+    planId: z.string().uuid().nullable().optional(),
     humanGrade: z.number().int().min(1).max(5).nullable().optional(),
     retake: z.boolean().optional(),
     retakeReason: z.string().trim().max(1000).optional(),
@@ -101,6 +105,20 @@ const predictionSchema = z.object({
   preprocessing_version: z.string().min(1),
 });
 const fail = (status, message) => Object.assign(new Error(message), { status });
+async function validatePhotoRelation(planId, pointId) {
+  if (pointId && !(await get("point", pointId)))
+    throw fail(422, "연결할 포인트를 찾을 수 없습니다. 다시 선택하세요.");
+  if (!planId) return;
+  const plan = await get("plan", planId);
+  if (!plan) throw fail(422, "검사 계획을 찾을 수 없습니다. 다시 선택하세요.");
+  if (!pointId || !planPointIds(plan).includes(pointId))
+    throw fail(422, "검사 계획에 연결된 포인트를 선택하세요.");
+}
+async function validatePlanPoints(ids) {
+  for (const id of ids)
+    if (!(await get("point", id)))
+      throw fail(422, "연결할 포인트를 다시 선택하세요.");
+}
 
 app.get("/api/health", async (req, res) => {
   const dependencies = await Promise.allSettled([
@@ -143,31 +161,51 @@ app.get("/api/demo/:name", async (req, res) => {
     throw fail(500, "시연 사진 해시가 변경되었습니다.");
   res.type(file.name.endsWith(".png") ? "image/png" : "image/jpeg").send(bytes);
 });
+app.get("/api/locations", (req, res) => res.json(locations));
 app.get("/api/points", async (req, res) => res.json(await list("point")));
 app.post("/api/points", async (req, res) => {
   const input = pointSchema.parse(req.body);
+  const location = pointLocation(input.rackId, randomUUID(), input.rack);
   const existing = (await list("point")).find(
     (p) =>
       p.equipment === input.equipment &&
-      p.rack === input.rack &&
+      p.rackId === location.rackId &&
+      p.rack === location.rack &&
       p.name === input.name,
   );
   if (existing) return res.json(existing);
-  res
-    .status(201)
-    .json(
-      await insert(
-        "point",
-        { ...input, repairStatus: "none", managed: false, ta: false },
-        "현업 엔지니어",
-        "포인트 등록",
-      ),
-    );
+  res.status(201).json(
+    await insert(
+      "point",
+      {
+        ...input,
+        ...location,
+        repairStatus: "none",
+        managed: false,
+        ta: false,
+      },
+      "현업 엔지니어",
+      "포인트 등록",
+    ),
+  );
 });
 app.patch("/api/points/:id", async (req, res) => {
   const { actor, reason, expectedVersion, ...patch } = pointPatch.parse(
     req.body,
   );
+  const current = await get("point", req.params.id);
+  if (!current) throw fail(404, "포인트를 찾을 수 없습니다.");
+  if (Object.hasOwn(patch, "rackId") && patch.rackId !== current.rackId)
+    Object.assign(
+      patch,
+      pointLocation(patch.rackId, current.id, patch.rack ?? current.rack),
+    );
+  else if (
+    current.rackId &&
+    Object.hasOwn(patch, "rack") &&
+    patch.rack !== current.rack
+  )
+    throw fail(422, "팀에 속한 파이프랙은 이름만 변경할 수 없습니다.");
   const result = await update("point", req.params.id, patch, actor, reason, {
     expectedVersion,
   });
@@ -177,9 +215,20 @@ app.patch("/api/points/:id", async (req, res) => {
 app.get("/api/points/:id/history", async (req, res) =>
   res.json(await events(req.params.id)),
 );
-app.get("/api/inspections", async (req, res) =>
-  res.json(await list("inspection")),
-);
+app.get("/api/inspections", async (req, res) => {
+  const scope = z
+    .union([z.string().uuid(), z.literal("unassigned")])
+    .optional()
+    .parse(req.query.planId);
+  res.json(
+    await list(
+      "inspection",
+      scope === undefined
+        ? {}
+        : { planId: scope === "unassigned" ? null : scope },
+    ),
+  );
+});
 async function withDemoLock(callback) {
   const connection = await pool.getConnection();
   const name = `${process.env.MYSQL_DATABASE || "inspection"}:demo-upload`;
@@ -205,17 +254,18 @@ async function withDemoLock(callback) {
     }
   }
 }
-async function saveUploads(files, pointId, reuseDemo) {
+async function saveUploads(files, pointId, reuseDemo, planId = null) {
   const byHash = new Map();
   if (reuseDemo) {
     const [rows] = await pool.execute(
       `SELECT data FROM entities WHERE kind = 'inspection'
       AND COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.pointId')), 'null'), '') = ?
+      AND COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.planId')), 'null'), '') = ?
       ORDER BY created_at ASC`,
-      [pointId || ""],
+      [pointId || "", planId || ""],
     );
     for (const row of rows) {
-      const photo = decodeEntity(row.data);
+      const photo = decodeEntity(row.data, "inspection");
       if (!byHash.has(photo.sha256)) byHash.set(photo.sha256, photo);
     }
   }
@@ -245,6 +295,7 @@ async function saveUploads(files, pointId, reuseDemo) {
         size: file.size,
         mime: file.mime,
         pointId,
+        planId,
         status: "pending",
         ai: null,
         humanGrade: null,
@@ -308,12 +359,14 @@ async function validateImages(files, demoRequest) {
   }
 }
 app.post("/api/demo-inspections", async (req, res) => {
-  const { pointId } = z
-    .object({ pointId: z.string().uuid().nullable().default(null) })
+  const { pointId, planId } = z
+    .object({
+      pointId: z.string().uuid().nullable().default(null),
+      planId: z.string().uuid().nullable().default(null),
+    })
     .strict()
     .parse(req.body);
-  if (pointId && !(await get("point", pointId)))
-    throw fail(422, "연결할 포인트가 없습니다. 다시 선택하세요.");
+  await validatePhotoRelation(planId, pointId);
   const files = await Promise.all(
     demoFiles.map(async (file) => {
       const buffer = await readFile(
@@ -323,7 +376,9 @@ app.post("/api/demo-inspections", async (req, res) => {
     }),
   );
   await validateImages(files, true);
-  const result = await withDemoLock(() => saveUploads(files, pointId, true));
+  const result = await withDemoLock(() =>
+    saveUploads(files, pointId, true, planId),
+  );
   res
     .status(
       result.some((photo) => photo.uploadOutcome === "created") ? 201 : 200,
@@ -334,11 +389,18 @@ app.post("/api/inspections", upload.array("images", 10), async (req, res) => {
   if (!req.files?.length)
     throw fail(400, "사진이 없습니다. JPG 또는 PNG 사진을 선택하세요.");
   const demoRequest = demoMode || req.body.demo === "1";
-  const pointId = req.body.pointId || null;
-  if (pointId && !(await get("point", pointId)))
-    throw fail(422, "연결할 포인트가 없습니다. 다시 선택하세요.");
+  const { pointId, planId } = z
+    .object({
+      pointId: z.string().uuid().nullable(),
+      planId: z.string().uuid().nullable(),
+    })
+    .parse({
+      pointId: req.body.pointId || null,
+      planId: req.body.planId || null,
+    });
+  await validatePhotoRelation(planId, pointId);
   await validateImages(req.files, demoRequest);
-  const save = () => saveUploads(req.files, pointId, demoRequest);
+  const save = () => saveUploads(req.files, pointId, demoRequest, planId);
   const result = demoRequest ? await withDemoLock(save) : await save();
   res
     .status(
@@ -391,8 +453,10 @@ app.patch("/api/inspections/:id", async (req, res) => {
   );
   const current = await get("inspection", req.params.id);
   if (!current) throw fail(404, "사진을 찾을 수 없습니다.");
-  if (patch.pointId && !(await get("point", patch.pointId)))
-    throw fail(422, "연결할 포인트를 찾을 수 없습니다.");
+  await validatePhotoRelation(
+    Object.hasOwn(patch, "planId") ? patch.planId : current.planId,
+    Object.hasOwn(patch, "pointId") ? patch.pointId : current.pointId,
+  );
   if (
     (patch.retake ?? current.retake) &&
     !(patch.retakeReason ?? current.retakeReason).trim()
@@ -421,6 +485,11 @@ app.post("/api/inspections/:id/retry", async (req, res) => {
   );
 });
 app.get("/api/plans", async (req, res) => res.json(await list("plan")));
+app.get("/api/plans/:id", async (req, res) => {
+  const plan = await get("plan", req.params.id);
+  if (!plan) throw fail(404, "계획이 없습니다.");
+  res.json(plan);
+});
 app.get("/api/plans/:id/history", async (req, res) =>
   res.json(await events(req.params.id)),
 );
@@ -429,7 +498,8 @@ app.post("/api/plans", async (req, res) => {
     .object({
       title: z.string().trim().min(1).max(120),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      pointId: z.string().uuid().nullable(),
+      pointId: z.string().uuid().nullable().default(null),
+      pointIds: z.array(z.string().uuid()).optional(),
       note: z.string().max(1000).default(""),
     })
     .parse(req.body);
@@ -438,14 +508,16 @@ app.post("/api/plans", async (req, res) => {
     new Date(input.date).toISOString().slice(0, 10) !== input.date
   )
     throw fail(422, "올바른 날짜를 선택하세요.");
-  if (input.pointId && !(await get("point", input.pointId)))
-    throw fail(422, "포인트를 다시 선택하세요.");
+  const pointIds = planPointIds(input);
+  if (input.pointId && !pointIds.includes(input.pointId))
+    throw fail(422, "계획의 포인트 선택이 서로 다릅니다. 다시 선택하세요.");
+  await validatePlanPoints(pointIds);
   res
     .status(201)
     .json(
       await insert(
         "plan",
-        { ...input, status: "planned" },
+        { ...input, pointIds, pointId: pointIds[0] || null, status: "planned" },
         "현업 엔지니어",
         "검사 계획 등록",
       ),
@@ -454,17 +526,37 @@ app.post("/api/plans", async (req, res) => {
 app.patch("/api/plans/:id", async (req, res) => {
   const input = z
     .object({
-      status: z.enum(["planned", "done", "cancelled"]),
+      status: z.enum(["planned", "done", "cancelled"]).optional(),
+      pointIds: z.array(z.string().uuid()).optional(),
       expectedVersion,
       actor,
       reason,
     })
     .strict()
+    .refine(
+      (input) => input.status !== undefined || input.pointIds !== undefined,
+      "변경할 내용을 선택하세요.",
+    )
     .parse(req.body);
+  const current = await get("plan", req.params.id);
+  if (!current) throw fail(404, "계획이 없습니다.");
+  if (current.editVersion !== input.expectedVersion)
+    throw fail(
+      409,
+      "다른 화면에서 검사 계획을 수정하여 저장하지 못했습니다. 입력은 유지됩니다. 최신 계획에서 포인트 연결 여부를 확인해 주세요.",
+    );
+  const patch = input.status === undefined ? {} : { status: input.status };
+  if (input.pointIds !== undefined) {
+    const pointIds = [...new Set(input.pointIds)];
+    if (planPointIds(current).some((id) => !pointIds.includes(id)))
+      throw fail(422, "기존 검사 포인트의 연결은 유지해야 합니다.");
+    await validatePlanPoints(pointIds);
+    Object.assign(patch, { pointIds, pointId: pointIds[0] || null });
+  }
   const result = await update(
     "plan",
     req.params.id,
-    { status: input.status },
+    patch,
     input.actor,
     input.reason,
     { expectedVersion: input.expectedVersion },
