@@ -62,6 +62,8 @@ docker build -f ml/Dockerfile -t inspection-model:local ./ml
 # 제품8001과 겹치지 않는 선택적 검증 예시. 실행할 때 절대경로를 넣는다.
 docker run --name inspection-model-check --rm \
   --read-only --tmpfs /tmp:rw,nosuid,size=64m \
+  -e TMPDIR=/uploads-tmp \
+  --mount type=bind,src=/absolute/path/model-upload-tmp,dst=/uploads-tmp \
   --cap-drop ALL --security-opt no-new-privileges \
   --mount type=bind,src=/absolute/path/model.pt,dst=/models/model.pt,readonly \
   --mount type=bind,src=/absolute/path/final-freeze.local.json,dst=/models/final-freeze.json,readonly \
@@ -70,6 +72,8 @@ docker run --name inspection-model-check --rm \
 ```
 
 `ml/.dockerignore`는 기본 전부 제외 후 명시된 추론 코드·계약·의존성 파일10개만 허용한다. Dockerfile의 COPY도 같은 파일로 제한한다. 가중치는 **읽기 전용 bind mount**로만 제공한다. non-root UID10001이 읽을 수 있는 로컬 파일인지 확인한다. 파일이 없거나 해시가 다르면 시작 실패가 정상이다. Linux에서도 모델·전처리 버전뿐 아니라 승인 demo의 등급·점수를 Mac 결과와 대조한 뒤 채택한다.
+
+`model-upload-tmp`는 전용 로컬 디스크 디렉터리로 미리 만들고 UID10001의 읽기·쓰기 권한을 제공한다. 원본·DB·가중치 디렉터리를 임시 저장소로 사용하지 않는다. 이 경로는 외부에 공개하거나 Git에 넣지 않는다. `TMPDIR`가 디스크 볼륨을 가리키므로64MiB `/tmp` tmpfs가 업로드 저장 공간을 제한하지 않는다. 쓰기 불가·디스크 부족은503 `upload_storage_unavailable`로 처리한다. 정상 완료·오류·연결 중단 뒤 임시 파일을 닫고, 진행 중인 디스크 I/O나 추론은 끝난 뒤 닫는다. 강제 OS종료의 파일 정리는 운영 환경에 따라 별도 확인해야 한다.
 
 제품 담당의 Compose 선택안(직접 적용하지 않음):
 
@@ -80,7 +84,14 @@ services:
     build:
       context: ./ml
       dockerfile: Dockerfile
+    environment:
+      TMPDIR: /uploads-tmp
     volumes:
+      - type: bind
+        source: ${MODEL_UPLOAD_TMP_PATH:?Set absolute writable local temporary directory}
+        target: /uploads-tmp
+        bind:
+          create_host_path: false
       - type: bind
         source: ${MODEL_WEIGHTS_PATH:?Set absolute local frozen checkpoint path}
         target: /models/model.pt
@@ -117,3 +128,5 @@ services:
 - Mac vs Linux demo3장 grade/model/preprocessing완전일치,confidence최대차1.1920928955078125e-7(사전허용오차1e-5이하).
 - 동일container stop→미준비확인→start후같은bytes3장응답완전보존. 검증container정리후기존8001유지,로컬이미지만보존.
 - 제품Compose에model서비스를실제통합한검증은별도제품담당범위다. 이작업에서제품Compose나현재8001을교체하지않았다.
+
+위 Linux 이미지 ID와 수치 대조는 스트리밍 변경 이전 검증이다. 최신 스트리밍 API의 Mac 검증 및 적용 상태는 [스트리밍 기록](../records/model-streaming-upload.md)을 따른다. 제품 Compose의 임시 디스크 볼륨 연결과 새 이미지 실행은 제품 통합 시 검증해야 한다.
