@@ -375,3 +375,33 @@ test("느린 청크 네 개가 수신 중이면 추가 수신은 DB 연결을 �
   );
   assert.equal(last.offset, fixture.length);
 });
+
+test("기록 목적은 전송 재시도 중 바뀌지 않고 기존 미분류 세션은 업무 검사로 이어진다", async (t) => {
+  const x = await setup(t, fixture);
+  delete x.db.state().sessions.get(x.input.id).recordPurpose;
+  assert.equal(
+    (await x.service.initialize({ ...x.input, recordPurpose: "inspection" }))
+      .recordPurpose,
+    "inspection",
+  );
+  await assert.rejects(
+    x.service.initialize({ ...x.input, recordPurpose: "verification" }),
+    { status: 409 },
+  );
+  await x.send();
+  assert.equal(
+    (await x.service.finish(x.input.id)).photo.recordPurpose,
+    "inspection",
+  );
+  const input = { ...x.input, id: randomUUID(), recordPurpose: "verification" };
+  await x.service.initialize(input);
+  await x.service.chunk(input.id, 0, hash(fixture), Readable.from([fixture]));
+  const saved = await x.service.finish(input.id);
+  assert.equal(saved.photo.recordPurpose, "verification");
+  assert.equal(saved.photo.visibility, "visible");
+  assert.equal((await x.service.initialize(input)).photo.id, saved.photo.id);
+  await assert.rejects(
+    x.service.initialize({ ...input, recordPurpose: "presentation" }),
+    { status: 409 },
+  );
+});

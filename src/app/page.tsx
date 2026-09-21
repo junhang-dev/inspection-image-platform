@@ -9,7 +9,15 @@ import {
   type UploadSession,
 } from "@/lib/upload";
 import locations from "@/lib/virtual-locations.json";
-import { conceptPosition, visibleMapPoints } from "@/lib/concept-map";
+import InspectionMap from "@/components/InspectionMap";
+import {
+  defaultPhotoScope,
+  usePhotoQuery,
+  usePhotoRecord,
+  type Photo,
+  type PhotoScope,
+  type PhotoPage,
+} from "@/lib/photo-query";
 import { requestJson } from "@/lib/api";
 
 import {
@@ -54,6 +62,7 @@ import {
 
 type Point = {
   id: string;
+  recordPurpose: Photo["recordPurpose"];
   editVersion: number;
   equipment: string;
   rack: string;
@@ -65,28 +74,9 @@ type Point = {
   managed: boolean;
   ta: boolean;
 };
-type Photo = {
-  id: string;
-  editVersion: number;
-  name: string;
-  pointId: string | null;
-  planId: string | null;
-  status: "pending" | "processing" | "done" | "error";
-  ai: {
-    grade: number;
-    confidence: number;
-    model_version: string;
-    preprocessing_version: string;
-  } | null;
-  humanGrade: number | null;
-  retake: boolean;
-  retakeReason: string;
-  labeling: boolean;
-  error: string | null;
-  createdAt: string;
-};
 type Plan = {
   id: string;
+  recordPurpose: Photo["recordPurpose"];
   editVersion: number;
   title: string;
   date: string;
@@ -225,69 +215,30 @@ function useDialogCompletion(
   };
 }
 
-function usePlanPhotos(planId: string | null) {
-  const [result, setResult] = useState<{
-    scope: string | null;
-    photos: Photo[];
-    error: string;
-    loaded: boolean;
-  }>({ scope: null, photos: [], error: "", loaded: false });
-  useEffect(() => {
-    if (!planId) return;
-    let active = true;
-    let pending = false;
-    const controller = new AbortController();
-    const load = async () => {
-      if (pending) return;
-      pending = true;
-      try {
-        const photos = await api<Photo[]>(
-          `/inspections?planId=${encodeURIComponent(planId)}`,
-          {
-            signal: AbortSignal.any([
-              controller.signal,
-              AbortSignal.timeout(10000),
-            ]),
-          },
-        );
-        if (active)
-          setResult({ scope: planId, photos, error: "", loaded: true });
-      } catch (cause) {
-        if (active)
-          setResult((previous) => ({
-            scope: planId,
-            photos: previous.scope === planId ? previous.photos : [],
-            error: (cause as Error).message,
-            loaded: previous.scope === planId && previous.loaded,
-          }));
-      } finally {
-        pending = false;
-      }
-    };
-    void load();
-    const timer = setInterval(load, 3000);
-    return () => {
-      active = false;
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [planId]);
-  return result.scope === planId
-    ? result
-    : { scope: planId, photos: [], error: "", loaded: false };
-}
-
 export default function Home() {
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [photos, setPhotos] = useState<Photo[]>([]);
   const [points, setPoints] = useState<Point[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState<Toast | null>(null);
-  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<PhotoScope>(defaultPhotoScope);
   const [filter, setFilter] = useState("all");
-  const [planFilter, setPlanFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const photoList = usePhotoQuery({
+    ...scope,
+    classification: filter,
+    labeling: tab === "labels" ? "true" : "all",
+    page,
+  });
+  const photos = photoList.data?.items ?? [];
+  const summary = photoList.data?.summary;
+  const changeScope = (next: PhotoScope) => {
+    setScope(next);
+    setPage(1);
+    setMapPoint(null);
+  };
+  const [newPointRack, setNewPointRack] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadContext, setUploadContext] = useState<{
     plan: Plan;
@@ -300,21 +251,68 @@ export default function Home() {
   const [month, setMonth] = useState(
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
-  const [mapPoint, setMapPoint] = useState("");
-  const selectedMapPoint = points.find((point) => point.id === mapPoint);
-  const displayedMapPoints = visibleMapPoints(points, mapPoint);
+  const [mapPoint, setMapPoint] = useState<string | null>(null);
+  const selectedPlan = plans.find((plan) => plan.id === scope.planId);
+  const visiblePlans = plans.filter(
+    (plan) =>
+      scope.recordPurpose === "all" ||
+      (plan.recordPurpose ?? "inspection") === scope.recordPurpose,
+  );
+  const scopePoints = points.filter((point) => {
+    if (
+      scope.recordPurpose !== "all" &&
+      (point.recordPurpose ?? "inspection") !== scope.recordPurpose &&
+      !photoList.data?.pointCounts[point.id]
+    )
+      return false;
+    if (
+      scope.planId !== "all" &&
+      scope.planId !== "unassigned" &&
+      !selectedPlan?.pointIds.includes(point.id)
+    )
+      return false;
+    if (scope.planId === "unassigned" && !photoList.data?.pointCounts[point.id])
+      return false;
+    if (scope.rackId !== "all" && point.rackId !== scope.rackId) return false;
+    if (
+      scope.teamId !== "all" &&
+      !locations.racks.some(
+        (rack) => rack.id === point.rackId && rack.teamId === scope.teamId,
+      )
+    )
+      return false;
+    if (
+      (scope.search || scope.visibility !== "visible") &&
+      !photoList.data?.pointCounts[point.id]
+    )
+      return false;
+    return true;
+  });
+  const dependentMapScope =
+    scope.planId === "unassigned" ||
+    !!scope.search ||
+    scope.recordPurpose !== "inspection" ||
+    scope.visibility !== "visible" ||
+    points.some((point) => point.recordPurpose !== "inspection");
+  const mapScopePending = dependentMapScope && !photoList.loaded;
+  const pointCounts = photoList.data
+    ? Object.fromEntries(
+        scopePoints.map((point) => [
+          point.id,
+          photoList.data!.pointCounts[point.id] ?? 0,
+        ]),
+      )
+    : undefined;
   const loading = useRef(false);
   const refresh = useCallback(async () => {
     if (loading.current) return;
     loading.current = true;
     try {
-      const [p, s, c, h] = await Promise.all([
-        api<Photo[]>("/inspections"),
-        api<Point[]>("/points"),
-        api<Plan[]>("/plans"),
+      const [s, c, h] = await Promise.all([
+        api<Point[]>("/points?recordPurpose=all"),
+        api<Plan[]>("/plans?recordPurpose=all"),
         api<Health>("/health"),
       ]);
-      setPhotos(p);
       setPoints(s);
       setPlans(c);
       setHealth(h);
@@ -340,6 +338,7 @@ export default function Home() {
   }, [toast]);
   const notify = async (message: string, tone: ToastTone = "success") => {
     setToast({ tone, message });
+    photoList.refresh();
     await refresh();
   };
   const reportHistoryError = useCallback((message: string) => {
@@ -351,32 +350,6 @@ export default function Home() {
   const selectPoint = async (point: Point) => {
     setPointDetail(point);
   };
-  const active = photos.filter((p) => (gradeOf(p) || 0) >= 3);
-  const pending = photos.filter((p) =>
-    ["pending", "processing"].includes(p.status),
-  );
-  const retakes = photos.filter((p) => p.retake);
-  const scopedPhotos = usePlanPhotos(
-    (tab === "photos" || tab === "labels") && planFilter !== "all"
-      ? planFilter
-      : null,
-  );
-  const visible = (planFilter === "all" ? photos : scopedPhotos.photos)
-    .filter((p) =>
-      `${p.name} ${pointName(points.find((x) => x.id === p.pointId))}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
-    )
-    .filter((p) => tab !== "labels" || p.labeling)
-    .filter(
-      (p) =>
-        filter === "all" ||
-        (filter === "repair"
-          ? (gradeOf(p) || 0) >= 3
-          : filter === "retake"
-            ? p.retake
-            : p.status === filter),
-    );
   const pageTitle = nav.find((item) => item.id === tab)?.label;
   const daysInMonth = new Date(
     month.getFullYear(),
@@ -387,9 +360,8 @@ export default function Home() {
     `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const go = (target: Tab) => {
     setTab(target);
-    setQuery("");
     setFilter("all");
-    setPlanFilter("all");
+    setPage(1);
   };
   const uploadForPlan = (plan: Plan, point?: Point) => {
     setPlanDetail(null);
@@ -399,7 +371,7 @@ export default function Home() {
   const viewPlanPhotos = (plan: Plan) => {
     setPlanDetail(null);
     go("photos");
-    setPlanFilter(plan.id);
+    changeScope({ ...defaultPhotoScope, planId: plan.id });
   };
 
   return (
@@ -431,10 +403,6 @@ export default function Home() {
             >
               <Icon size={19} />
               <span>{label}</span>
-              {id === "labels" &&
-                photos.filter((p) => p.labeling).length > 0 && (
-                  <b>{photos.filter((p) => p.labeling).length}</b>
-                )}
             </button>
           ))}
         </nav>
@@ -468,7 +436,10 @@ export default function Home() {
             </span>
             <button
               className="icon-button"
-              onClick={refresh}
+              onClick={() => {
+                photoList.refresh();
+                void refresh();
+              }}
               aria-label="새로고침"
             >
               <RefreshCw size={18} />
@@ -519,7 +490,14 @@ export default function Home() {
                 서버에 연결하지 못했습니다. 잠시 뒤 다시 연결하세요.{" "}
                 <small>{error}</small>
               </span>
-              <button onClick={refresh}>다시 연결</button>
+              <button
+                onClick={() => {
+                  photoList.refresh();
+                  void refresh();
+                }}
+              >
+                다시 연결
+              </button>
             </div>
           )}
           {!health?.model?.ready && !error && (
@@ -538,243 +516,145 @@ export default function Home() {
               기록하세요.
             </span>
           </div>
+          {["dashboard", "photos", "labels", "points", "worklist"].includes(
+            tab,
+          ) && (
+            <PhotoScopeFields
+              scope={scope}
+              plans={plans}
+              change={changeScope}
+            />
+          )}
+          {photoList.error &&
+            ["dashboard", "photos", "labels", "points", "worklist"].includes(
+              tab,
+            ) && (
+              <div className="notice error" role="alert">
+                <span>
+                  사진 조회 실패: {photoList.error}
+                  {photoList.loaded
+                    ? " · 마지막 조회 결과입니다."
+                    : " · 건수 미조회"}
+                </span>
+                <button onClick={photoList.refresh}>다시 조회</button>
+              </div>
+            )}
           {tab === "dashboard" && (
             <>
               <div className="stats-grid">
                 {[
                   {
                     name: "전체 검사 사진",
-                    value: photos.length,
+                    value: summary?.total,
+                    classification: "all",
                     note: "저장된 원본 사진",
                     icon: Camera,
                     color: "teal",
                   },
                   {
                     name: "보수 필요 분류",
-                    value: active.length,
+                    value: summary?.repair,
+                    classification: "repair",
                     note: "시각적 3~5등급",
                     icon: Wrench,
                     color: "orange",
                   },
                   {
                     name: "AI 판독 대기·진행",
-                    value: pending.length,
+                    value: summary?.pending,
+                    classification: "pending",
                     note: "백그라운드 처리",
                     icon: Clock3,
                     color: "blue",
                   },
                   {
                     name: "재촬영 필요",
-                    value: retakes.length,
+                    value: summary?.retake,
+                    classification: "retake",
                     note: "사유 확인 후 후속 관리",
                     icon: RefreshCw,
                     color: "purple",
                   },
-                ].map(({ name, value, note, icon: Icon, color }) => (
-                  <div className="stat-card" key={name}>
-                    <span className={`stat-icon ${color}`}>
-                      <Icon size={20} />
-                    </span>
-                    <p>{name}</p>
-                    <strong>
-                      {health?.ready ? value : "—"}
-                      <small>{health?.ready ? "장" : "미조회"}</small>
-                    </strong>
-                    <span className="stat-note">{note}</span>
-                  </div>
-                ))}
+                ].map(
+                  ({
+                    name,
+                    value,
+                    note,
+                    icon: Icon,
+                    color,
+                    classification,
+                  }) => (
+                    <button
+                      className="stat-card"
+                      key={name}
+                      onClick={() => {
+                        setTab("photos");
+                        setFilter(classification);
+                        setPage(1);
+                      }}
+                    >
+                      <span className={`stat-icon ${color}`}>
+                        <Icon size={20} />
+                      </span>
+                      <p>{name}</p>
+                      <strong>
+                        {value ?? "—"}
+                        <small>
+                          {value !== undefined
+                            ? `장${photoList.error ? " · 마지막 조회" : ""}`
+                            : "미조회"}
+                        </small>
+                      </strong>
+                      <span className="stat-note">{note} · 목록 보기</span>
+                    </button>
+                  ),
+                )}
               </div>
               <div className="dashboard-grid">
                 <section className="panel map-panel">
                   <div className="panel-title">
                     <div>
-                      <h2>
-                        검사 포인트 맵{" "}
-                        <span className="badge muted">예시 3D</span>
-                      </h2>
-                      <p>설비·랙별 모형 위치입니다. 실제 좌표가 아닙니다.</p>
-                    </div>
-                    <select
-                      aria-label="맵 포인트 선택"
-                      value={mapPoint}
-                      onChange={(e) => setMapPoint(e.target.value)}
-                    >
-                      <option value="">전체 포인트</option>
-                      {points.map((p) => (
-                        <option value={p.id} key={p.id}>
-                          {pointName(p)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="map-stage">
-                    <div className="map-grid" />
-                    <svg
-                      viewBox="0 0 760 340"
-                      role="group"
-                      aria-label="실제 좌표와 무관한 검사 포인트 예시 3D 설비"
-                    >
-                      <defs>
-                        <linearGradient id="tank" x1="0" x2="1">
-                          <stop stopColor="#bdcecf" />
-                          <stop offset="0.55" stopColor="#eef5f5" />
-                          <stop offset="1" stopColor="#b3c7c9" />
-                        </linearGradient>
-                      </defs>
-                      <g transform="translate(75 20)">
-                        <path
-                          d="M10 235 325 320 650 178 337 95Z"
-                          fill="#e2ecea"
-                          stroke="#ccdcd8"
-                        />
-                        {[0, 1, 2].map((n) => (
-                          <g
-                            key={n}
-                            transform={`translate(${n * 100} ${n * 25})`}
-                          >
-                            <path
-                              d="M180 76 246 94 247 194 180 178Z"
-                              fill="#a6bdbb"
-                            />
-                            <path
-                              d="M246 94 430 19 432 120 247 194Z"
-                              fill="#d1dfdb"
-                            />
-                            <path
-                              d="M180 76 365 1 430 19 246 94Z"
-                              fill="#f0f5f2"
-                            />
-                            {[0, 1, 2, 3, 4].map((x) => (
-                              <path
-                                key={x}
-                                d={`M${259 + x * 33} ${99 - x * 13}v82`}
-                                stroke="#9eb7b1"
-                                strokeWidth="3"
-                              />
-                            ))}
-                            <path
-                              d="M247 127 432 53M247 160 432 86"
-                              stroke="#9ab2ad"
-                              strokeWidth="3"
-                            />
-                          </g>
-                        ))}
-                        {[0, 1, 2].map((n) => (
-                          <g
-                            key={n}
-                            transform={`translate(${63 + n * 64} ${145 + n * 17})`}
-                          >
-                            <path
-                              d="M0 0v71c0 25 58 25 58 0V0"
-                              fill="url(#tank)"
-                              stroke="#b0c3c2"
-                            />
-                            <ellipse
-                              cx="29"
-                              cy="0"
-                              rx="29"
-                              ry="13"
-                              fill="#eef3f2"
-                              stroke="#b0c3c2"
-                            />
-                            <path
-                              d="M18 15v55"
-                              stroke="#f9fcfa"
-                              strokeWidth="3"
-                            />
-                          </g>
-                        ))}
-                        <path
-                          d="M70 246 70 204 258 252 389 199"
-                          fill="none"
-                          stroke="#91afaa"
-                          strokeWidth="9"
-                        />
-                        <path
-                          d="M70 246 70 204 258 252 389 199"
-                          fill="none"
-                          stroke="#d8e7e1"
-                          strokeWidth="4"
-                        />
-                        {displayedMapPoints.map((point) => (
-                          <g
-                            key={point.id}
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`${pointName(point)} 상세 보기`}
-                            onClick={() => {
-                              setMapPoint(point.id);
-                              void selectPoint(point);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                setMapPoint(point.id);
-                                void selectPoint(point);
-                              }
-                            }}
-                            style={{ cursor: "pointer" }}
-                            transform={`translate(${conceptPosition(point)!.x} ${conceptPosition(point)!.y})`}
-                          >
-                            <title>{pointName(point)} · 개념 위치</title>
-                            <circle
-                              r={mapPoint === point.id ? 18 : 13}
-                              fill="#1a7c65"
-                              opacity="0.15"
-                            />
-                            <circle
-                              r="7"
-                              fill={
-                                point.repairStatus === "done"
-                                  ? "#48897c"
-                                  : "#ef9b45"
-                              }
-                              stroke="white"
-                              strokeWidth="3"
-                            />
-                            <text
-                              x="11"
-                              y="-12"
-                              fontSize="10"
-                              fill="#244b42"
-                              stroke="white"
-                              strokeWidth="3"
-                              paintOrder="stroke"
-                            >
-                              {point.equipment} · {point.rack} 랙
-                            </text>
-                          </g>
-                        ))}
-                      </g>
-                    </svg>
-                    <span className="map-corner">
-                      <Box size={14} />
-                      DUMMY 3D · 실제 공간 좌표 아님
-                    </span>
-                    <div className="map-legend">
-                      <i />
-                      표시 {displayedMapPoints.length}개 / 등록 {points.length}
-                      개 · 선택으로 개별 조회
+                      <h2>검사 포인트 맵</h2>
+                      <p>현재 조회 조건의 사진 수 · 가상 팀·랙 배치</p>
                     </div>
                   </div>
-                  <div className="map-footer">
-                    <MapPin size={16} />
-                    <span>
-                      {selectedMapPoint
-                        ? `${pointName(selectedMapPoint)}${conceptPosition(selectedMapPoint) ? " · 모형 위치" : " · 설비·랙 위치 미확인"}`
-                        : "최대 12개를 표시합니다. 설비·랙 미확인은 배치하지 않습니다."}
-                    </span>
-                    <button
-                      onClick={() =>
-                        selectedMapPoint
-                          ? void selectPoint(selectedMapPoint)
-                          : go("points")
+                  {mapScopePending ? (
+                    <p className="form-intro">
+                      {photoList.error
+                        ? "현재 조건의 포인트는 아직 조회하지 못했습니다."
+                        : "현재 조건의 포인트 조회 중…"}
+                    </p>
+                  ) : (
+                    <InspectionMap
+                      points={scopePoints}
+                      pointCounts={pointCounts}
+                      selectedTeamId={
+                        scope.teamId === "all" ? null : scope.teamId
                       }
-                    >
-                      {selectedMapPoint ? "선택 포인트 보기" : "포인트 보기"}{" "}
-                      <ArrowRight size={14} />
-                    </button>
-                  </div>
+                      selectedRackId={
+                        scope.rackId === "all" ? null : scope.rackId
+                      }
+                      selectedPointId={
+                        scopePoints.some((point) => point.id === mapPoint)
+                          ? mapPoint
+                          : null
+                      }
+                      onSelectionChange={(selection) => {
+                        setScope((current) => ({
+                          ...current,
+                          teamId: selection.teamId ?? "all",
+                          rackId: selection.rackId ?? "all",
+                        }));
+                        setMapPoint(selection.pointId);
+                        setPage(1);
+                      }}
+                      onOpenPoint={(id) => {
+                        const point = points.find((point) => point.id === id);
+                        if (point) void selectPoint(point);
+                      }}
+                      onCreatePoint={({ rackId }) => setNewPointRack(rackId)}
+                    />
+                  )}
                 </section>
                 <section className="panel next-panel">
                   <div className="panel-title">
@@ -785,7 +665,7 @@ export default function Home() {
                     <CalendarDays size={19} />
                   </div>
                   <div className="upcoming-list">
-                    {plans
+                    {visiblePlans
                       .filter((p) => p.status === "planned")
                       .sort((a, b) => a.date.localeCompare(b.date))
                       .slice(0, 4)
@@ -807,8 +687,8 @@ export default function Home() {
                           </div>
                         </div>
                       ))}
-                    {plans.filter((p) => p.status === "planned").length ===
-                      0 && (
+                    {visiblePlans.filter((p) => p.status === "planned")
+                      .length === 0 && (
                       <Empty
                         text={
                           error
@@ -851,7 +731,7 @@ export default function Home() {
                 ) : (
                   <Empty
                     text={
-                      error
+                      !photoList.loaded
                         ? "저장된 사진을 아직 조회하지 못했습니다. 연결을 확인하세요."
                         : "아직 검사 사진이 없습니다. 사진을 업로드하면 이곳에 결과가 표시됩니다."
                     }
@@ -872,74 +752,50 @@ export default function Home() {
           {(tab === "photos" || tab === "labels") && (
             <section className="panel">
               <div className="list-toolbar">
-                <div className="search-field">
-                  <Search size={17} />
-                  <input
-                    aria-label="사진 검색"
-                    placeholder="사진명, 설비, 포인트 검색"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </div>
                 <select
                   aria-label="판독 상태 필터"
                   value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
+                  onChange={(event) => {
+                    setFilter(event.target.value);
+                    setPage(1);
+                  }}
                 >
                   <option value="all">전체 상태</option>
                   <option value="repair">보수 필요</option>
-                  <option value="pending">판독 대기</option>
+                  <option value="pending">AI 판독 대기·진행</option>
+                  <option value="done">판독 완료</option>
                   <option value="error">판독 실패</option>
                   <option value="retake">재촬영 필요</option>
                 </select>
                 <span>
-                  {planFilter !== "all" && !scopedPhotos.loaded
-                    ? scopedPhotos.error
-                      ? "미조회"
-                      : "조회 중…"
-                    : `${visible.length}장${planFilter !== "all" && scopedPhotos.error ? " (마지막 조회)" : ""}`}
+                  {photoList.data
+                    ? `전체 ${photoList.data.total}장 · 현재 ${photos.length}장${photoList.error ? " (마지막 조회)" : ""}`
+                    : "미조회"}
                 </span>
-                <select
-                  aria-label="검사 계획 필터"
-                  value={planFilter}
-                  onChange={(e) => setPlanFilter(e.target.value)}
-                >
-                  <option value="all">모든 검사 계획</option>
-                  <option value="unassigned">계획 미지정</option>
-                  {plans.map((plan) => (
-                    <option key={plan.id} value={plan.id}>
-                      {plan.title}
-                    </option>
-                  ))}
-                </select>
               </div>
-              {planFilter !== "all" && scopedPhotos.error && (
-                <p className="form-error" role="alert">
-                  {scopedPhotos.error}
-                </p>
-              )}
-              {planFilter !== "all" && !scopedPhotos.loaded ? (
+              {!photoList.loaded ? (
                 <p className="form-intro">
-                  {scopedPhotos.error
-                    ? "계획 사진은 아직 조회하지 못했습니다. 잠시 후 다시 확인합니다."
-                    : "계획 사진을 불러오는 중…"}
+                  {photoList.error
+                    ? "사진을 조회하지 못했습니다."
+                    : "사진 조회 중…"}
                 </p>
-              ) : visible.length ? (
+              ) : photos.length ? (
                 <PhotoTable
-                  photos={visible}
+                  photos={photos}
                   points={points}
                   plans={plans}
                   onSelect={selectPhoto}
                 />
-              ) : planFilter !== "all" && scopedPhotos.error ? null : (
+              ) : (
                 <Empty
                   text={
                     tab === "labels"
-                      ? "지정된 라벨링 후보가 없습니다. 사진 상세에서 지정할 수 있습니다."
-                      : "표시할 사진이 없습니다. 업로드하거나 검색 조건을 바꿔 보세요."
+                      ? "조회 조건에 맞는 라벨링 후보가 없습니다."
+                      : "표시할 사진이 없습니다. 조회 조건을 확인하세요."
                   }
                 />
               )}
+              <PhotoPagination data={photoList.data} change={setPage} />
             </section>
           )}
           {(tab === "points" || tab === "worklist") && (
@@ -952,8 +808,15 @@ export default function Home() {
                     : "포인트 상세에서 관리 대상·TA 워크리스트 포함을 선택하세요."}
                 </span>
               </div>
+              {mapScopePending && (
+                <p className="form-intro">
+                  {photoList.error
+                    ? "현재 조건의 포인트를 조회하지 못했습니다."
+                    : "포인트 조회 중…"}
+                </p>
+              )}
               <div className="point-grid">
-                {points
+                {scopePoints
                   .filter((p) => tab === "points" || p.managed || p.ta)
                   .map((p) => (
                     <button
@@ -979,7 +842,9 @@ export default function Home() {
                       <div className="point-meta">
                         <span>
                           <Camera size={14} />
-                          {photos.filter((x) => x.pointId === p.id).length}장
+                          {pointCounts
+                            ? `${pointCounts[p.id] ?? 0}장`
+                            : "미조회"}
                         </span>
                         {p.managed && <span>관리 대상</span>}
                         {p.ta && <span className="teal-text">TA 포함</span>}
@@ -988,16 +853,41 @@ export default function Home() {
                     </button>
                   ))}
               </div>
-              {!points.filter((p) => tab === "points" || p.managed || p.ta)
-                .length && (
-                <section className="panel">
-                  <Empty text="등록된 항목이 없습니다. 사진을 포인트에 연결해 업무를 시작하세요." />
-                </section>
-              )}
+              {!mapScopePending &&
+                !scopePoints.filter(
+                  (p) => tab === "points" || p.managed || p.ta,
+                ).length && (
+                  <section className="panel">
+                    <Empty text="등록된 항목이 없습니다. 사진을 포인트에 연결해 업무를 시작하세요." />
+                  </section>
+                )}
             </>
           )}
           {tab === "plans" && (
             <section className="panel">
+              <div className="list-toolbar">
+                <label>
+                  기록 목적{" "}
+                  <select
+                    aria-label="계획 기록 목적 필터"
+                    value={scope.recordPurpose}
+                    onChange={(event) =>
+                      changeScope({
+                        ...scope,
+                        recordPurpose: event.target
+                          .value as PhotoScope["recordPurpose"],
+                      })
+                    }
+                  >
+                    {Object.entries(purposeName).map(([key, name]) => (
+                      <option key={key} value={key}>
+                        {name}
+                      </option>
+                    ))}
+                    <option value="all">모든 목적</option>
+                  </select>
+                </label>
+              </div>
               <div className="panel-title">
                 <div className="month-nav">
                   <button
@@ -1055,7 +945,7 @@ export default function Home() {
                     >
                       {i + 1}
                     </span>
-                    {plans
+                    {visiblePlans
                       .filter((p) => p.date === dateKey(i + 1))
                       .map((p) => (
                         <button
@@ -1071,7 +961,7 @@ export default function Home() {
                 ))}
               </div>
               <div className="plan-list">
-                {plans.map((p) => (
+                {visiblePlans.map((p) => (
                   <div key={p.id}>
                     <span className="badge muted">{p.date}</span>
                     <button
@@ -1137,6 +1027,7 @@ export default function Home() {
         <PlanDetailDialog
           key={planDetail.id}
           initialPlan={planDetail}
+          scope={scope}
           points={points}
           close={() => setPlanDetail(null)}
           done={notify}
@@ -1189,6 +1080,9 @@ export default function Home() {
       {planOpen && (
         <PlanDialog
           points={points}
+          recordPurpose={
+            scope.recordPurpose === "all" ? "inspection" : scope.recordPurpose
+          }
           close={() => setPlanOpen(false)}
           done={notify}
           created={setPlanDetail}
@@ -1205,17 +1099,427 @@ export default function Home() {
           done={notify}
         />
       )}
+      {newPointRack && (
+        <NewMapPointDialog
+          rackId={newPointRack}
+          recordPurpose={
+            scope.recordPurpose === "all" ? "inspection" : scope.recordPurpose
+          }
+          plan={selectedPlan}
+          close={() => setNewPointRack(null)}
+          done={notify}
+          created={setPointDetail}
+        />
+      )}
       {pointDetail && (
         <PointDialog
           key={pointDetail.id}
           point={pointDetail}
-          photos={photos.filter((p) => p.pointId === pointDetail.id)}
+          scope={scope}
+          plans={plans}
+          points={points}
+          selectPhoto={(photo) => {
+            setPointDetail(null);
+            void selectPhoto(photo);
+          }}
           reportHistoryError={reportHistoryError}
           close={() => setPointDetail(null)}
           done={notify}
         />
       )}
     </div>
+  );
+}
+
+const purposeName = {
+  inspection: "업무 검사",
+  presentation: "발표용",
+  verification: "검증용",
+};
+function PhotoScopeFields({
+  scope,
+  plans,
+  change,
+}: {
+  scope: PhotoScope;
+  plans: Plan[];
+  change: (scope: PhotoScope) => void;
+}) {
+  const set = (patch: Partial<PhotoScope>) => change({ ...scope, ...patch });
+  return (
+    <section className="photo-scope" aria-label="공통 사진 조회 조건">
+      <label>
+        검사 계획
+        <select
+          aria-label="검사 계획 필터"
+          value={scope.planId}
+          onChange={(e) => set({ planId: e.target.value })}
+        >
+          <option value="all">모든 검사 계획</option>
+          <option value="unassigned">계획 미지정</option>
+          {plans
+            .filter(
+              (plan) =>
+                scope.recordPurpose === "all" ||
+                plan.recordPurpose === scope.recordPurpose ||
+                plan.id === scope.planId,
+            )
+            .map((plan) => (
+              <option key={plan.id} value={plan.id}>
+                {plan.title}
+              </option>
+            ))}
+        </select>
+      </label>
+      <label>
+        기록 목적
+        <select
+          aria-label="기록 목적 필터"
+          value={scope.recordPurpose}
+          onChange={(e) =>
+            set({
+              recordPurpose: e.target.value as PhotoScope["recordPurpose"],
+            })
+          }
+        >
+          {Object.entries(purposeName).map(([key, name]) => (
+            <option key={key} value={key}>
+              {name}
+            </option>
+          ))}
+          <option value="all">모든 목적</option>
+        </select>
+      </label>
+      <label>
+        사진 표시
+        <select
+          aria-label="사진 표시 필터"
+          value={scope.visibility}
+          onChange={(e) =>
+            set({ visibility: e.target.value as PhotoScope["visibility"] })
+          }
+        >
+          <option value="visible">표시 중</option>
+          <option value="hidden">숨긴 사진</option>
+          <option value="all">표시·숨김 모두</option>
+        </select>
+      </label>
+      <label>
+        가상 팀
+        <select
+          aria-label="팀 필터"
+          value={scope.teamId}
+          onChange={(e) => set({ teamId: e.target.value, rackId: "all" })}
+        >
+          <option value="all">모든 팀</option>
+          {locations.teams.map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        파이프랙
+        <select
+          aria-label="파이프랙 필터"
+          value={scope.rackId}
+          onChange={(e) => {
+            const rack = locations.racks.find(
+              (rack) => rack.id === e.target.value,
+            );
+            set({
+              rackId: e.target.value,
+              ...(rack ? { teamId: rack.teamId } : {}),
+            });
+          }}
+        >
+          <option value="all">모든 랙</option>
+          {locations.racks
+            .filter(
+              (rack) => scope.teamId === "all" || rack.teamId === scope.teamId,
+            )
+            .map((rack) => (
+              <option key={rack.id} value={rack.id}>
+                {rackName(rack.id)}
+              </option>
+            ))}
+        </select>
+      </label>
+      <label className="photo-search">
+        검색
+        <input
+          type="search"
+          aria-label="사진 검색"
+          placeholder="사진명, 설비, 포인트 검색"
+          value={scope.search}
+          onChange={(e) => set({ search: e.target.value })}
+          maxLength={200}
+        />
+      </label>
+      <button className="text-button" onClick={() => change(defaultPhotoScope)}>
+        조회 조건 초기화
+      </button>
+    </section>
+  );
+}
+function PhotoPagination({
+  data,
+  change,
+}: {
+  data: PhotoPage | null;
+  change: (page: number) => void;
+}) {
+  if (!data) return null;
+  return (
+    <nav className="photo-pagination" aria-label="사진 페이지">
+      <span>
+        전체 {data.total}장 · {data.page}/{data.pages}페이지
+      </span>
+      <button
+        className="button secondary"
+        disabled={data.page <= 1}
+        onClick={() => change(1)}
+      >
+        처음
+      </button>
+      <button
+        className="button secondary"
+        disabled={data.page <= 1}
+        onClick={() => change(data.page - 1)}
+      >
+        이전
+      </button>
+      <button
+        className="button secondary"
+        disabled={data.page >= data.pages}
+        onClick={() => change(data.page + 1)}
+      >
+        다음
+      </button>
+      <button
+        className="button secondary"
+        disabled={data.page >= data.pages}
+        onClick={() => change(data.pages)}
+      >
+        마지막
+      </button>
+    </nav>
+  );
+}
+function PhotoRecordActions({
+  photo,
+  done,
+  busy,
+  begin,
+  finish,
+}: {
+  photo: Photo;
+  done: (message: string) => Promise<void>;
+  busy: boolean;
+  begin: () => boolean;
+  finish: () => void;
+}) {
+  const [error, setError] = useState("");
+  const [purpose, setPurpose] = useState(photo.recordPurpose);
+  const hidden = photo.visibility === "hidden";
+  return (
+    <details className="record-actions">
+      <summary>사진 숨김·복원 / 기록 목적 변경</summary>
+      <p className="form-intro">
+        숨김은 원본을 보존합니다. 숨긴 사진은 조회 조건에서 찾아 복원할 수
+        있습니다. 아래 작업은 오른쪽 판단 입력을 저장하지 않습니다.
+      </p>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const action = (
+            event.nativeEvent as SubmitEvent
+          ).submitter?.getAttribute("value");
+          if (!action) return;
+          if (!begin()) return;
+          setError("");
+          try {
+            await api(`/inspections/${photo.id}/${action}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                expectedVersion: photo.editVersion,
+                actor: form.get("actor"),
+                reason: form.get("reason"),
+                ...(action === "visibility"
+                  ? { visibility: hidden ? "visible" : "hidden" }
+                  : { recordPurpose: purpose }),
+              }),
+            });
+            await done(
+              action === "visibility"
+                ? hidden
+                  ? "같은 원본과 이력을 유지하여 사진을 복원했습니다."
+                  : "사진을 숨겼습니다. 숨긴 사진 필터에서 복원할 수 있습니다."
+                : "기록 목적을 변경했습니다.",
+            );
+          } catch (cause) {
+            setError((cause as Error).message);
+          } finally {
+            finish();
+          }
+        }}
+      >
+        <label className="field">
+          작업자
+          <input
+            name="actor"
+            required
+            maxLength={60}
+            defaultValue="현업 엔지니어"
+          />
+        </label>
+        <label className="field">
+          작업 사유
+          <textarea name="reason" required maxLength={1000} rows={2} />
+        </label>
+        <button
+          className="button secondary full-width"
+          name="action"
+          value="visibility"
+          disabled={busy}
+        >
+          {hidden ? "사진 복원" : "사진 숨기기"}
+        </button>
+        <div className="divider" />
+        <label className="field">
+          기록 목적
+          <select
+            value={purpose}
+            onChange={(e) =>
+              setPurpose(e.target.value as Photo["recordPurpose"])
+            }
+          >
+            {Object.entries(purposeName).map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="button secondary full-width"
+          name="action"
+          value="purpose"
+          disabled={busy || purpose === photo.recordPurpose}
+        >
+          기록 목적 변경
+        </button>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+      </form>
+    </details>
+  );
+}
+function NewMapPointDialog({
+  rackId,
+  recordPurpose,
+  plan,
+  close,
+  done,
+  created,
+}: {
+  rackId: string;
+  recordPurpose: Photo["recordPurpose"];
+  plan?: Plan;
+  close: () => void;
+  done: (message: string) => Promise<void>;
+  created: (point: Point) => void;
+}) {
+  const [saved, setSaved] = useState<Point | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const complete = useDialogCompletion(done, close);
+  return (
+    <Modal title="가상 랙에 새 포인트 등록" close={close}>
+      <p className="form-intro">
+        {purposeName[recordPurpose]} · {rackName(rackId)}
+        {plan ? ` · ${plan.title}에 연결` : " · 계획은 미지정"}
+      </p>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          setBusy(true);
+          setError("");
+          let point = saved;
+          try {
+            if (!point) {
+              point = await api<Point>("/points", {
+                method: "POST",
+                body: JSON.stringify({
+                  rackId,
+                  recordPurpose,
+                  rack: "",
+                  equipment: form.get("equipment"),
+                  name: form.get("name"),
+                }),
+              });
+              setSaved(point);
+            }
+            if (plan) {
+              const latest = saved
+                ? await api<Plan>(`/plans/${plan.id}`)
+                : plan;
+              if (!latest.pointIds.includes(point.id))
+                await api(`/plans/${plan.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({
+                    pointIds: [...latest.pointIds, point.id],
+                    expectedVersion: latest.editVersion,
+                    actor: "현업 엔지니어",
+                    reason: "지도에서 검사 포인트 등록·연결",
+                  }),
+                });
+            }
+            const result = point;
+            await complete(
+              plan
+                ? "포인트를 등록하고 검사 계획에 연결했습니다."
+                : "포인트를 등록했습니다.",
+              () => created(result),
+            );
+          } catch (cause) {
+            setError(
+              `${point ? "포인트는 등록됐습니다. 중복 등록 없이 연결을 다시 확인할 수 있습니다. " : ""}${(cause as Error).message}`,
+            );
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label className="field">
+          설비번호
+          <input name="equipment" maxLength={120} disabled={!!saved || busy} />
+        </label>
+        <label className="field">
+          포인트 이름
+          <input
+            name="name"
+            required
+            maxLength={120}
+            disabled={!!saved || busy}
+          />
+        </label>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <button className="button primary full-width" disabled={busy}>
+          {saved ? "등록된 포인트 연결 재시도" : "포인트 등록"}
+        </button>
+      </form>
+    </Modal>
   );
 }
 
@@ -1248,13 +1552,20 @@ function PhotoTable({
             <tr key={photo.id}>
               <td>
                 <button className="photo-name" onClick={() => onSelect(photo)}>
-                  <img
-                    src={`${apiBase}/api/inspections/${photo.id}/thumbnail`}
-                    alt="검사 사진 축소 이미지"
-                  />
+                  {photo.visibility === "hidden" ? (
+                    <span className="hidden-image">숨김</span>
+                  ) : (
+                    <img
+                      src={`${apiBase}/api/inspections/${photo.id}/thumbnail`}
+                      alt="검사 사진 축소 이미지"
+                    />
+                  )}
                   <span>
                     {photo.name}
-                    <small>{photo.id.slice(0, 8)}</small>
+                    <small>
+                      {photo.id.slice(0, 8)} ·{" "}
+                      {purposeName[photo.recordPurpose]}
+                    </small>
                   </span>
                 </button>
               </td>
@@ -1385,6 +1696,9 @@ function UploadDialog({
   done: (s: string, tone?: ToastTone) => Promise<void>;
 }) {
   const [files, setFiles] = useState<File[]>([]);
+  const [recordPurpose, setRecordPurpose] = useState<Photo["recordPurpose"]>(
+    context?.plan.recordPurpose ?? "inspection",
+  );
   const [planId, setPlanId] = useState(context?.plan.id || "");
   const [pointId, setPointId] = useState(context?.point?.id || "");
   const [createdPoint, setCreatedPoint] = useState<Point | null>(null);
@@ -1586,6 +1900,7 @@ function UploadDialog({
         target = await api<Point>("/points", {
           method: "POST",
           body: JSON.stringify({
+            recordPurpose,
             equipment: values.get("equipment"),
             rack: values.get("rack") || "",
             rackId: newRackId || null,
@@ -1605,7 +1920,8 @@ function UploadDialog({
         sha256: null,
         pointId: id || null,
         planId: planId || null,
-        targetLabel: `${selectedPlan?.title || "계획 미지정"} · ${target ? pointName(target) : "위치 미확인"}`,
+        recordPurpose,
+        targetLabel: `${purposeName[recordPurpose]} · ${selectedPlan?.title || "계획 미지정"} · ${target ? pointName(target) : "위치 미확인"}`,
         state: "waiting",
         progress: 0,
         error: "",
@@ -1691,6 +2007,22 @@ function UploadDialog({
             ))}
           </div>
         )}
+        <label className="field">
+          사진 기록 목적
+          <select
+            value={recordPurpose}
+            disabled={busy}
+            onChange={(event) =>
+              setRecordPurpose(event.target.value as Photo["recordPurpose"])
+            }
+          >
+            {Object.entries(purposeName).map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           검사 계획
           <select
@@ -1932,11 +2264,13 @@ function UploadDialog({
 }
 function PlanDialog({
   points,
+  recordPurpose,
   close,
   done,
   created,
 }: {
   points: Point[];
+  recordPurpose: Photo["recordPurpose"];
   close: () => void;
   done: (s: string) => Promise<void>;
   created: (plan: Plan) => void;
@@ -1956,6 +2290,7 @@ function PlanDialog({
             const plan = await api<Plan>("/plans", {
               method: "POST",
               body: JSON.stringify({
+                recordPurpose: data.get("recordPurpose"),
                 title: data.get("title"),
                 date: data.get("date"),
                 pointId: data.get("pointId") || null,
@@ -1973,6 +2308,16 @@ function PlanDialog({
           }
         }}
       >
+        <label className="field">
+          기록 목적
+          <select name="recordPurpose" defaultValue={recordPurpose}>
+            {Object.entries(purposeName).map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           검사 제목
           <input
@@ -2085,6 +2430,7 @@ function RackFields({
 
 function PlanDetailDialog({
   initialPlan,
+  scope,
   points,
   close,
   done,
@@ -2095,6 +2441,7 @@ function PlanDetailDialog({
   selectPhoto,
 }: {
   initialPlan: Plan;
+  scope: PhotoScope;
   points: Point[];
   close: () => void;
   done: (message: string) => Promise<void>;
@@ -2127,7 +2474,8 @@ function PlanDetailDialog({
     (point) =>
       point.rackId === (rackId || null) && !plan.pointIds.includes(point.id),
   );
-  const photoList = usePlanPhotos(plan.id);
+  const [page, setPage] = useState(1);
+  const photoList = usePhotoQuery({ ...scope, planId: plan.id, page });
   const history = useAuditHistory(
     `/plans/${plan.id}/history?version=${plan.editVersion}`,
     reportHistoryError,
@@ -2203,7 +2551,7 @@ function PlanDetailDialog({
                 <p>{pointName(point)}</p>
                 <small>
                   {photoList.loaded
-                    ? `이 계획의 사진 ${photoList.photos.filter((photo) => photo.pointId === point.id).length}장${photoList.error ? " (마지막 조회)" : ""}`
+                    ? `이 계획의 사진 ${photoList.data?.pointCounts[point.id] ?? 0}장${photoList.error ? " (마지막 조회)" : ""}`
                     : photoList.error
                       ? "사진 미조회"
                       : "사진 조회 중…"}
@@ -2286,6 +2634,7 @@ function PlanDetailDialog({
                   registered = await api<Point>("/points", {
                     method: "POST",
                     body: JSON.stringify({
+                      recordPurpose: plan.recordPurpose,
                       equipment: values.get("equipment"),
                       name: values.get("name"),
                       rackId: rackId || null,
@@ -2368,6 +2717,9 @@ function PlanDetailDialog({
       </div>
       <section className="plan-photos">
         <h3>이 계획의 검사 사진</h3>
+        <p className="form-intro">
+          현재 표시 목적·숨김·팀·랙·검색 조건을 적용합니다.
+        </p>
         {photoList.error && (
           <p className="form-error" role="alert">
             {photoList.error}
@@ -2379,9 +2731,9 @@ function PlanDetailDialog({
               ? "계획 사진은 아직 조회하지 못했습니다. 잠시 후 다시 확인합니다."
               : "계획 사진을 불러오는 중…"}
           </p>
-        ) : photoList.photos.length ? (
+        ) : photoList.data?.items.length ? (
           <PhotoTable
-            photos={photoList.photos}
+            photos={photoList.data!.items}
             points={knownPoints}
             plans={[plan]}
             onSelect={selectPhoto}
@@ -2389,6 +2741,7 @@ function PlanDetailDialog({
         ) : photoList.error ? null : (
           <p className="form-intro">이 계획에 등록된 사진이 없습니다.</p>
         )}
+        <PhotoPagination data={photoList.data} change={setPage} />
       </section>
       <AuditList history={history} />
     </Modal>
@@ -2413,6 +2766,9 @@ function AuditList({ history }: { history: Audit[] }) {
     equipment: "설비번호",
     rack: "랙",
     name: "이름",
+    visibility: "사진 표시",
+    recordPurpose: "기록 목적",
+    hiddenReason: "숨김 사유",
   };
   const value = (v: unknown) => {
     if (v === null || v === undefined) return "미지정";
@@ -2429,6 +2785,11 @@ function AuditList({ history }: { history: Audit[] }) {
         : "상세 정보 변경";
     }
     const states: Record<string, string> = {
+      visible: "표시",
+      hidden: "숨김",
+      inspection: "업무 검사",
+      presentation: "발표용",
+      verification: "검증용",
       pending: "판독 대기",
       processing: "판독 중",
       done: "완료",
@@ -2474,7 +2835,7 @@ function AuditList({ history }: { history: Audit[] }) {
   );
 }
 function PhotoDialog({
-  photo,
+  photo: seed,
   points,
   plans,
   reportHistoryError,
@@ -2488,14 +2849,26 @@ function PhotoDialog({
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
+  const { photo, error: readError } = usePhotoRecord(seed);
   // Keep the editable values and their version together while polling refreshes AI.
-  const [initial] = useState(photo);
+  const [initial] = useState(seed);
   const [pointId, setPointId] = useState(photo.pointId || "");
   const [retake, setRetake] = useState(photo.retake);
   const [busy, setBusy] = useState(false);
+  const actionLock = useRef(false);
+  const begin = () => {
+    if (actionLock.current) return false;
+    actionLock.current = true;
+    setBusy(true);
+    return true;
+  };
+  const finish = () => {
+    actionLock.current = false;
+    setBusy(false);
+  };
   const [error, setError] = useState("");
   const history = useAuditHistory(
-    `/inspections/${photo.id}/history`,
+    `/inspections/${photo.id}/history?version=${photo.editVersion}&status=${photo.status}`,
     reportHistoryError,
   );
   const complete = useDialogCompletion(done, close);
@@ -2505,15 +2878,35 @@ function PhotoDialog({
     : points;
   return (
     <Modal title="사진 판독·후속 관리" wide close={close}>
+      {readError && (
+        <p className="form-error" role="alert">
+          사진 상태 조회 실패: {readError} · 마지막 조회 결과입니다.
+        </p>
+      )}
       <div className="detail-grid">
         <div>
           <div className="detail-image">
-            <img
-              src={`${apiBase}/api/inspections/${photo.id}/image`}
-              alt={photo.name}
-            />
+            {photo.visibility === "hidden" ? (
+              <p className="hidden-image">
+                숨긴 사진입니다. 복원하면 원본을 다시 볼 수 있습니다.
+              </p>
+            ) : (
+              <img
+                src={`${apiBase}/api/inspections/${photo.id}/image`}
+                alt={photo.name}
+              />
+            )}
           </div>
-          <div className="image-caption">{photo.name}</div>
+          <div className="image-caption">
+            {photo.name} · {purposeName[photo.recordPurpose]}
+          </div>
+          <PhotoRecordActions
+            photo={initial}
+            done={complete}
+            busy={busy}
+            begin={begin}
+            finish={finish}
+          />
           <div className="ai-result">
             <div>
               <span>현재 분류</span>
@@ -2540,7 +2933,10 @@ function PhotoDialog({
             {photo.status === "error" && (
               <button
                 className="button secondary"
+                disabled={busy}
                 onClick={async () => {
+                  if (!begin()) return;
+                  setError("");
                   try {
                     await api(`/inspections/${photo.id}/retry`, {
                       method: "POST",
@@ -2548,6 +2944,8 @@ function PhotoDialog({
                     await complete("판독을 다시 요청했습니다.");
                   } catch (cause) {
                     setError((cause as Error).message);
+                  } finally {
+                    finish();
                   }
                 }}
               >
@@ -2561,7 +2959,7 @@ function PhotoDialog({
           onSubmit={async (e) => {
             e.preventDefault();
             const form = new FormData(e.currentTarget);
-            setBusy(true);
+            if (!begin()) return;
             setError("");
             try {
               await api(`/inspections/${photo.id}`, {
@@ -2583,7 +2981,7 @@ function PhotoDialog({
             } catch (cause) {
               setError((cause as Error).message);
             } finally {
-              setBusy(false);
+              finish();
             }
           }}
         >
@@ -2691,18 +3089,26 @@ function PhotoDialog({
 }
 function PointDialog({
   point,
-  photos,
+  scope,
+  points,
+  plans,
+  selectPhoto,
   reportHistoryError,
   close,
   done,
 }: {
   point: Point;
-  photos: Photo[];
+  scope: PhotoScope;
+  points: Point[];
+  plans: Plan[];
+  selectPhoto: (photo: Photo) => void;
   reportHistoryError: (message: string) => void;
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
   const [initial] = useState(point);
+  const [page, setPage] = useState(1);
+  const photoList = usePhotoQuery({ ...scope, pointId: point.id, page });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const history = useAuditHistory(
@@ -2718,19 +3124,23 @@ function PointDialog({
             <Box size={28} />
             <h3>{point.equipment || "설비 미확인"}</h3>
             <p>{pointName(point)}</p>
-            <span className="badge muted">연결된 사진 {photos.length}장</span>
+            <span className="badge muted">
+              현재 조건의 사진{" "}
+              {photoList.data ? `${photoList.data.total}장` : "미조회"}
+            </span>
           </div>
-          <div className="point-thumbnails">
-            {photos.map((p) => (
-              <div key={p.id}>
-                <img
-                  src={`${apiBase}/api/inspections/${p.id}/thumbnail`}
-                  alt={p.name}
-                />
-                <Grade photo={p} />
-              </div>
-            ))}
-          </div>
+          {photoList.error && (
+            <p className="form-error" role="alert">
+              {photoList.error} · 마지막 조회 여부를 확인하세요.
+            </p>
+          )}
+          <PhotoTable
+            photos={photoList.data?.items ?? []}
+            points={points}
+            plans={plans}
+            onSelect={selectPhoto}
+          />
+          <PhotoPagination data={photoList.data} change={setPage} />
           <AuditList history={history} />
         </div>
         <form

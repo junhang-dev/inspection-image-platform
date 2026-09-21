@@ -32,8 +32,18 @@ export function decodeEntity(value, kind) {
   return {
     ...data,
     editVersion: data.editVersion ?? 0,
+    recordPurpose: data.recordPurpose ?? "inspection",
     ...(kind === "plan" ? { pointIds: planPointIds(data) } : {}),
-    ...(kind === "inspection" ? { planId: data.planId ?? null } : {}),
+    ...(kind === "inspection"
+      ? {
+          planId: data.planId ?? null,
+          recordPurpose: data.recordPurpose ?? "inspection",
+          visibility: data.visibility ?? "visible",
+          hiddenAt: data.hiddenAt ?? null,
+          hiddenBy: data.hiddenBy ?? null,
+          hiddenReason: data.hiddenReason ?? null,
+        }
+      : {}),
     ...(kind === "point"
       ? {
           rackId: data.rackId ?? null,
@@ -47,6 +57,12 @@ const fail = (status, message) => Object.assign(new Error(message), { status });
 export async function list(kind, filters = {}) {
   const where = ["kind = ?"];
   const values = [kind];
+  if (["point", "plan"].includes(kind) && filters.recordPurpose !== "all") {
+    where.push(
+      "COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.recordPurpose')), 'null'), 'inspection') = ?",
+    );
+    values.push(filters.recordPurpose || "inspection");
+  }
   if (kind === "inspection" && Object.hasOwn(filters, "planId")) {
     where.push(
       "COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.planId')), 'null'), '') = ?",
@@ -54,7 +70,7 @@ export async function list(kind, filters = {}) {
     values.push(filters.planId || "");
   }
   const [rows] = await pool.execute(
-    `SELECT data FROM entities WHERE ${where.join(" AND ")} ORDER BY created_at DESC LIMIT 1000`,
+    `SELECT data FROM entities WHERE ${where.join(" AND ")} ORDER BY created_at DESC, id DESC LIMIT 1000`,
     values,
   );
   return rows.map((row) => decodeEntity(row.data, kind));

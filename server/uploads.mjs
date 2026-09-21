@@ -23,7 +23,15 @@ import {
 } from "./upload-store.mjs";
 
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-const identityKeys = ["id", "name", "size", "sha256", "pointId", "planId"];
+const identityKeys = [
+  "id",
+  "name",
+  "size",
+  "sha256",
+  "pointId",
+  "planId",
+  "recordPurpose",
+];
 const missingObject = (error) =>
   ["NoSuchKey", "NotFound", "NoSuchObject"].includes(error.code) ||
   error.statusCode === 404;
@@ -110,9 +118,14 @@ export async function createUploadService({
   }
 
   async function initialize(input) {
+    const recordPurpose = input.recordPurpose ?? "inspection";
+    if (!["inspection", "presentation", "verification"].includes(recordPurpose))
+      throw fail(422, "올바른 기록 목적을 선택하세요.");
+    input = { ...input, recordPurpose };
     return locked(input.id, async (connection) => {
       const current = await readUpload(connection, input.id);
       if (current) {
+        current.recordPurpose ??= "inspection";
         if (identityKeys.some((key) => current[key] !== input[key]))
           throw fail(
             409,
@@ -276,6 +289,8 @@ export async function createUploadService({
       mime: upload.mime,
       pointId: upload.pointId,
       planId: upload.planId,
+      recordPurpose: upload.recordPurpose ?? "inspection",
+      visibility: "visible",
       status: "pending",
       ai: null,
       humanGrade: null,

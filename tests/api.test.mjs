@@ -1,7 +1,14 @@
 import test from "node:test";
+import { allPhotoRecords } from "../scripts/photo-records.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 const base = process.env.TEST_API_URL || "http://127.0.0.1:4000/api";
+const allPhotos = () =>
+  allPhotoRecords(async (path) => {
+    const response = await fetch(base + path);
+    assert.ok(response.ok);
+    return response.json();
+  });
 test("시연 사진 요청은 사용자 파일 경로나 URL을 받지 않는다", async () => {
   const response = await fetch(`${base}/demo-inspections`, {
     method: "POST",
@@ -11,7 +18,7 @@ test("시연 사진 요청은 사용자 파일 경로나 URL을 받지 않는다
   assert.equal(response.status, 422);
 });
 test("시연 요청은 허용 사진과 비허용 바이트의 혼합 묶음을 전부 거절한다", async () => {
-  const before = await (await fetch(`${base}/inspections`)).json();
+  const before = await allPhotos();
   const approved = await (await fetch(`${base}/demo/demo-01.jpg`)).blob();
   const body = new FormData();
   body.append("demo", "1");
@@ -24,7 +31,7 @@ test("시연 요청은 허용 사진과 비허용 바이트의 혼합 묶음을 
   const response = await fetch(`${base}/inspections`, { method: "POST", body });
   assert.equal(response.status, 422);
   assert.match((await response.json()).error, /제공된 시연 사진/);
-  const after = await (await fetch(`${base}/inspections`)).json();
+  const after = await allPhotos();
   assert.deepEqual(after, before);
 });
 test("사진 없음과 잘못된 이미지가 저장 성공으로 표시되지 않는다", async () => {

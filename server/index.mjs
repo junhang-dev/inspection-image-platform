@@ -24,6 +24,7 @@ import {
   pool,
   decodeEntity,
 } from "./store.mjs";
+import { photoQuerySchema, queryPhotos } from "./photo-query.mjs";
 import { locations, planPointIds, pointLocation } from "./relations.mjs";
 
 const app = express();
@@ -76,7 +77,12 @@ const expectedVersion = z
   .int({ error: versionMessage })
   .min(0, { error: versionMessage })
   .max(Number.MAX_SAFE_INTEGER - 1, { error: versionMessage });
+const recordPurpose = z.enum(["inspection", "presentation", "verification"]);
+const purposeScope = z
+  .enum(["inspection", "presentation", "verification", "all"])
+  .default("inspection");
 const pointSchema = z.object({
+  recordPurpose: recordPurpose.default("inspection"),
   equipment: field.default(""),
   rack: field.default(""),
   rackId: z.string().nullable().default(null),
@@ -173,12 +179,19 @@ app.get("/api/demo/:name", async (req, res) => {
   res.type(file.name.endsWith(".png") ? "image/png" : "image/jpeg").send(bytes);
 });
 app.get("/api/locations", (req, res) => res.json(locations));
-app.get("/api/points", async (req, res) => res.json(await list("point")));
+app.get("/api/points", async (req, res) =>
+  res.json(
+    await list("point", {
+      recordPurpose: purposeScope.parse(req.query.recordPurpose),
+    }),
+  ),
+);
 app.post("/api/points", async (req, res) => {
   const input = pointSchema.parse(req.body);
   const location = pointLocation(input.rackId, randomUUID(), input.rack);
-  const existing = (await list("point")).find(
+  const existing = (await list("point", { recordPurpose: "all" })).find(
     (p) =>
+      p.recordPurpose === input.recordPurpose &&
       p.equipment === input.equipment &&
       p.rackId === location.rackId &&
       p.rack === location.rack &&
@@ -226,19 +239,75 @@ app.patch("/api/points/:id", async (req, res) => {
 app.get("/api/points/:id/history", async (req, res) =>
   res.json(await events(req.params.id)),
 );
+app.get("/api/inspections/query", async (req, res) => {
+  const query = photoQuerySchema.parse(req.query);
+  res.json(await queryPhotos(pool, decodeEntity, query));
+});
+// Compatibility endpoint. New screens use the paged query with an explicit total.
 app.get("/api/inspections", async (req, res) => {
-  const scope = z
-    .union([z.string().uuid(), z.literal("unassigned")])
-    .optional()
-    .parse(req.query.planId);
-  res.json(
-    await list(
-      "inspection",
-      scope === undefined
-        ? {}
-        : { planId: scope === "unassigned" ? null : scope },
-    ),
+  const query = photoQuerySchema.parse({
+    ...req.query,
+    pageSize: req.query.pageSize ?? 100,
+  });
+  const result = await queryPhotos(pool, decodeEntity, {
+    ...query,
+    pageSize: req.query.pageSize === undefined ? 1000 : query.pageSize,
+  });
+  res.setHeader("X-Total-Count", String(result.total));
+  res.json(result.items);
+});
+app.get("/api/inspections/:id", async (req, res) => {
+  const item = await get("inspection", z.string().uuid().parse(req.params.id));
+  if (!item) throw fail(404, "사진이 없습니다.");
+  res.json(item);
+});
+app.patch("/api/inspections/:id/visibility", async (req, res) => {
+  const input = z
+    .object({
+      visibility: z.enum(["visible", "hidden"]),
+      expectedVersion,
+      actor,
+      reason,
+    })
+    .strict()
+    .parse(req.body);
+  const hidden = input.visibility === "hidden";
+  const result = await update(
+    "inspection",
+    req.params.id,
+    {
+      visibility: input.visibility,
+      hiddenAt: hidden ? new Date().toISOString() : null,
+      hiddenBy: hidden ? input.actor : null,
+      hiddenReason: hidden ? input.reason : null,
+    },
+    input.actor,
+    input.reason,
+    { expectedVersion: input.expectedVersion },
   );
+  if (!result) throw fail(404, "사진이 없습니다.");
+  res.json(result);
+});
+app.patch("/api/inspections/:id/purpose", async (req, res) => {
+  const input = z
+    .object({
+      recordPurpose: z.enum(["inspection", "presentation", "verification"]),
+      expectedVersion,
+      actor,
+      reason,
+    })
+    .strict()
+    .parse(req.body);
+  const result = await update(
+    "inspection",
+    req.params.id,
+    { recordPurpose: input.recordPurpose },
+    input.actor,
+    input.reason,
+    { expectedVersion: input.expectedVersion },
+  );
+  if (!result) throw fail(404, "사진이 없습니다.");
+  res.json(result);
 });
 async function withDemoLock(callback) {
   const connection = await pool.getConnection();
@@ -265,7 +334,13 @@ async function withDemoLock(callback) {
     }
   }
 }
-async function saveUploads(files, pointId, reuseDemo, planId = null) {
+async function saveUploads(
+  files,
+  pointId,
+  reuseDemo,
+  planId = null,
+  purpose = "inspection",
+) {
   const byHash = new Map();
   if (reuseDemo) {
     const [rows] = await pool.execute(
@@ -277,7 +352,8 @@ async function saveUploads(files, pointId, reuseDemo, planId = null) {
     );
     for (const row of rows) {
       const photo = decodeEntity(row.data, "inspection");
-      if (!byHash.has(photo.sha256)) byHash.set(photo.sha256, photo);
+      if (photo.recordPurpose === purpose && !byHash.has(photo.sha256))
+        byHash.set(photo.sha256, photo);
     }
   }
   const results = [];
@@ -295,6 +371,7 @@ async function saveUploads(files, pointId, reuseDemo, planId = null) {
         sha256: file.hash,
         pointId,
         planId,
+        recordPurpose: purpose,
       },
       file.path,
     );
@@ -348,6 +425,9 @@ app.post("/api/inspections", upload.array("images"), async (req, res) => {
     if (!req.files?.length)
       throw fail(400, "사진이 없습니다. JPG 또는 PNG 사진을 선택하세요.");
     const demoRequest = demoMode || req.body.demo === "1";
+    const purpose = recordPurpose
+      .default("inspection")
+      .parse(req.body.recordPurpose);
     const { pointId, planId } = z
       .object({
         pointId: z.string().uuid().nullable(),
@@ -385,7 +465,8 @@ app.post("/api/inspections", upload.array("images"), async (req, res) => {
       );
     }
     await validateImages(req.files, demoRequest);
-    const save = () => saveUploads(req.files, pointId, demoRequest, planId);
+    const save = () =>
+      saveUploads(req.files, pointId, demoRequest, planId, purpose);
     const result = demoRequest ? await withDemoLock(save) : await save();
     res
       .status(
@@ -404,6 +485,7 @@ app.post("/api/upload-sessions", async (req, res) => {
   const input = z
     .object({
       id: sessionId,
+      recordPurpose: recordPurpose.default("inspection"),
       name: z.string().min(1).max(200),
       size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
       sha256,
@@ -440,7 +522,8 @@ app.post("/api/upload-sessions/:id/restart", async (req, res) => {
 const thumbnails = new Map();
 app.get("/api/inspections/:id/thumbnail", async (req, res) => {
   const item = await get("inspection", req.params.id);
-  if (!item) throw fail(404, "사진이 없습니다.");
+  if (!item || item.visibility === "hidden")
+    throw fail(404, "사진이 없습니다.");
   let thumbnail = thumbnails.get(item.sha256);
   if (!thumbnail) {
     thumbnail = (async () => {
@@ -462,12 +545,13 @@ app.get("/api/inspections/:id/thumbnail", async (req, res) => {
       thumbnails.delete(thumbnails.keys().next().value);
   }
   const bytes = await thumbnail;
-  res.setHeader("Cache-Control", "private, max-age=3600");
+  res.setHeader("Cache-Control", "private, no-store");
   res.type("image/webp").send(bytes);
 });
 app.get("/api/inspections/:id/image", async (req, res) => {
   const item = await get("inspection", req.params.id);
-  if (!item) throw fail(404, "사진이 없습니다.");
+  if (!item || item.visibility === "hidden")
+    throw fail(404, "사진이 없습니다.");
   const stream = await objects.getObject(bucket, item.objectKey);
   res.type(item.mime);
   stream.on("error", () => {
@@ -516,7 +600,13 @@ app.post("/api/inspections/:id/retry", async (req, res) => {
     ),
   );
 });
-app.get("/api/plans", async (req, res) => res.json(await list("plan")));
+app.get("/api/plans", async (req, res) =>
+  res.json(
+    await list("plan", {
+      recordPurpose: purposeScope.parse(req.query.recordPurpose),
+    }),
+  ),
+);
 app.get("/api/plans/:id", async (req, res) => {
   const plan = await get("plan", req.params.id);
   if (!plan) throw fail(404, "계획이 없습니다.");
@@ -525,9 +615,31 @@ app.get("/api/plans/:id", async (req, res) => {
 app.get("/api/plans/:id/history", async (req, res) =>
   res.json(await events(req.params.id)),
 );
+for (const [path, kind] of [
+  ["points", "point"],
+  ["plans", "plan"],
+]) {
+  app.patch(`/api/${path}/:id/purpose`, async (req, res) => {
+    const input = z
+      .object({ recordPurpose, expectedVersion, actor, reason })
+      .strict()
+      .parse(req.body);
+    const result = await update(
+      kind,
+      req.params.id,
+      { recordPurpose: input.recordPurpose },
+      input.actor,
+      input.reason,
+      { expectedVersion: input.expectedVersion },
+    );
+    if (!result) throw fail(404, "기록을 찾을 수 없습니다.");
+    res.json(result);
+  });
+}
 app.post("/api/plans", async (req, res) => {
   const input = z
     .object({
+      recordPurpose: recordPurpose.default("inspection"),
       title: z.string().trim().min(1).max(120),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       pointId: z.string().uuid().nullable().default(null),

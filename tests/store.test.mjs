@@ -6,10 +6,12 @@ test("목록 밖 기존 사진을 재사용하는 경로도 같은 초기 수정
   assert.deepEqual(decodeEntity('{"id":"legacy"}'), {
     id: "legacy",
     editVersion: 0,
+    recordPurpose: "inspection",
   });
   assert.deepEqual(decodeEntity({ id: "saved", editVersion: 4 }), {
     id: "saved",
     editVersion: 4,
+    recordPurpose: "inspection",
   });
 });
 

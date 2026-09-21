@@ -52,6 +52,7 @@ const started = performance.now();
 const uploaded = await json("/inspections", { method: "POST", body: payload });
 const uploadSeconds = (performance.now() - started) / 1000;
 assert.equal(uploaded.length, 10);
+assert.equal(new Set(uploaded.map((photo) => photo.id)).size, 10);
 const hashes = [];
 for (const [index, photo] of uploaded.entries()) {
   const result = await fetch(`${base}/inspections/${photo.id}/image`);
@@ -70,8 +71,14 @@ for (const [index, photo] of uploaded.entries()) {
 const deadline = Date.now() + 180000;
 let results;
 do {
-  const all = await json("/inspections");
-  results = all.filter((p) => uploaded.some((x) => x.id === p.id));
+  results = await Promise.all(
+    uploaded.map((photo) => json(`/inspections/${photo.id}`)),
+  );
+  assert.equal(results.length, uploaded.length);
+  assert.deepEqual(
+    results.map((photo) => photo.id).sort(),
+    uploaded.map((photo) => photo.id).sort(),
+  );
   if (results.every((p) => p.status === "done" || p.status === "error")) break;
   await new Promise((resolve) => setTimeout(resolve, 1500));
 } while (Date.now() < deadline);
