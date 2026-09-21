@@ -20,12 +20,14 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  CircleAlert,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
   Clock3,
   FolderKanban,
   ImagePlus,
+  Info,
   Layers3,
   LayoutDashboard,
   LoaderCircle,
@@ -92,6 +94,8 @@ type Health = {
   model: { ready: boolean };
 };
 type Tab = "dashboard" | "plans" | "photos" | "points" | "worklist" | "labels";
+type ToastTone = "success" | "error" | "info";
+type Toast = { tone: ToastTone; message: string };
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const publicDemo = process.env.NEXT_PUBLIC_DEMO_ONLY === "1";
 const publicUploads = process.env.NEXT_PUBLIC_PUBLIC_UPLOADS_ALLOWED === "1";
@@ -159,7 +163,7 @@ export default function Home() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<Toast | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -208,12 +212,12 @@ export default function Home() {
   }, [refresh]);
   useEffect(() => {
     if (toast) {
-      const timer = setTimeout(() => setToast(""), 4500);
+      const timer = setTimeout(() => setToast(null), 4500);
       return () => clearTimeout(timer);
     }
   }, [toast]);
-  const notify = async (message: string) => {
-    setToast(message);
+  const notify = async (message: string, tone: ToastTone = "success") => {
+    setToast({ tone, message });
     await refresh();
   };
   const selectPhoto = async (photo: Photo) => {
@@ -222,7 +226,10 @@ export default function Home() {
     try {
       setHistory(await api<Audit[]>(`/inspections/${photo.id}/history`));
     } catch {
-      setToast("이력을 불러오지 못했습니다. 다시 열어 주세요.");
+      setToast({
+        tone: "error",
+        message: "이력을 불러오지 못했습니다. 다시 열어 주세요.",
+      });
     }
   };
   const selectPoint = async (point: Point) => {
@@ -231,7 +238,7 @@ export default function Home() {
     try {
       setHistory(await api<Audit[]>(`/points/${point.id}/history`));
     } catch {
-      setToast("이력을 불러오지 못했습니다.");
+      setToast({ tone: "error", message: "이력을 불러오지 못했습니다." });
     }
   };
   const active = photos.filter((p) => (gradeOf(p) || 0) >= 3);
@@ -902,9 +909,10 @@ export default function Home() {
                               );
                               if (point) await selectPoint(point);
                             } else
-                              setToast(
-                                `${p.title} · ${p.note || "연결 포인트 미확인"}`,
-                              );
+                              setToast({
+                                tone: "info",
+                                message: `${p.title} · ${p.note || "연결 포인트 미확인"}`,
+                              });
                           }}
                         >
                           {p.status === "done" ? "✓ " : ""}
@@ -933,7 +941,10 @@ export default function Home() {
                             ),
                           });
                         } catch {
-                          setToast("계획 이력을 불러오지 못했습니다.");
+                          setToast({
+                            tone: "error",
+                            message: "계획 이력을 불러오지 못했습니다.",
+                          });
                         }
                       }}
                     >
@@ -954,16 +965,21 @@ export default function Home() {
                             });
                             await notify("검사 계획을 완료로 기록했습니다.");
                           } catch (cause) {
-                            setToast((cause as Error).message);
+                            setToast({
+                              tone: "error",
+                              message: (cause as Error).message,
+                            });
                           }
                         }}
                       >
                         <Check size={15} />
                         검사 완료 기록
                       </button>
-                    ) : (
+                    ) : p.status === "done" ? (
                       <span className="badge green">완료</span>
-                    )}
+                    ) : p.status === "cancelled" ? (
+                      <span className="badge muted">취소</span>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -988,9 +1004,18 @@ export default function Home() {
         </Modal>
       )}
       {toast && (
-        <div className="toast" role="status">
-          <CheckCircle2 size={18} />
-          {toast}
+        <div
+          className={`toast ${toast.tone}`}
+          role={toast.tone === "error" ? "alert" : "status"}
+        >
+          {toast.tone === "error" ? (
+            <CircleAlert size={18} aria-hidden="true" />
+          ) : toast.tone === "info" ? (
+            <Info size={18} aria-hidden="true" />
+          ) : (
+            <CheckCircle2 size={18} aria-hidden="true" />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
       {uploadOpen && (
@@ -1189,7 +1214,7 @@ function UploadDialog({
   demoOnly: boolean;
   points: Point[];
   close: () => void;
-  done: (s: string) => Promise<void>;
+  done: (s: string, tone?: ToastTone) => Promise<void>;
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [demoSelection, setDemoSelection] = useState(false);
@@ -1325,6 +1350,7 @@ function UploadDialog({
         created.length
           ? `${created.length}장 새로 저장 · ${reused ? `중복 ${reused}장 제외 · ` : ""}${((performance.now() - started) / 1000).toFixed(1)}초 · AI 판독은 백그라운드에서 진행됩니다.`
           : `이미 등록된 시연 사진 ${reused}장입니다. 새로 저장하지 않고 기존 사진과 결과를 엽니다.`,
+        created.length ? "success" : "info",
       );
       close();
       if (!created.length && results[0]) await openExisting(results[0]);

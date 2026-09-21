@@ -976,6 +976,17 @@ footer span:last-child {
   font-size: 12px;
   max-width: 80vw;
 }
+.toast.error {
+  background: #842f2f;
+  border-color: #a94b4b;
+}
+.toast.info {
+  background: #344854;
+  border-color: #607681;
+}
+.toast > svg {
+  flex-shrink: 0;
+}
 .modal-backdrop {
   position: fixed;
   inset: 0;
