@@ -14,7 +14,10 @@ services:
       - /models/model.pt
       - --contract
       - /models/final-freeze.json
+    environment:
+      TMPDIR: /uploads-tmp
     volumes:
+      - model-uploads:/uploads-tmp
       - type: bind
         source: ${MODEL_WEIGHTS_PATH:?Set an absolute checkpoint path in .env}
         target: /models/model.pt
@@ -54,3 +57,6 @@ services:
       MODEL_API_URL: http://model:8001
     depends_on:
       model: { condition: service_healthy }
+
+volumes:
+  model-uploads:

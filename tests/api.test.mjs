@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 const base = process.env.TEST_API_URL || "http://127.0.0.1:4000/api";
 test("시연 사진 요청은 사용자 파일 경로나 URL을 받지 않는다", async () => {
   const response = await fetch(`${base}/demo-inspections`, {
@@ -33,6 +34,7 @@ test("사진 없음과 잘못된 이미지가 저장 성공으로 표시되지 �
   });
   assert.equal(empty.status, 400);
   const invalid = new FormData();
+  invalid.append("uploadIds", JSON.stringify([randomUUID()]));
   invalid.append(
     "images",
     new Blob(["this is not an image"], { type: "image/png" }),

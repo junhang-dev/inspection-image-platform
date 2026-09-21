@@ -33,6 +33,7 @@
   },
   "homepage": "https://github.com/junhang-dev/inspection-image-platform#readme",
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "cors": "2.8.6",
     "dotenv": "18.0.1",
     "express": "5.2.1",

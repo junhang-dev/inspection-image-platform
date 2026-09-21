@@ -1,5 +1,13 @@
 "use client";
-import demoAllowlist from "@/lib/demo-allowlist.json";
+import {
+  readUploadQueue,
+  persistUploadQueue,
+  uploadRequest,
+  transferFile,
+  UploadError,
+  type UploadEntry,
+  type UploadSession,
+} from "@/lib/upload";
 import locations from "@/lib/virtual-locations.json";
 import { conceptPosition, visibleMapPoints } from "@/lib/concept-map";
 import { requestJson } from "@/lib/api";
@@ -106,7 +114,6 @@ type Tab = "dashboard" | "plans" | "photos" | "points" | "worklist" | "labels";
 type ToastTone = "success" | "error" | "info";
 type Toast = { tone: ToastTone; message: string };
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-const publicDemo = process.env.NEXT_PUBLIC_DEMO_ONLY === "1";
 const publicUploads = process.env.NEXT_PUBLIC_PUBLIC_UPLOADS_ALLOWED === "1";
 const statusName = {
   none: "미지정",
@@ -314,7 +321,7 @@ export default function Home() {
       setError("");
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Mac API 연결을 확인하세요.",
+        cause instanceof Error ? cause.message : "서버 연결을 확인하세요.",
       );
     } finally {
       loading.current = false;
@@ -409,7 +416,7 @@ export default function Home() {
         <div className="workspace">
           <span className="workspace-icon">P</span>
           <div>
-            검사 운영 워크스페이스<small>로컬 프로토타입</small>
+            검사 운영 워크스페이스<small>플랜트파일럿</small>
           </div>
           <ChevronRight size={16} />
         </div>
@@ -435,14 +442,14 @@ export default function Home() {
           <div className="storage-note">
             <ShieldCheck size={20} />
             <div>
-              사진은 로컬에 보관<small>Mac · MySQL · MinIO</small>
+              검사 기록 보관<small>원본과 변경 이력 유지</small>
             </div>
             <i className={health?.ready ? "dot" : "dot offline"} />
           </div>
           <div className="user">
             <span>J</span>
             <div>
-              현업 엔지니어<small>로컬 작업자</small>
+              현업 엔지니어<small>검사·보수 담당</small>
             </div>
             <CircleHelp size={18} />
           </div>
@@ -457,7 +464,7 @@ export default function Home() {
           <div className="top-actions">
             <span className="connection">
               <i className={health?.ready ? "dot" : "dot offline"} />
-              {health?.ready ? "로컬 시스템 연결됨" : "연결 확인 중"}
+              {health?.ready ? "연결됨" : "연결 확인 중"}
             </span>
             <button
               className="icon-button"
@@ -472,7 +479,7 @@ export default function Home() {
         <main>
           <div className="page-heading">
             <div>
-              <div className="eyebrow">INSPECTION WORKSPACE</div>
+              <div className="eyebrow">검사·보수 통합 관제</div>
               <h1>{tab === "dashboard" ? "검사 현황을 한눈에" : pageTitle}</h1>
               <p>
                 {tab === "dashboard"
@@ -509,8 +516,8 @@ export default function Home() {
             <div className="notice error" role="alert">
               <Activity size={18} />
               <span>
-                로컬 API에 연결하지 못했습니다. API와 저장소 실행 상태를 확인한
-                뒤 새로고침하세요. <small>{error}</small>
+                서버에 연결하지 못했습니다. 잠시 뒤 다시 연결하세요.{" "}
+                <small>{error}</small>
               </span>
               <button onClick={refresh}>다시 연결</button>
             </div>
@@ -527,8 +534,8 @@ export default function Home() {
           <div className="notice">
             <ShieldCheck size={17} />
             <span>
-              연결 모델의 최종 test 정확도 60% · 목표 70% 미달. 사진 판독 기능과
-              모델 성능은 별도로 검증하며, 사람의 후속 판단을 함께 기록하세요.
+              AI 정확도 60% · 목표 70% 미달. 판독 결과를 확인하고 필요한 판단을
+              기록하세요.
             </span>
           </div>
           {tab === "dashboard" && (
@@ -538,7 +545,7 @@ export default function Home() {
                   {
                     name: "전체 검사 사진",
                     value: photos.length,
-                    note: "로컬에 저장된 원본",
+                    note: "저장된 원본 사진",
                     icon: Camera,
                     color: "teal",
                   },
@@ -887,7 +894,9 @@ export default function Home() {
                 </select>
                 <span>
                   {planFilter !== "all" && !scopedPhotos.loaded
-                    ? scopedPhotos.error ? "미조회" : "조회 중…"
+                    ? scopedPhotos.error
+                      ? "미조회"
+                      : "조회 중…"
                     : `${visible.length}장${planFilter !== "all" && scopedPhotos.error ? " (마지막 조회)" : ""}`}
                 </span>
                 <select
@@ -1158,14 +1167,9 @@ export default function Home() {
       )}
       {uploadOpen && (
         <UploadDialog
-          demoOnly={publicDemo || health?.demoMode === true}
           publicUploadsAllowed={
             publicUploads || health?.publicUploadsAllowed === true
           }
-          openExisting={async (photo) => {
-            setPlanDetail(null);
-            await selectPhoto(photo);
-          }}
           points={
             uploadContext?.point &&
             !points.some((p) => p.id === uploadContext.point?.id)
@@ -1371,13 +1375,9 @@ function UploadDialog({
   context,
   close,
   done,
-  demoOnly,
   publicUploadsAllowed,
-  openExisting,
 }: {
   publicUploadsAllowed: boolean;
-  openExisting: (photo: Photo) => Promise<void>;
-  demoOnly: boolean;
   points: Point[];
   plans: Plan[];
   context: { plan: Plan; point?: Point } | null;
@@ -1385,72 +1385,205 @@ function UploadDialog({
   done: (s: string, tone?: ToastTone) => Promise<void>;
 }) {
   const [files, setFiles] = useState<File[]>([]);
-  const [demoSelection, setDemoSelection] = useState(false);
   const [planId, setPlanId] = useState(context?.plan.id || "");
   const [pointId, setPointId] = useState(context?.point?.id || "");
+  const [createdPoint, setCreatedPoint] = useState<Point | null>(null);
   const [newRackId, setNewRackId] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [queue, setQueue] = useState<UploadEntry[]>([]);
+  const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [progress, setProgress] = useState(0);
-  const [stage, setStage] = useState("");
+  const [storageWarning, setStorageWarning] = useState(false);
+  const rows = useRef<UploadEntry[]>([]);
+  const handles = useRef(new Map<string, File>());
+  const alive = useRef(true);
+  const operation = useRef<AbortController | null>(null);
   const selectedPlan =
     context?.plan.id === planId
       ? context.plan
       : plans.find((plan) => plan.id === planId);
+  const knownPoints =
+    createdPoint && !points.some((point) => point.id === createdPoint.id)
+      ? [...points, createdPoint]
+      : points;
   const availablePoints = selectedPlan
-    ? points.filter((point) => selectedPlan.pointIds.includes(point.id))
-    : points;
-  const selectedNames = demoSelection
-    ? demoAllowlist.map((demo) => demo.name)
-    : files.map((file) => file.name);
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError("");
-    if (!selectedNames.length) return setError("업로드할 사진을 선택하세요.");
-    if (planId && (!pointId || pointId === "new"))
-      return setError("검사 계획에 연결된 포인트를 선택하세요.");
-    if (files.length > 10 || files.some((f) => f.size > 20 * 1024 * 1024))
-      return setError("한 번에 10장, 사진당 20MB까지 가능합니다.");
-    const values = new FormData(e.currentTarget);
-    setBusy(true);
-    setProgress(0);
-    setStage(
-      demoSelection ? "시연 사진을 확인하는 중…" : "업로드를 준비하는 중…",
+    ? knownPoints.filter((point) => selectedPlan.pointIds.includes(point.id))
+    : knownPoints;
+
+  function saveQueue(next: UploadEntry[]) {
+    if (!alive.current) return;
+    rows.current = next;
+    setQueue(next);
+    setStorageWarning(!persistUploadQueue(next));
+  }
+  function patch(id: string, changes: Partial<UploadEntry>) {
+    saveQueue(
+      rows.current.map((row) => (row.id === id ? { ...row, ...changes } : row)),
     );
-    const started = performance.now();
-    try {
-      if (!demoSelection) {
-        const mode = await api<Health>("/health", {
-          signal: AbortSignal.timeout(10000),
-        });
-        if (demoOnly || mode.demoMode) {
-          const hashes = await Promise.all(
-            files.map(async (file) =>
-              Array.from(
-                new Uint8Array(
-                  await crypto.subtle.digest(
-                    "SHA-256",
-                    await file.arrayBuffer(),
-                  ),
-                ),
-              )
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join(""),
-            ),
-          );
-          if (
-            hashes.some(
-              (hash) => !demoAllowlist.some((demo) => demo.sha256 === hash),
-            )
-          )
-            throw new Error(
-              "공개 데모에서는 제공된 시연 사진만 업로드할 수 있습니다.",
-            );
+  }
+  function applySession(id: string, session: UploadSession) {
+    patch(id, {
+      sha256: session.sha256,
+      photo: session.photo,
+      progress: Math.round((session.offset / session.size) * 100),
+      state:
+        session.status === "completed"
+          ? "stored"
+          : handles.current.has(id)
+            ? "waiting"
+            : "needs-file",
+      error:
+        session.status === "completed"
+          ? ""
+          : session.status === "expired"
+            ? session.error ||
+              "임시 전송이 만료됐습니다. 원래 파일을 선택하고 처음부터 전송하세요."
+            : "전송을 이어가려면 원래 파일을 선택하세요.",
+    });
+  }
+  async function checkEntry(entry: UploadEntry, signal: AbortSignal) {
+    let session = await uploadRequest(`/${entry.id}`, {}, signal);
+    // Finalization already verified the original, so it can recover without a File handle.
+    if (session.status === "finalizing")
+      session = await uploadRequest(
+        `/${entry.id}/complete`,
+        { method: "POST" },
+        signal,
+      );
+    if (!signal.aborted) applySession(entry.id, session);
+    return session;
+  }
+  useEffect(() => {
+    alive.current = true;
+    const controller = new AbortController();
+    operation.current = controller;
+    const saved = readUploadQueue();
+    rows.current = saved;
+    setQueue(saved);
+    void (async () => {
+      for (const entry of saved) {
+        if (controller.signal.aborted) return;
+        try {
+          await checkEntry(entry, controller.signal);
+        } catch (cause) {
+          if (controller.signal.aborted) return;
+          patch(entry.id, {
+            state: "needs-file",
+            error:
+              cause instanceof UploadError && cause.status === 404
+                ? "전송을 시작하지 않은 사진입니다. 원래 파일을 다시 선택하세요."
+                : (cause as Error).message,
+          });
         }
       }
+      if (!controller.signal.aborted) {
+        operation.current = null;
+        setBusy(false);
+      }
+    })();
+    return () => {
+      alive.current = false;
+      controller.abort();
+      operation.current?.abort();
+    };
+    // Restore once; later prop refreshes must not restart an active transfer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function run(ids: string[], restart = false) {
+    if (operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    setError("");
+    let stored = 0;
+    try {
+      for (const id of ids) {
+        if (controller.signal.aborted) break;
+        const entry = rows.current.find((row) => row.id === id);
+        if (!entry || entry.state === "stored") continue;
+        try {
+          // Read before sending: a previous response may have been lost after commit.
+          try {
+            const state = await checkEntry(entry, controller.signal);
+            if (state.status === "completed") {
+              stored++;
+              continue;
+            }
+          } catch (cause) {
+            if (
+              !(cause instanceof UploadError) ||
+              ![404, 409].includes(cause.status || 0)
+            )
+              throw cause;
+          }
+          const file = handles.current.get(id);
+          if (!file) {
+            patch(id, {
+              state: "needs-file",
+              error:
+                "원래 사진 파일을 다시 선택하세요. 받은 부분부터 이어서 전송합니다.",
+            });
+            continue;
+          }
+          const current = rows.current.find((row) => row.id === id)!;
+          const session = await transferFile(
+            current,
+            file,
+            controller.signal,
+            (changes) => {
+              if (!controller.signal.aborted) patch(id, changes);
+            },
+            restart,
+          );
+          if (controller.signal.aborted) break;
+          applySession(id, session);
+          if (session.status === "completed") {
+            handles.current.delete(id);
+            stored++;
+          }
+        } catch (cause) {
+          if (controller.signal.aborted) break;
+          let recovered = false;
+          try {
+            const status = await uploadRequest(`/${id}`, {}, controller.signal);
+            if (status.status === "completed") {
+              applySession(id, status);
+              handles.current.delete(id);
+              stored++;
+              recovered = true;
+            }
+          } catch {
+            /* Keep the original failure; a later status check can recover. */
+          }
+          if (!recovered && !controller.signal.aborted)
+            patch(id, { state: "failed", error: (cause as Error).message });
+        }
+      }
+      if (stored && alive.current && !controller.signal.aborted)
+        await done(
+          `${stored}장 저장 확인 · AI 판독 결과는 사진 목록에서 확인할 수 있습니다.`,
+        );
+    } finally {
+      if (operation.current === controller) operation.current = null;
+      if (alive.current) setBusy(false);
+    }
+  }
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (operation.current) return;
+    setError("");
+    if (!files.length) return setError("추가할 사진을 선택하세요.");
+    if (planId && (!pointId || pointId === "new"))
+      return setError("검사 계획에 연결된 포인트를 선택하세요.");
+    const values = new FormData(event.currentTarget);
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    try {
       let id = pointId;
-      if (pointId === "new") {
-        const point = await api<Point>("/points", {
+      let target = knownPoints.find((point) => point.id === id);
+      if (id === "new") {
+        target = await api<Point>("/points", {
           method: "POST",
           body: JSON.stringify({
             equipment: values.get("equipment"),
@@ -1458,156 +1591,103 @@ function UploadDialog({
             rackId: newRackId || null,
             name: values.get("name"),
           }),
-          signal: AbortSignal.timeout(15000),
+          signal: controller.signal,
         });
-        id = point.id;
+        if (controller.signal.aborted) return;
+        id = target.id;
+        setCreatedPoint(target);
+        setPointId(id);
       }
-      type UploadResult = Photo & { uploadOutcome?: "created" | "existing" };
-      let results: UploadResult[];
-      if (demoSelection) {
-        results = await api<UploadResult[]>("/demo-inspections", {
-          method: "POST",
-          body: JSON.stringify({ pointId: id || null, planId: planId || null }),
-          signal: AbortSignal.timeout(30000),
-        });
-      } else {
-        const payload = new FormData();
-        for (const file of files) payload.append("images", file);
-        if (id) payload.append("pointId", id);
-        if (planId) payload.append("planId", planId);
-        if (demoOnly) payload.append("demo", "1");
-        setStage("uploading");
-        results = await new Promise<UploadResult[]>((resolve, reject) => {
-          const request = new XMLHttpRequest();
-          request.open("POST", `${apiBase}/api/inspections`);
-          request.timeout = 180000;
-          request.upload.onprogress = (event) => {
-            if (event.lengthComputable)
-              setProgress(Math.round((event.loaded / event.total) * 100));
-          };
-          request.onload = () => {
-            if (request.status >= 500) {
-              reject(
-                new Error(
-                  `서버 처리 중 문제가 발생했습니다. (${request.status}) 저장된 목록에서 반영 여부를 확인한 후 다시 시도하세요.`,
-                ),
-              );
-              return;
-            }
-            try {
-              const data = JSON.parse(request.responseText);
-              if (request.status >= 400) reject(new Error(data.error));
-              else if (Array.isArray(data)) resolve(data);
-              else throw new Error();
-            } catch {
-              reject(
-                new Error(
-                  "업로드 응답을 확인할 수 없습니다. 저장된 목록에서 반영 여부를 확인한 후 다시 시도하세요.",
-                ),
-              );
-            }
-          };
-          request.onerror = () =>
-            reject(
-              new Error(
-                "API 연결이 끊겼습니다. 저장된 목록을 확인한 후 다시 시도하세요.",
-              ),
-            );
-          request.ontimeout = () =>
-            reject(
-              new Error(
-                "응답이 지연되고 있습니다. 저장된 목록을 확인한 후 다시 시도하세요.",
-              ),
-            );
-          request.send(payload);
-        });
-      }
-      const created = results.filter(
-        (photo) => photo.uploadOutcome !== "existing",
-      );
-      const reused = results.length - created.length;
-      setStage("저장된 목록을 확인하는 중…");
-      await done(
-        created.length
-          ? `${created.length}장 새로 저장 · ${reused ? `중복 ${reused}장 제외 · ` : ""}${((performance.now() - started) / 1000).toFixed(1)}초 · AI 판독은 백그라운드에서 진행됩니다.`
-          : `이미 등록된 시연 사진 ${reused}장입니다. 새로 저장하지 않고 기존 사진과 결과를 엽니다.`,
-        created.length ? "success" : "info",
-      );
-      close();
-      if (!created.length && results[0]) await openExisting(results[0]);
+      const added: UploadEntry[] = files.map((file) => ({
+        id: crypto.randomUUID(),
+        name: file.name,
+        size: file.size,
+        sha256: null,
+        pointId: id || null,
+        planId: planId || null,
+        targetLabel: `${selectedPlan?.title || "계획 미지정"} · ${target ? pointName(target) : "위치 미확인"}`,
+        state: "waiting",
+        progress: 0,
+        error: "",
+        photo: null,
+      }));
+      for (const [index, entry] of added.entries())
+        handles.current.set(entry.id, files[index]);
+      saveQueue([...rows.current, ...added]);
+      setFiles([]);
+      operation.current = null;
+      await run(added.map((entry) => entry.id));
     } catch (cause) {
-      setError(
-        (cause as Error).name === "TimeoutError"
-          ? "응답이 지연되고 있습니다. 저장된 목록을 확인한 후 다시 시도하세요."
-          : (cause as Error).message,
-      );
+      if (!controller.signal.aborted && alive.current)
+        setError((cause as Error).message);
     } finally {
-      setBusy(false);
+      if (operation.current === controller) operation.current = null;
+      if (alive.current) setBusy(false);
     }
   }
+  async function checkOne(entry: UploadEntry) {
+    if (operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    try {
+      await checkEntry(entry, controller.signal);
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        patch(entry.id, { state: "failed", error: (cause as Error).message });
+    } finally {
+      if (operation.current === controller) operation.current = null;
+      if (alive.current) setBusy(false);
+    }
+  }
+  const leave = () => {
+    alive.current = false;
+    operation.current?.abort();
+    close();
+  };
+  const stateLabel: Record<UploadEntry["state"], string> = {
+    waiting: "전송 대기",
+    checking: "원본 확인 중",
+    uploading: "전송 중",
+    saving: "저장 확인 중",
+    stored: "저장 완료",
+    failed: "다시 시도 필요",
+    "needs-file": "원래 파일 선택 필요",
+  };
   return (
-    <Modal title="검사 사진 업로드" close={busy ? () => {} : close}>
+    <Modal title="검사 사진 업로드" close={leave}>
       <form onSubmit={submit}>
         <p className="form-intro">
           {publicUploadsAllowed
-            ? "공개 가능한 사진만 선택하세요. 선택한 사진은 링크를 가진 사람이 조회할 수 있습니다."
-            : demoOnly
-              ? "공개 demo에서는 제공된 시연 사진만 업로드할 수 있습니다."
-              : "사진을 원본 그대로 저장하고 포인트에 연결합니다."}
+            ? "공개 가능한 사진만 선택하세요. 링크를 가진 사람이 사진을 조회할 수 있습니다."
+            : "사진을 원본 그대로 저장하고 포인트에 연결합니다."}
         </p>
-        {(demoOnly || publicUploadsAllowed) && (
-          <div className="dropzone">
-            <ShieldCheck size={28} />
-            <strong>
-              {demoOnly
-                ? "공개 데모 · 제공된 시연 사진만 사용"
-                : "시연 사진으로 먼저 둘러보기"}
-            </strong>
-            <span>
-              {demoSelection
-                ? "시연 사진 5장 선택됨"
-                : "같은 포인트의 시연 사진은 기존 결과를 사용합니다."}
-            </span>
-            <button
-              type="button"
-              className="button secondary"
-              disabled={busy}
-              onClick={() => {
-                setError("");
-                setFiles([]);
-                setDemoSelection(true);
-              }}
-            >
-              시연 사진 5장 선택
-            </button>
-          </div>
-        )}
-        {!demoOnly && (
-          <label className="dropzone">
-            <Upload size={32} />
-            <strong>
-              {files.length
-                ? `${files.length}장 선택됨`
-                : "클릭하여 검사 사진 선택"}
-            </strong>
-            <span>JPG, PNG · 최대 10장 · 사진당 20MB</span>
-            <input
-              aria-label="검사 사진 선택"
-              type="file"
-              multiple
-              accept="image/jpeg,image/png"
-              onChange={(e) => {
-                setFiles(Array.from(e.target.files || []));
-                setDemoSelection(false);
-              }}
-              disabled={busy}
-            />
-          </label>
-        )}
-        {selectedNames.length > 0 && (
+        <label className="dropzone">
+          <Upload size={32} />
+          <strong>
+            {files.length
+              ? `${files.length}장 선택됨`
+              : "클릭하여 검사 사진 선택"}
+          </strong>
+          <span>
+            JPG, PNG · 파일별로 전송하며 중단된 사진은 이어 올릴 수 있습니다.
+          </span>
+          <input
+            aria-label="검사 사진 선택"
+            type="file"
+            multiple
+            accept="image/jpeg,image/png"
+            disabled={busy}
+            onChange={(event) => {
+              setFiles(Array.from(event.target.files || []));
+              event.target.value = "";
+            }}
+          />
+        </label>
+        {files.length > 0 && (
           <div className="file-list">
-            {selectedNames.map((name, i) => (
-              <span key={i}>{name}</span>
+            {files.map((file, index) => (
+              <span key={index}>{file.name}</span>
             ))}
           </div>
         )}
@@ -1616,8 +1696,8 @@ function UploadDialog({
           <select
             value={planId}
             disabled={busy || !!context}
-            onChange={(e) => {
-              setPlanId(e.target.value);
+            onChange={(event) => {
+              setPlanId(event.target.value);
               setPointId("");
             }}
           >
@@ -1634,14 +1714,18 @@ function UploadDialog({
         </label>
         <label className="field">
           연결할 포인트
-          <select value={pointId} onChange={(e) => setPointId(e.target.value)}>
+          <select
+            value={pointId}
+            disabled={busy}
+            onChange={(event) => setPointId(event.target.value)}
+          >
             <option value="">
               {planId ? "계획의 포인트 선택" : "위치 미확인으로 저장"}
             </option>
             {!planId && <option value="new">+ 새 포인트 등록</option>}
-            {availablePoints.map((p) => (
-              <option key={p.id} value={p.id}>
-                {pointName(p)}
+            {availablePoints.map((point) => (
+              <option key={point.id} value={point.id}>
+                {pointName(point)}
               </option>
             ))}
           </select>
@@ -1657,12 +1741,18 @@ function UploadDialog({
                 name="equipment"
                 placeholder="예: EQ-101"
                 maxLength={120}
+                disabled={busy}
               />
             </label>
             {!newRackId && (
               <label className="field">
                 랙 번호
-                <input name="rack" placeholder="예: 2" maxLength={120} />
+                <input
+                  name="rack"
+                  placeholder="예: 2"
+                  maxLength={120}
+                  disabled={busy}
+                />
               </label>
             )}
             <label className="field full">
@@ -1671,27 +1761,9 @@ function UploadDialog({
                 name="name"
                 placeholder="예: 상부 배관 P-01"
                 maxLength={120}
+                disabled={busy}
               />
             </label>
-          </div>
-        )}
-        <div className="form-note">
-          <ShieldCheck size={16} />
-          사진은 Mac의 MinIO에 저장됩니다. 위치를 모르면 빈칸으로 남기세요.
-        </div>
-        {busy && (
-          <div className="upload-progress">
-            <progress
-              value={stage === "uploading" ? progress : undefined}
-              max={100}
-            />
-            <span>
-              {stage === "uploading"
-                ? progress < 100
-                  ? `업로드 ${progress}%`
-                  : "이미지 확인·저장 중…"
-                : stage}
-            </span>
           </div>
         )}
         {error && (
@@ -1700,30 +1772,161 @@ function UploadDialog({
           </p>
         )}
         <div className="form-actions">
-          <button
-            type="button"
-            className="button secondary"
-            disabled={busy}
-            onClick={close}
-          >
-            취소
-          </button>
-          <button className="button primary" disabled={busy}>
-            {busy ? (
-              <LoaderCircle className="spin" size={16} />
-            ) : (
-              <Upload size={16} />
-            )}
-            {busy
-              ? demoSelection
-                ? "불러오는 중"
-                : "저장 중"
-              : demoSelection
-                ? "시연 사진 열기"
-                : "업로드 시작"}
+          <button className="button primary" disabled={busy || !files.length}>
+            <Upload size={16} />
+            선택한 사진 전송
           </button>
         </div>
       </form>
+      {storageWarning && (
+        <p className="form-error" role="alert">
+          브라우저에 전송 목록을 보관하지 못했습니다. 저장 확인이 끝날 때까지 이
+          창을 유지하세요.
+        </p>
+      )}
+      {queue.length > 0 && (
+        <>
+          <p className="form-intro">
+            전송 목록 · 저장{" "}
+            {queue.filter((entry) => entry.state === "stored").length}/
+            {queue.length}장. 새로고침 뒤에는 저장 상태를 먼저 확인하고, 남은
+            사진만 다시 선택합니다.
+          </p>
+          <ul className="upload-queue">
+            {queue.map((entry) => (
+              <li className="upload-queue-item" key={entry.id}>
+                <div className="upload-queue-heading">
+                  <strong>{entry.name}</strong>
+                  <span>{stateLabel[entry.state]}</span>
+                </div>
+                <small>
+                  {entry.targetLabel} · {(entry.size / 1024 / 1024).toFixed(1)}{" "}
+                  MB
+                </small>
+                {["checking", "uploading", "saving"].includes(entry.state) && (
+                  <div className="upload-progress">
+                    <progress
+                      value={
+                        entry.state === "saving" ? undefined : entry.progress
+                      }
+                      max={100}
+                    />
+                    <span>
+                      {entry.state === "saving"
+                        ? "원본 저장을 확인하고 있습니다."
+                        : `${stateLabel[entry.state]} ${entry.progress}%`}
+                    </span>
+                  </div>
+                )}
+                {entry.state === "stored" && (
+                  <p>
+                    원본 저장 완료 · AI 판독 결과는 사진 목록에서 확인하세요.
+                  </p>
+                )}
+                {entry.error && (
+                  <p className="form-error" role="alert">
+                    {entry.error}
+                  </p>
+                )}
+                {entry.state !== "stored" && (
+                  <div className="upload-queue-actions">
+                    <label className="button secondary">
+                      원래 파일 선택
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        aria-label={`${entry.name} 원래 파일 선택`}
+                        disabled={busy}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) {
+                            handles.current.set(entry.id, file);
+                            patch(entry.id, {
+                              state: "waiting",
+                              error:
+                                "전송할 때 원래 사진과 내용이 같은지 확인합니다.",
+                            });
+                          }
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={busy}
+                      onClick={() => void checkOne(entry)}
+                    >
+                      저장 상태 확인
+                    </button>
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={busy || !handles.current.has(entry.id)}
+                      onClick={() => void run([entry.id])}
+                    >
+                      이어서 전송
+                    </button>
+                    {entry.sha256 && (
+                      <button
+                        type="button"
+                        className="button secondary"
+                        disabled={busy || !handles.current.has(entry.id)}
+                        onClick={() => void run([entry.id], true)}
+                      >
+                        처음부터 전송
+                      </button>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy}
+              onClick={() =>
+                saveQueue(
+                  rows.current.filter((entry) => entry.state !== "stored"),
+                )
+              }
+            >
+              완료한 전송 목록 비우기
+            </button>
+            <button
+              type="button"
+              className="button primary"
+              disabled={
+                busy ||
+                !queue.some(
+                  (entry) =>
+                    entry.state !== "stored" && handles.current.has(entry.id),
+                )
+              }
+              onClick={() =>
+                void run(
+                  rows.current
+                    .filter(
+                      (entry) =>
+                        entry.state !== "stored" &&
+                        handles.current.has(entry.id),
+                    )
+                    .map((entry) => entry.id),
+                )
+              }
+            >
+              남은 사진 전송
+            </button>
+          </div>
+        </>
+      )}
+      <div className="form-actions">
+        <button type="button" className="button secondary" onClick={leave}>
+          {busy ? "중단하고 닫기" : "닫기"}
+        </button>
+      </div>
     </Modal>
   );
 }
@@ -1985,7 +2188,8 @@ function PlanDetailDialog({
           )}
           {linked.length < plan.pointIds.length && (
             <p className="form-intro">
-              일부 연결 포인트의 정보를 아직 조회하지 못했습니다. 저장된 연결은 유지됩니다.
+              일부 연결 포인트의 정보를 아직 조회하지 못했습니다. 저장된 연결은
+              유지됩니다.
             </p>
           )}
           {linked.map((point) => (
@@ -2000,7 +2204,9 @@ function PlanDetailDialog({
                 <small>
                   {photoList.loaded
                     ? `이 계획의 사진 ${photoList.photos.filter((photo) => photo.pointId === point.id).length}장${photoList.error ? " (마지막 조회)" : ""}`
-                    : photoList.error ? "사진 미조회" : "사진 조회 중…"}
+                    : photoList.error
+                      ? "사진 미조회"
+                      : "사진 조회 중…"}
                 </small>
               </div>
               <button
@@ -2313,9 +2519,7 @@ function PhotoDialog({
               <span>현재 분류</span>
               <Grade photo={photo} />
             </div>
-            <small>
-              최종 test 60% · 목표 70% 미달 · 실제 사용 판단 별도 확인
-            </small>
+            <small>AI 정확도 60% · 목표 70% 미달</small>
             <p>
               원래 AI 등급:{" "}
               {photo.ai
@@ -2323,11 +2527,14 @@ function PhotoDialog({
                 : "결과 없음"}
             </p>
             {photo.ai && (
-              <small>
-                모델 {photo.ai.model_version}
-                <br />
-                전처리 {photo.ai.preprocessing_version}
-              </small>
+              <details>
+                <summary>AI 판독 정보</summary>
+                <small>
+                  모델 {photo.ai.model_version}
+                  <br />
+                  전처리 {photo.ai.preprocessing_version}
+                </small>
+              </details>
             )}
             {photo.error && <p className="form-error">{photo.error}</p>}
             {photo.status === "error" && (
@@ -2572,7 +2779,9 @@ function PointDialog({
                 maxLength={120}
                 readOnly={!!initial.rackId}
               />
-              {initial.rackId && <small>{rackName(initial.rackId)} · 소속 유지</small>}
+              {initial.rackId && (
+                <small>{rackName(initial.rackId)} · 소속 유지</small>
+              )}
             </label>
           </div>
           <label className="field">

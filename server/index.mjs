@@ -5,14 +5,20 @@ import multer from "multer";
 import sharp from "sharp";
 import { Client } from "minio";
 import { randomUUID, createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { diskInput } from "./disk-input.mjs";
+import { createUploadService, SESSION_TTL_MS } from "./uploads.mjs";
+import { inspectImage, sha256File } from "./upload-files.mjs";
+import { predictStream } from "./model-input.mjs";
 import { z } from "zod";
 import {
   initializeStore,
   list,
   get,
   insert,
-  insertBatch,
+  nextInspection,
   update,
   events,
   pool,
@@ -51,9 +57,14 @@ const objects = new Client({
   secretKey: process.env.MINIO_SECRET_KEY,
 });
 const bucket = process.env.MINIO_BUCKET || "inspection-images";
+const uploadRoot = resolve(process.env.UPLOAD_TEMP_DIR || "uploads/incoming");
+const multipartRoot = join(uploadRoot, "multipart");
+const multipartFiles = await diskInput(multipartRoot);
+const thumbnailFiles = await diskInput(join(uploadRoot, "thumbnails"));
+let uploads;
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024, files: 10, fields: 5 },
+  storage: multipartFiles.storage,
+  limits: { fields: 5, fieldSize: 100 * 1024 },
 });
 const field = z.string().trim().max(120);
 const actor = z.string().trim().min(1, "수정자를 입력하세요.").max(60);
@@ -105,11 +116,11 @@ const predictionSchema = z.object({
   preprocessing_version: z.string().min(1),
 });
 const fail = (status, message) => Object.assign(new Error(message), { status });
-async function validatePhotoRelation(planId, pointId) {
-  if (pointId && !(await get("point", pointId)))
+async function validatePhotoRelation(planId, pointId, connection = pool) {
+  if (pointId && !(await get("point", pointId, connection)))
     throw fail(422, "연결할 포인트를 찾을 수 없습니다. 다시 선택하세요.");
   if (!planId) return;
-  const plan = await get("plan", planId);
+  const plan = await get("plan", planId, connection);
   if (!plan) throw fail(422, "검사 계획을 찾을 수 없습니다. 다시 선택하세요.");
   if (!pointId || !planPointIds(plan).includes(pointId))
     throw fail(422, "검사 계획에 연결된 포인트를 선택하세요.");
@@ -269,93 +280,40 @@ async function saveUploads(files, pointId, reuseDemo, planId = null) {
       if (!byHash.has(photo.sha256)) byHash.set(photo.sha256, photo);
     }
   }
-  const unique = new Set();
-  const toSave = files.filter((file) => {
-    if (!reuseDemo) return true;
-    if (byHash.has(file.hash) || unique.has(file.hash)) return false;
-    unique.add(file.hash);
-    return true;
-  });
-  const objectsWritten = [];
-  const inputs = [];
-  let created = [];
-  try {
-    for (const file of toSave) {
-      const key = `${new Date().toISOString().slice(0, 10)}/${randomUUID()}`;
-      await objects.putObject(bucket, key, file.buffer, file.size, {
-        "Content-Type": file.mime,
-      });
-      objectsWritten.push(key);
-      inputs.push({
-        name: Buffer.from(file.originalname, "latin1")
-          .toString("utf8")
-          .slice(0, 200),
-        objectKey: key,
-        sha256: file.hash,
+  const results = [];
+  for (const file of files) {
+    const existing = reuseDemo ? byHash.get(file.hash) : null;
+    if (existing) {
+      results.push({ ...existing, uploadOutcome: "existing" });
+      continue;
+    }
+    const result = await uploads.importFile(
+      {
+        id: file.uploadId || randomUUID(),
+        name: file.originalname.slice(0, 200),
         size: file.size,
-        mime: file.mime,
+        sha256: file.hash,
         pointId,
         planId,
-        status: "pending",
-        ai: null,
-        humanGrade: null,
-        retake: false,
-        retakeReason: "",
-        labeling: false,
-        error: null,
-      });
-    }
-    if (inputs.length)
-      created = await insertBatch(
-        "inspection",
-        inputs,
-        "현업 엔지니어",
-        "사진 업로드",
-      );
-  } catch (error) {
-    if (!error.commitUncertain)
-      await Promise.allSettled(
-        objectsWritten.map((key) => objects.removeObject(bucket, key)),
-      );
-    else
-      console.error(
-        "업로드 COMMIT 결과 불확실: 원본 객체를 보존했습니다. 목록과 저장소를 확인하세요.",
-      );
-    throw error;
+      },
+      file.path,
+    );
+    byHash.set(file.hash, result.photo);
+    results.push({ ...result.photo, uploadOutcome: result.uploadOutcome });
   }
-  if (!reuseDemo)
-    return created.map((photo) => ({ ...photo, uploadOutcome: "created" }));
-  const newIds = new Set(created.map((photo) => photo.id));
-  for (const photo of created) byHash.set(photo.sha256, photo);
-  return files.map((file) => {
-    const photo = byHash.get(file.hash);
-    const wasCreated = newIds.delete(photo.id);
-    return { ...photo, uploadOutcome: wasCreated ? "created" : "existing" };
-  });
+  return results;
 }
 async function validateImages(files, demoRequest) {
-  for (const file of files)
-    file.hash = createHash("sha256").update(file.buffer).digest("hex");
-  if (demoRequest && files.some((file) => !allowedHashes.has(file.hash))) {
+  for (const file of files) file.hash = await sha256File(file.path);
+  if (demoRequest && files.some((file) => !allowedHashes.has(file.hash)))
     throw fail(
       422,
       "시연 사진 불러오기는 제공된 시연 사진만 사용할 수 있습니다.",
     );
-  }
   for (const file of files) {
-    try {
-      const meta = await sharp(file.buffer, {
-        limitInputPixels: 40_000_000,
-      }).metadata();
-      if (!["jpeg", "png"].includes(meta.format)) throw new Error();
-      file.mime = meta.format === "png" ? "image/png" : "image/jpeg";
-      await sharp(file.buffer, { limitInputPixels: 40_000_000 }).stats();
-    } catch {
-      throw fail(
-        422,
-        "잘못된 이미지입니다. 열 수 있는 JPG 또는 PNG를 다시 선택하세요.",
-      );
-    }
+    const image = await inspectImage(file.path);
+    file.mime = image.mime;
+    file.size = image.size;
   }
 }
 app.post("/api/demo-inspections", async (req, res) => {
@@ -369,10 +327,10 @@ app.post("/api/demo-inspections", async (req, res) => {
   await validatePhotoRelation(planId, pointId);
   const files = await Promise.all(
     demoFiles.map(async (file) => {
-      const buffer = await readFile(
+      const path = fileURLToPath(
         new URL(`../image/demo/${file.name}`, import.meta.url),
       );
-      return { buffer, size: buffer.length, originalname: file.name };
+      return { path, size: (await stat(path)).size, originalname: file.name };
     }),
   );
   await validateImages(files, true);
@@ -385,28 +343,99 @@ app.post("/api/demo-inspections", async (req, res) => {
     )
     .json(result);
 });
-app.post("/api/inspections", upload.array("images", 10), async (req, res) => {
-  if (!req.files?.length)
-    throw fail(400, "사진이 없습니다. JPG 또는 PNG 사진을 선택하세요.");
-  const demoRequest = demoMode || req.body.demo === "1";
-  const { pointId, planId } = z
-    .object({
-      pointId: z.string().uuid().nullable(),
-      planId: z.string().uuid().nullable(),
-    })
-    .parse({
-      pointId: req.body.pointId || null,
-      planId: req.body.planId || null,
-    });
-  await validatePhotoRelation(planId, pointId);
-  await validateImages(req.files, demoRequest);
-  const save = () => saveUploads(req.files, pointId, demoRequest, planId);
-  const result = demoRequest ? await withDemoLock(save) : await save();
-  res
-    .status(
-      result.some((photo) => photo.uploadOutcome === "created") ? 201 : 200,
+app.post("/api/inspections", upload.array("images"), async (req, res) => {
+  try {
+    if (!req.files?.length)
+      throw fail(400, "사진이 없습니다. JPG 또는 PNG 사진을 선택하세요.");
+    const demoRequest = demoMode || req.body.demo === "1";
+    const { pointId, planId } = z
+      .object({
+        pointId: z.string().uuid().nullable(),
+        planId: z.string().uuid().nullable(),
+      })
+      .parse({
+        pointId: req.body.pointId || null,
+        planId: req.body.planId || null,
+      });
+    await validatePhotoRelation(planId, pointId);
+    let ids = null;
+    if (req.body.uploadIds) {
+      let supplied;
+      try {
+        supplied = JSON.parse(req.body.uploadIds);
+      } catch {
+        throw fail(422, "사진별 전송 식별자 형식을 확인하세요.");
+      }
+      ids = z.array(z.string().uuid()).parse(supplied);
+    }
+    if (!ids && !demoRequest)
+      throw fail(
+        422,
+        "사진별 전송 식별자가 필요합니다. 화면을 새로고침한 뒤 파일별 업로드를 이용하세요.",
+      );
+    if (
+      ids &&
+      (ids.length !== req.files.length || new Set(ids).size !== ids.length)
     )
-    .json(result);
+      throw fail(422, "사진별 전송 식별자를 확인하세요.");
+    for (const [i, file] of req.files.entries()) {
+      file.uploadId = ids?.[i];
+      file.originalname = Buffer.from(file.originalname, "latin1").toString(
+        "utf8",
+      );
+    }
+    await validateImages(req.files, demoRequest);
+    const save = () => saveUploads(req.files, pointId, demoRequest, planId);
+    const result = demoRequest ? await withDemoLock(save) : await save();
+    res
+      .status(
+        result.some((photo) => photo.uploadOutcome === "created") ? 201 : 200,
+      )
+      .json(result);
+  } finally {
+    await Promise.allSettled(
+      (req.files || []).map((file) => multipartFiles.remove(file.path)),
+    );
+  }
+});
+const sessionId = z.string().uuid();
+const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
+app.post("/api/upload-sessions", async (req, res) => {
+  const input = z
+    .object({
+      id: sessionId,
+      name: z.string().min(1).max(200),
+      size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      sha256,
+      pointId: sessionId.nullable(),
+      planId: sessionId.nullable(),
+    })
+    .strict()
+    .parse(req.body);
+  res.json(await uploads.initialize(input));
+});
+app.get("/api/upload-sessions/:id", async (req, res) =>
+  res.json(await uploads.status(sessionId.parse(req.params.id))),
+);
+app.put("/api/upload-sessions/:id/chunks", async (req, res) => {
+  const id = sessionId.parse(req.params.id);
+  const offset = z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(Number.MAX_SAFE_INTEGER)
+    .parse(req.query.offset);
+  const hash = sha256.parse(req.headers["x-chunk-sha256"]);
+  if (req.headers["content-type"] !== "application/octet-stream")
+    throw fail(415, "사진 조각의 전송 형식을 확인하세요.");
+  res.json(await uploads.chunk(id, offset, hash, req));
+});
+app.post("/api/upload-sessions/:id/complete", async (req, res) =>
+  res.json(await uploads.finish(sessionId.parse(req.params.id))),
+);
+app.post("/api/upload-sessions/:id/restart", async (req, res) => {
+  const input = z.object({ sha256 }).strict().parse(req.body);
+  res.json(await uploads.restart(sessionId.parse(req.params.id), input.sha256));
 });
 const thumbnails = new Map();
 app.get("/api/inspections/:id/thumbnail", async (req, res) => {
@@ -416,13 +445,16 @@ app.get("/api/inspections/:id/thumbnail", async (req, res) => {
   if (!thumbnail) {
     thumbnail = (async () => {
       const stream = await objects.getObject(bucket, item.objectKey);
-      const chunks = [];
-      for await (const chunk of stream) chunks.push(chunk);
-      return sharp(Buffer.concat(chunks), { limitInputPixels: 40_000_000 })
-        .rotate()
-        .resize(320, 200, { fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 75 })
-        .toBuffer();
+      const input = await thumbnailFiles.receive(stream);
+      try {
+        return await sharp(input.path, { limitInputPixels: 40_000_000 })
+          .rotate()
+          .resize(320, 200, { fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 75 })
+          .toBuffer();
+      } finally {
+        await thumbnailFiles.remove(input.path);
+      }
     })();
     thumbnails.set(item.sha256, thumbnail);
     thumbnail.catch(() => thumbnails.delete(item.sha256));
@@ -570,15 +602,20 @@ app.use((error, req, res, next) => {
       .status(422)
       .json({ error: error.issues[0]?.message || "입력을 확인하세요." });
   if (error instanceof multer.MulterError)
-    return res.status(413).json({
-      error: "한 번에 최대 10장, 사진당 20MB까지 업로드할 수 있습니다.",
+    return res.status(422).json({
+      error: "사진 전송 형식을 확인하고 해당 파일을 다시 시도하세요.",
+    });
+  if (["ENOSPC", "EIO", "EACCES", "EMFILE"].includes(error.code))
+    return res.status(503).json({
+      error:
+        "사진 임시 저장소를 사용할 수 없습니다. 공간과 연결을 확인한 뒤 해당 파일을 다시 시도하세요.",
     });
   const status = error.status || 500;
   if (status >= 500)
     console.error("API request failed:", error.code || error.message);
   res.status(status).json({
     error:
-      status >= 500
+      status >= 500 && !error.status
         ? "저장소 연결에 문제가 있습니다. 잠시 후 다시 시도하세요."
         : error.message,
   });
@@ -589,15 +626,7 @@ async function processNext() {
   if (busy) return;
   busy = true;
   try {
-    const next = (await list("inspection"))
-      .reverse()
-      .find(
-        (photo) =>
-          photo.status === "pending" ||
-          (photo.status === "processing" &&
-            Date.now() - Date.parse(photo.updatedAt || photo.createdAt) >
-              180000),
-      );
+    const next = await nextInspection();
     if (!next) return;
     const modelUrl = process.env.MODEL_API_URL || "http://127.0.0.1:8001";
     try {
@@ -618,21 +647,9 @@ async function processNext() {
     );
     try {
       const stream = await objects.getObject(bucket, next.objectKey);
-      const parts = [];
-      for await (const part of stream) parts.push(part);
-      const data = new FormData();
-      data.append(
-        "image",
-        new Blob([Buffer.concat(parts)], { type: next.mime }),
-        "inspection-image",
+      const result = predictionSchema.parse(
+        await predictStream(modelUrl, stream, next),
       );
-      const response = await fetch(`${modelUrl}/predict`, {
-        method: "POST",
-        body: data,
-        signal: AbortSignal.timeout(120000),
-      });
-      if (!response.ok) throw new Error(`모델 응답 오류 (${response.status})`);
-      const result = predictionSchema.parse(await response.json());
       await update(
         "inspection",
         next.id,
@@ -685,6 +702,18 @@ for (let attempt = 0; attempt < 30; attempt++) {
         );
       }
     }
+    uploads = await createUploadService({
+      pool,
+      objects,
+      bucket,
+      directory: uploadRoot,
+      validateRelation: validatePhotoRelation,
+      demoOnly: demoMode,
+      allowedHashes,
+    });
+    await uploads.cleanup();
+    await multipartFiles.cleanup(SESSION_TTL_MS);
+    await thumbnailFiles.cleanup(SESSION_TTL_MS);
     break;
   } catch (error) {
     if (attempt === 29) throw error;
@@ -696,3 +725,15 @@ const host = process.env.API_HOST || "127.0.0.1";
 const port = Number(process.env.API_PORT || 4000);
 app.listen(port, host, () => console.log(`검사 API http://${host}:${port}`));
 setInterval(processNext, 1500);
+setInterval(
+  async () => {
+    try {
+      await uploads.cleanup();
+      await multipartFiles.cleanup(SESSION_TTL_MS);
+      await thumbnailFiles.cleanup(SESSION_TTL_MS);
+    } catch (error) {
+      console.error("Upload cleanup:", error.code || error.message);
+    }
+  },
+  60 * 60 * 1000,
+).unref();

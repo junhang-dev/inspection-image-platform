@@ -59,12 +59,25 @@ export async function list(kind, filters = {}) {
   );
   return rows.map((row) => decodeEntity(row.data, kind));
 }
-export async function get(kind, id) {
-  const [rows] = await pool.execute(
+export async function get(kind, id, connection = pool) {
+  const [rows] = await connection.execute(
     "SELECT data FROM entities WHERE kind = ? AND id = ?",
     [kind, id],
   );
   return rows[0] ? decodeEntity(rows[0].data, kind) : null;
+}
+export async function nextInspection() {
+  const staleBefore = new Date(Date.now() - 180000).toISOString();
+  const [rows] = await pool.execute(
+    `SELECT data FROM entities WHERE kind = 'inspection'
+    AND (JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'pending'
+      OR (JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'processing'
+      AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.updatedAt')),
+        JSON_UNQUOTE(JSON_EXTRACT(data, '$.createdAt'))) < ?))
+    ORDER BY created_at ASC LIMIT 1`,
+    [staleBefore],
+  );
+  return rows[0] ? decodeEntity(rows[0].data, "inspection") : null;
 }
 export async function events(id) {
   const [rows] = await pool.execute(
@@ -89,6 +102,15 @@ async function append(connection, id, action, before, after, actor, reason) {
     [event.id, id, JSON.stringify(event)],
   );
 }
+// The upload session supplies its already persisted inspection ID. Its caller
+// owns the transaction that also marks the session completed.
+export async function insertEntity(connection, kind, data, actor, reason) {
+  await connection.execute(
+    "INSERT INTO entities(kind, id, data) VALUES (?, ?, ?)",
+    [kind, data.id, JSON.stringify(data)],
+  );
+  await append(connection, data.id, "등록", null, data, actor, reason);
+}
 export async function insert(
   kind,
   input,
@@ -109,11 +131,7 @@ export async function insertBatch(kind, inputs, actor, reason) {
   try {
     await connection.beginTransaction();
     for (const data of items) {
-      await connection.execute(
-        "INSERT INTO entities(kind, id, data) VALUES (?, ?, ?)",
-        [kind, data.id, JSON.stringify(data)],
-      );
-      await append(connection, data.id, "등록", null, data, actor, reason);
+      await insertEntity(connection, kind, data, actor, reason);
     }
     commitAttempted = true;
     await connection.commit();
