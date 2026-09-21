@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Client } from "minio";
 import { allPhotoRecords } from "./photo-records.mjs";
+import { allMaintenanceRecords } from "./maintenance-records.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -25,14 +26,16 @@ const state = {
     ? "metadata-and-history-only"
     : "metadata-history-originals",
 };
-for (const kind of ["inspections", "points", "plans"]) {
+for (const kind of ["inspections", "points", "plans", "maintenance"]) {
   state[kind] =
     kind === "inspections"
       ? await allPhotoRecords(read)
-      : (await read(`/${kind}?recordPurpose=all`)).sort((a, b) =>
-          a.id.localeCompare(b.id),
-        );
-  if (kind !== "inspections")
+      : kind === "maintenance"
+        ? await allMaintenanceRecords(read)
+        : (await read(`/${kind}?recordPurpose=all`)).sort((a, b) =>
+            a.id.localeCompare(b.id),
+          );
+  if (["points", "plans"].includes(kind))
     assert.ok(
       state[kind].length < 1000,
       `${kind}: 기존 조회 한도에 도달하여 전체 보존을 확인할 수 없습니다.`,
@@ -88,6 +91,7 @@ if (process.argv.includes("--capture")) {
       photos: state.inspections.length,
       points: state.points.length,
       plans: state.plans.length,
+      maintenance: state.maintenance.length,
       comparisons: Object.keys(state).length,
     }),
   );

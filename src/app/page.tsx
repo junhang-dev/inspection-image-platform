@@ -10,6 +10,9 @@ import {
 } from "@/lib/upload";
 import locations from "@/lib/virtual-locations.json";
 import InspectionMap from "@/components/InspectionMap";
+import MaintenanceContext from "@/components/MaintenanceContext";
+import { MaintenanceWorklist } from "@/components/MaintenancePanel";
+import { useMaintenanceQuery, type Purpose } from "@/lib/maintenance";
 import {
   defaultPhotoScope,
   usePhotoQuery,
@@ -85,6 +88,12 @@ type Plan = {
   note: string;
   status: "planned" | "done" | "cancelled";
 };
+type MaintenanceTarget = {
+  planId: string | null;
+  pointId: string;
+  recordPurpose: Purpose;
+  photoId?: string;
+};
 type Audit = {
   id: string;
   actor: string;
@@ -108,6 +117,7 @@ const publicUploads = process.env.NEXT_PUBLIC_PUBLIC_UPLOADS_ALLOWED === "1";
 const statusName = {
   none: "미지정",
   review: "보수 검토",
+  planned: "작업 예정",
   progress: "보수 진행",
   done: "보수 완료",
 };
@@ -231,11 +241,42 @@ export default function Home() {
     labeling: tab === "labels" ? "true" : "all",
     page,
   });
+  const [workPage, setWorkPage] = useState(1);
+  const [workStatus, setWorkStatus] = useState("all");
+  const [workMethod, setWorkMethod] = useState("all");
+  const [workTa, setWorkTa] = useState("all");
+  const [maintenanceTarget, setMaintenanceTarget] =
+    useState<MaintenanceTarget | null>(null);
+  const maintenance = useMaintenanceQuery(
+    {
+      planId: scope.planId,
+      recordPurpose: scope.recordPurpose,
+      inWorklist: tab === "worklist" ? "true" : "all",
+      ...(tab === "worklist"
+        ? {
+            teamId: scope.teamId,
+            rackId: scope.rackId,
+            search: scope.search,
+            repairStatus: workStatus,
+            repairMethod: workMethod,
+            ta: workTa,
+            page: workPage,
+          }
+        : {}),
+    },
+    tab === "worklist" || tab === "points",
+  );
+  const openMaintenance = (target: MaintenanceTarget) => {
+    setDetail(null);
+    setPointDetail(null);
+    setMaintenanceTarget(target);
+  };
   const photos = photoList.data?.items ?? [];
   const summary = photoList.data?.summary;
   const changeScope = (next: PhotoScope) => {
     setScope(next);
     setPage(1);
+    setWorkPage(1);
     setMapPoint(null);
   };
   const [newPointRack, setNewPointRack] = useState<string | null>(null);
@@ -339,6 +380,7 @@ export default function Home() {
   const notify = async (message: string, tone: ToastTone = "success") => {
     setToast({ tone, message });
     photoList.refresh();
+    maintenance.refresh();
     await refresh();
   };
   const reportHistoryError = useCallback((message: string) => {
@@ -520,15 +562,14 @@ export default function Home() {
             tab,
           ) && (
             <PhotoScopeFields
+              maintenance={tab === "worklist"}
               scope={scope}
               plans={plans}
               change={changeScope}
             />
           )}
           {photoList.error &&
-            ["dashboard", "photos", "labels", "points", "worklist"].includes(
-              tab,
-            ) && (
+            ["dashboard", "photos", "labels", "points"].includes(tab) && (
               <div className="notice error" role="alert">
                 <span>
                   사진 조회 실패: {photoList.error}
@@ -798,16 +839,104 @@ export default function Home() {
               <PhotoPagination data={photoList.data} change={setPage} />
             </section>
           )}
-          {(tab === "points" || tab === "worklist") && (
+          {tab === "worklist" && (
+            <>
+              <div className="list-toolbar">
+                <label>
+                  업무 상태{" "}
+                  <select
+                    aria-label="보수 상태 필터"
+                    value={workStatus}
+                    onChange={(event) => {
+                      setWorkStatus(event.target.value);
+                      setWorkPage(1);
+                    }}
+                  >
+                    <option value="all">모든 상태</option>
+                    {Object.entries(statusName).map(([key, name]) => (
+                      <option key={key} value={key}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  작업 방법{" "}
+                  <select
+                    aria-label="보수 방법 필터"
+                    value={workMethod}
+                    onChange={(event) => {
+                      setWorkMethod(event.target.value);
+                      setWorkPage(1);
+                    }}
+                  >
+                    <option value="all">모든 방법</option>
+                    <option value="undecided">미정</option>
+                    <option value="paint">도장</option>
+                    <option value="replace">교체</option>
+                  </select>
+                </label>
+                <label>
+                  TA{" "}
+                  <select
+                    aria-label="보수 TA 필터"
+                    value={workTa}
+                    onChange={(event) => {
+                      setWorkTa(event.target.value);
+                      setWorkPage(1);
+                    }}
+                  >
+                    <option value="all">전체</option>
+                    <option value="true">포함</option>
+                    <option value="false">미포함</option>
+                  </select>
+                </label>
+              </div>
+              <MaintenanceWorklist
+                items={maintenance.data?.items ?? []}
+                total={maintenance.data?.total ?? null}
+                page={maintenance.data?.page}
+                pages={maintenance.data?.pages}
+                onPageChange={setWorkPage}
+                busy={!maintenance.data && !maintenance.error}
+                error={maintenance.error || null}
+                onOpen={(id) => {
+                  const item = maintenance.data?.items.find(
+                    (item) => item.id === id,
+                  );
+                  if (item)
+                    openMaintenance({
+                      planId: item.planId,
+                      pointId: item.pointId,
+                      recordPurpose: item.recordPurpose,
+                    });
+                }}
+                onOpenPlan={(id) => {
+                  const plan = plans.find((plan) => plan.id === id);
+                  if (plan) setPlanDetail(plan);
+                }}
+                onOpenPoint={(id) => {
+                  const point = points.find((point) => point.id === id);
+                  if (point) void selectPoint(point);
+                }}
+              />
+            </>
+          )}
+          {tab === "points" && (
             <>
               <div className="section-hint">
                 <MapPin size={17} />
                 <span>
-                  {tab === "points"
-                    ? "사진 업로드 시 설비·랙·포인트를 등록합니다. 카드를 열어 상태와 사유를 기록하세요."
-                    : "포인트 상세에서 관리 대상·TA 워크리스트 포함을 선택하세요."}
+                  사진 수는 현재 조회 조건입니다. 카드를 열어 계획별 보수 기록과
+                  포인트 정보를 확인하세요.
                 </span>
               </div>
+              {maintenance.error && (
+                <p className="form-error" role="alert">
+                  보수 기록 조회 실패: {maintenance.error}
+                  {maintenance.data ? " · 마지막 조회 결과입니다." : ""}
+                </p>
+              )}
               {mapScopePending && (
                 <p className="form-intro">
                   {photoList.error
@@ -816,51 +945,58 @@ export default function Home() {
                 </p>
               )}
               <div className="point-grid">
-                {scopePoints
-                  .filter((p) => tab === "points" || p.managed || p.ta)
-                  .map((p) => (
-                    <button
-                      className="point-card"
-                      key={p.id}
-                      onClick={() => selectPoint(p)}
-                    >
-                      <div>
-                        <span className="point-icon">
-                          <Box size={21} />
-                        </span>
-                        <span
-                          className={`badge ${p.repairStatus === "done" ? "green" : "muted"}`}
-                        >
-                          {statusName[p.repairStatus]}
-                        </span>
-                      </div>
-                      <h3>{p.equipment || "설비 미확인"}</h3>
-                      <p>
-                        {p.rack ? `${p.rack} 랙` : "랙 미확인"} ·{" "}
-                        {p.name || "포인트 미확인"}
-                      </p>
-                      <div className="point-meta">
+                {scopePoints.map((p) => (
+                  <button
+                    className="point-card"
+                    key={p.id}
+                    onClick={() => selectPoint(p)}
+                  >
+                    <div>
+                      <span className="point-icon">
+                        <Box size={21} />
+                      </span>
+                      <span className="badge muted">
+                        {maintenance.data
+                          ? scope.planId === "all"
+                            ? `${maintenance.data.pointSummaries[p.id]?.total ?? 0}개 계획별 보수 기록`
+                            : Object.entries(statusName)
+                                .filter(
+                                  ([key]) =>
+                                    (maintenance.data!.pointSummaries[p.id]?.[
+                                      key as keyof typeof statusName
+                                    ] ?? 0) > 0,
+                                )
+                                .map(([, name]) => name)
+                                .join(" · ") || "보수 기록 없음"
+                          : "보수 기록 미조회"}
+                      </span>
+                    </div>
+                    <h3>{p.equipment || "설비 미확인"}</h3>
+                    <p>
+                      {p.rack ? `${p.rack} 랙` : "랙 미확인"} ·{" "}
+                      {p.name || "포인트 미확인"}
+                    </p>
+                    <div className="point-meta">
+                      <span>
+                        <Camera size={14} />
+                        {pointCounts ? `${pointCounts[p.id] ?? 0}장` : "미조회"}
+                      </span>
+                      {!!maintenance.data?.pointSummaries[p.id]?.registered && (
                         <span>
-                          <Camera size={14} />
-                          {pointCounts
-                            ? `${pointCounts[p.id] ?? 0}장`
-                            : "미조회"}
+                          워크리스트{" "}
+                          {maintenance.data.pointSummaries[p.id].registered}건
                         </span>
-                        {p.managed && <span>관리 대상</span>}
-                        {p.ta && <span className="teal-text">TA 포함</span>}
-                        <ArrowRight size={15} />
-                      </div>
-                    </button>
-                  ))}
+                      )}
+                      <ArrowRight size={15} />
+                    </div>
+                  </button>
+                ))}
               </div>
-              {!mapScopePending &&
-                !scopePoints.filter(
-                  (p) => tab === "points" || p.managed || p.ta,
-                ).length && (
-                  <section className="panel">
-                    <Empty text="등록된 항목이 없습니다. 사진을 포인트에 연결해 업무를 시작하세요." />
-                  </section>
-                )}
+              {!mapScopePending && !scopePoints.length && (
+                <section className="panel">
+                  <Empty text="등록된 항목이 없습니다. 사진을 포인트에 연결해 업무를 시작하세요." />
+                </section>
+              )}
             </>
           )}
           {tab === "plans" && (
@@ -1092,6 +1228,7 @@ export default function Home() {
         <PhotoDialog
           key={detail.id}
           photo={photos.find((p) => p.id === detail.id) || detail}
+          openMaintenance={openMaintenance}
           points={points}
           plans={plans}
           reportHistoryError={reportHistoryError}
@@ -1111,10 +1248,33 @@ export default function Home() {
           created={setPointDetail}
         />
       )}
+      {maintenanceTarget && (
+        <Modal
+          title="계획·포인트 보수 기록"
+          wide
+          close={() => setMaintenanceTarget(null)}
+        >
+          <MaintenanceContext
+            key={`${maintenanceTarget.planId}/${maintenanceTarget.pointId}`}
+            {...maintenanceTarget}
+            planTitle={
+              maintenanceTarget.planId
+                ? plans.find((plan) => plan.id === maintenanceTarget.planId)
+                    ?.title || ""
+                : null
+            }
+            pointLabel={pointName(
+              points.find((point) => point.id === maintenanceTarget.pointId),
+            )}
+            done={notify}
+          />
+        </Modal>
+      )}
       {pointDetail && (
         <PointDialog
           key={pointDetail.id}
           point={pointDetail}
+          openMaintenance={openMaintenance}
           scope={scope}
           plans={plans}
           points={points}
@@ -1140,14 +1300,19 @@ function PhotoScopeFields({
   scope,
   plans,
   change,
+  maintenance = false,
 }: {
   scope: PhotoScope;
   plans: Plan[];
   change: (scope: PhotoScope) => void;
+  maintenance?: boolean;
 }) {
   const set = (patch: Partial<PhotoScope>) => change({ ...scope, ...patch });
   return (
-    <section className="photo-scope" aria-label="공통 사진 조회 조건">
+    <section
+      className="photo-scope"
+      aria-label={maintenance ? "보수 기록 조회 조건" : "공통 사진 조회 조건"}
+    >
       <label>
         검사 계획
         <select
@@ -1160,6 +1325,7 @@ function PhotoScopeFields({
           {plans
             .filter(
               (plan) =>
+                maintenance ||
                 scope.recordPurpose === "all" ||
                 plan.recordPurpose === scope.recordPurpose ||
                 plan.id === scope.planId,
@@ -1190,20 +1356,22 @@ function PhotoScopeFields({
           <option value="all">모든 목적</option>
         </select>
       </label>
-      <label>
-        사진 표시
-        <select
-          aria-label="사진 표시 필터"
-          value={scope.visibility}
-          onChange={(e) =>
-            set({ visibility: e.target.value as PhotoScope["visibility"] })
-          }
-        >
-          <option value="visible">표시 중</option>
-          <option value="hidden">숨긴 사진</option>
-          <option value="all">표시·숨김 모두</option>
-        </select>
-      </label>
+      {!maintenance && (
+        <label>
+          사진 표시
+          <select
+            aria-label="사진 표시 필터"
+            value={scope.visibility}
+            onChange={(e) =>
+              set({ visibility: e.target.value as PhotoScope["visibility"] })
+            }
+          >
+            <option value="visible">표시 중</option>
+            <option value="hidden">숨긴 사진</option>
+            <option value="all">표시·숨김 모두</option>
+          </select>
+        </label>
+      )}
       <label>
         가상 팀
         <select
@@ -1250,8 +1418,12 @@ function PhotoScopeFields({
         검색
         <input
           type="search"
-          aria-label="사진 검색"
-          placeholder="사진명, 설비, 포인트 검색"
+          aria-label={maintenance ? "보수 기록 검색" : "사진 검색"}
+          placeholder={
+            maintenance
+              ? "계획, 설비, 포인트 검색"
+              : "사진명, 설비, 포인트 검색"
+          }
           value={scope.search}
           onChange={(e) => set({ search: e.target.value })}
           maxLength={200}
@@ -2836,6 +3008,7 @@ function AuditList({ history }: { history: Audit[] }) {
 }
 function PhotoDialog({
   photo: seed,
+  openMaintenance,
   points,
   plans,
   reportHistoryError,
@@ -2843,6 +3016,7 @@ function PhotoDialog({
   done,
 }: {
   photo: Photo;
+  openMaintenance: (target: MaintenanceTarget) => void;
   points: Point[];
   plans: Plan[];
   reportHistoryError: (message: string) => void;
@@ -2855,6 +3029,7 @@ function PhotoDialog({
   const [pointId, setPointId] = useState(photo.pointId || "");
   const [retake, setRetake] = useState(photo.retake);
   const [busy, setBusy] = useState(false);
+  const [judgmentDirty, setJudgmentDirty] = useState(false);
   const actionLock = useRef(false);
   const begin = () => {
     if (actionLock.current) return false;
@@ -2883,7 +3058,10 @@ function PhotoDialog({
           사진 상태 조회 실패: {readError} · 마지막 조회 결과입니다.
         </p>
       )}
-      <div className="detail-grid">
+      <div
+        className="detail-grid"
+        onChangeCapture={() => setJudgmentDirty(true)}
+      >
         <div>
           <div className="detail-image">
             {photo.visibility === "hidden" ? (
@@ -2953,6 +3131,31 @@ function PhotoDialog({
               </button>
             )}
           </div>
+          {photo.pointId ? (
+            <button
+              className="button secondary full-width"
+              disabled={busy || judgmentDirty}
+              onClick={() =>
+                openMaintenance({
+                  planId: photo.planId,
+                  pointId: photo.pointId!,
+                  recordPurpose: photo.recordPurpose,
+                  photoId: photo.id,
+                })
+              }
+            >
+              저장된 연결의 보수 기록 열기
+            </button>
+          ) : (
+            <p className="form-intro">
+              보수 기록을 만들려면 먼저 사진을 포인트에 연결해 저장하세요.
+            </p>
+          )}
+          {judgmentDirty && (
+            <p className="form-intro">
+              입력한 사진 판단을 먼저 저장한 뒤 보수 기록을 여세요.
+            </p>
+          )}
           <AuditList history={history} />
         </div>
         <form
@@ -3089,6 +3292,7 @@ function PhotoDialog({
 }
 function PointDialog({
   point,
+  openMaintenance,
   scope,
   points,
   plans,
@@ -3098,6 +3302,7 @@ function PointDialog({
   done,
 }: {
   point: Point;
+  openMaintenance: (target: MaintenanceTarget) => void;
   scope: PhotoScope;
   points: Point[];
   plans: Plan[];
@@ -3107,9 +3312,13 @@ function PointDialog({
   done: (s: string) => Promise<void>;
 }) {
   const [initial] = useState(point);
+  const [maintenancePlan, setMaintenancePlan] = useState(
+    scope.planId === "all" ? "" : scope.planId,
+  );
   const [page, setPage] = useState(1);
   const photoList = usePhotoQuery({ ...scope, pointId: point.id, page });
   const [busy, setBusy] = useState(false);
+  const [metadataDirty, setMetadataDirty] = useState(false);
   const [error, setError] = useState("");
   const history = useAuditHistory(
     `/points/${point.id}/history`,
@@ -3141,9 +3350,52 @@ function PointDialog({
             onSelect={selectPhoto}
           />
           <PhotoPagination data={photoList.data} change={setPage} />
+          <section className="form-intro">
+            <h3>계획별 보수 기록</h3>
+            <label className="field">
+              보수 기록의 검사 계획
+              <select
+                aria-label="보수 기록의 검사 계획"
+                value={maintenancePlan}
+                onChange={(event) => setMaintenancePlan(event.target.value)}
+              >
+                <option value="">계획을 선택하세요</option>
+                <option value="unassigned">계획 미지정</option>
+                {plans
+                  .filter((plan) => plan.pointIds.includes(point.id))
+                  .map((plan) => (
+                    <option value={plan.id} key={plan.id}>
+                      {plan.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              className="button secondary"
+              disabled={!maintenancePlan || busy || metadataDirty}
+              onClick={() =>
+                openMaintenance({
+                  planId:
+                    maintenancePlan === "unassigned" ? null : maintenancePlan,
+                  pointId: point.id,
+                  recordPurpose:
+                    scope.recordPurpose === "all"
+                      ? point.recordPurpose
+                      : scope.recordPurpose,
+                })
+              }
+            >
+              선택한 계획의 보수 기록 열기
+            </button>
+            <p>
+              포인트 기본 정보의 변경은 먼저 저장하세요. 계획별 상태·방법·TA와
+              워크리스트 등록은 보수 기록에서 관리합니다.
+            </p>
+          </section>
           <AuditList history={history} />
         </div>
         <form
+          onChangeCapture={() => setMetadataDirty(true)}
           onSubmit={async (e) => {
             e.preventDefault();
             const form = new FormData(e.currentTarget);
@@ -3157,14 +3409,11 @@ function PointDialog({
                   equipment: form.get("equipment"),
                   rack: form.get("rack"),
                   name: form.get("name"),
-                  repairStatus: form.get("repairStatus"),
-                  managed: form.get("managed") === "on",
-                  ta: form.get("ta") === "on",
                   actor: form.get("actor"),
                   reason: form.get("reason"),
                 }),
               });
-              await complete("포인트 상태와 이력을 저장했습니다.");
+              await complete("포인트 기본 정보와 이력을 저장했습니다.");
             } catch (cause) {
               setError((cause as Error).message);
             } finally {
@@ -3198,28 +3447,6 @@ function PointDialog({
             포인트 이름
             <input name="name" defaultValue={initial.name} maxLength={120} />
           </label>
-          <label className="field">
-            보수 상태
-            <select name="repairStatus" defaultValue={initial.repairStatus}>
-              {Object.entries(statusName).map(([value, label]) => (
-                <option value={value} key={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              name="managed"
-              defaultChecked={initial.managed}
-            />
-            <span>관리 워크리스트에 포함</span>
-          </label>
-          <label className="checkbox">
-            <input type="checkbox" name="ta" defaultChecked={initial.ta} />
-            <span>TA 워크리스트에 포함</span>
-          </label>
           <div className="divider" />
           <label className="field">
             수정자
@@ -3246,7 +3473,7 @@ function PointDialog({
             </p>
           )}
           <button className="button primary full-width" disabled={busy}>
-            {busy ? "저장 중…" : "상태·이력 저장"}
+            {busy ? "저장 중…" : "기본 정보·이력 저장"}
           </button>
         </form>
       </div>

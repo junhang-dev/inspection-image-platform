@@ -25,6 +25,7 @@ import {
   decodeEntity,
 } from "./store.mjs";
 import { photoQuerySchema, queryPhotos } from "./photo-query.mjs";
+import { registerMaintenanceRoutes } from "./maintenance-routes.mjs";
 import { locations, planPointIds, pointLocation } from "./relations.mjs";
 
 const app = express();
@@ -94,9 +95,6 @@ const pointPatch = z
     rack: field.optional(),
     rackId: z.string().nullable().optional(),
     name: field.optional(),
-    repairStatus: z.enum(["none", "review", "progress", "done"]).optional(),
-    managed: z.boolean().optional(),
-    ta: z.boolean().optional(),
     expectedVersion,
     actor,
     reason,
@@ -204,6 +202,7 @@ app.post("/api/points", async (req, res) => {
       {
         ...input,
         ...location,
+        maintenanceSchemaVersion: 1,
         repairStatus: "none",
         managed: false,
         ta: false,
@@ -214,6 +213,16 @@ app.post("/api/points", async (req, res) => {
   );
 });
 app.patch("/api/points/:id", async (req, res) => {
+  if (
+    req.body &&
+    ["repairStatus", "repairMethod", "managed", "ta"].some((key) =>
+      Object.hasOwn(req.body, key),
+    )
+  )
+    throw fail(
+      422,
+      "보수 기록 저장 방식이 바뀌었습니다. 입력을 보관한 뒤 새로고침하고 계획·포인트의 보수 검토에서 저장하세요.",
+    );
   const { actor, reason, expectedVersion, ...patch } = pointPatch.parse(
     req.body,
   );
@@ -708,6 +717,7 @@ app.patch("/api/plans/:id", async (req, res) => {
   if (!result) throw fail(404, "계획이 없습니다.");
   res.json(result);
 });
+registerMaintenanceRoutes(app);
 app.use((error, req, res, next) => {
   if (error instanceof z.ZodError)
     return res

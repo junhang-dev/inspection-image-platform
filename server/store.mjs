@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
 import { randomUUID } from "node:crypto";
 import { planPointIds } from "./relations.mjs";
+import { maintenanceId } from "./maintenance-domain.mjs";
 
 export const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || "127.0.0.1",
@@ -102,7 +103,15 @@ export async function events(id) {
   );
   return rows.map((row) => decode(row.data));
 }
-async function append(connection, id, action, before, after, actor, reason) {
+export async function append(
+  connection,
+  id,
+  action,
+  before,
+  after,
+  actor,
+  reason,
+) {
   const event = {
     id: randomUUID(),
     entityId: id,
@@ -190,6 +199,11 @@ export async function update(
   }
   const connection = await pool.getConnection();
   try {
+    const relationWrite =
+      kind === "inspection" &&
+      ["planId", "pointId"].some((key) => Object.hasOwn(patch, key));
+    if (relationWrite)
+      await connection.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     await connection.beginTransaction();
     const [rows] = await connection.execute(
       "SELECT data FROM entities WHERE kind = ? AND id = ? FOR UPDATE",
@@ -212,6 +226,26 @@ export async function update(
       editVersion: inference ? before.editVersion : before.editVersion + 1,
       updatedAt: new Date().toISOString(),
     };
+    if (
+      relationWrite &&
+      before.pointId &&
+      ((after.planId ?? null) !== (before.planId ?? null) ||
+        after.pointId !== before.pointId)
+    ) {
+      // A maintenance writer must lock this photo before adding/removing evidence.
+      // Read committed sees references committed before this photo lock was taken.
+      // Do not lock maintenance here: its writer locks maintenance -> photos.
+      const referenced = await get(
+        "maintenance",
+        maintenanceId(before.planId ?? null, before.pointId),
+        connection,
+      );
+      if (referenced?.photoIds?.includes(before.id))
+        throw fail(
+          409,
+          "보수 기록의 근거 사진입니다. 보수 기록에서 근거 선택을 해제한 뒤 계획·포인트를 변경하세요.",
+        );
+    }
     await connection.execute(
       "UPDATE entities SET data = ? WHERE kind = ? AND id = ?",
       [JSON.stringify(after), kind, id],
