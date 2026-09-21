@@ -103,6 +103,7 @@ __pycache__/
 .coverage
 htmlcov/
 coverage/
+*.tsbuildinfo
 dist/
 build/
 .DS_Store
