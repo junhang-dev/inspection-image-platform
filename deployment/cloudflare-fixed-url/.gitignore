@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+dist/
+logs/
+*.local.*
+wrangler.json
+wrangler.jsonc
+vpc-service.json
+named-tunnel.json
+manifest.json
+.env*
+*.token
+*.pem
+credentials*.json
