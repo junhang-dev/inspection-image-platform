@@ -8,6 +8,11 @@ from urllib.parse import urlsplit
 
 HOP = {'connection', 'transfer-encoding', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade'}
 
+def upstream_headers(incoming):
+    headers = {k:v for k,v in incoming if k.lower() not in HOP | {'host'}}
+    headers['Host'] = '127.0.0.1:8085'
+    return headers
+
 def main():
     # Derive the private target from our exact container, never from HTTP input.
     raw = subprocess.check_output(['docker', '--context', 'orbstack', 'inspect', 'inspection-label-studio-local'])
@@ -24,8 +29,7 @@ def main():
                 if length < 0 or length > 20 * 1024 * 1024 or self.headers.get('Transfer-Encoding'):
                     self.send_error(413); return
                 body = self.rfile.read(length) if length else None
-                headers = {k:v for k,v in self.headers.items() if k.lower() not in HOP}
-                headers['Host'] = '127.0.0.1:8085'
+                headers = upstream_headers(self.headers.items())
                 conn = http.client.HTTPConnection(target, 8080, timeout=60)
                 conn.request(self.command, self.path, body=body, headers=headers)
                 response = conn.getresponse(); payload = response.read()

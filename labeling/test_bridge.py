@@ -84,4 +84,12 @@ class BridgeTests(unittest.TestCase):
         with patch.object(bridge,'STATE',state):
             with self.assertRaisesRegex(ValueError,'review record'): bridge.load_reviewed(path)
 
+    def test_proxy_normalizes_host_header_without_duplicates(self):
+        from labeling.loopback_proxy import upstream_headers
+        for name in ['Host', 'host', 'HOST']:
+            headers=upstream_headers([(name,'localhost:8085'),('Connection','keep-alive'),('Cookie','session=example')])
+            self.assertEqual([(k,v) for k,v in headers.items() if k.lower()=='host'], [('Host','127.0.0.1:8085')])
+            self.assertNotIn('Connection',headers)
+            self.assertEqual(headers['Cookie'],'session=example')
+
 if __name__ == '__main__': unittest.main()

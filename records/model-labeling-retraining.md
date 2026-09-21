@@ -38,3 +38,11 @@
 현재승인demo범위만지원하며일반신규업로드자동학습·전체원본라벨링을구현했다고표현하지않는다. backend 최신1000개한계에닿으면실패하므로미래에는제품담당의후보전용페이징API가필요하다. Mac신뢰운영자의CLI승인기록은계정인증/현장정답인증을대체하지않는다. proxy는전경프로세스이며터미널종료후재실행해야한다. 컨테이너재생성시내부IP가바뀌면proxy도재시작한다. 제품Compose편집은제품담당소유다.
 
 비공개증거는 `labeling/state.local/` 및 `ml/artifacts/retraining.local/`에보존한다. 공식설치/보안기준은 [시작설정](https://labelstud.io/guide/start), [로컬저장소](https://labelstud.io/guide/storage_local), [공식릴리스](https://github.com/HumanSignal/label-studio/releases/tag/1.23.0)를확인했다.
+
+## 와이파이 중단 후 로컬 연결 점검과 프록시 수정
+
+후속 연결 확인에서 기존 모델8001과 Label Studio 컨테이너가 계속 실행 중임을 확인했다. 모델 health200/ready, LS health200/UP, 로그인 화면200이었다. 컨테이너 재시작 횟수는0이었다.
+
+제품 담당의8085 HTTP400은 와이파이 종료와 별개의 프록시 헤더 처리 오류로 재현됐다. 소문자 `host`를 받은 뒤 고정 `Host`를 추가해 중복 전달한 것이 원인이었다. 대소문자를 구분하지 않고 기존 Host를 제외한 후 고정 Host 하나만 전달하도록 수정했다.
+
+이 작업 소유의 로컬 프록시만 같은 설정으로 재기동했다. `localhost`/`127.0.0.1` 각각에서 `Host`/`host` 요청4개 모두 정상 로그인 redirect302를 확인했다. 인증된 프로젝트의 기존 annotation2개와 이미지2개 SHA 일치, 모델8001 ready도 보존됐다. 헤더 대소문자·중복 방지 회귀검사1개PASS 및 diff-checkPASS. 학습·추론 재실행, 컨테이너 재생성, 원본·라벨·DB 변경은 하지 않았다.
