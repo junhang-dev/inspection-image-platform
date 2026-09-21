@@ -1,0 +1,7 @@
+<View>
+  <Header value="부식 형상 등급 · 기능 검증용 라벨은 현장 정답이 아닙니다"/>
+  <Image name="image" value="$image"/>
+  <Choices name="grade" toName="image" choice="single" required="true">
+    <Choice value="1"/><Choice value="2"/><Choice value="3"/><Choice value="4"/><Choice value="5"/>
+  </Choices>
+</View>
