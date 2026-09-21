@@ -104,6 +104,7 @@ type Audit = {
   after: Record<string, unknown>;
 };
 type Health = {
+  dataScope?: "standard" | "shared" | "local-private";
   publicUploadsAllowed: boolean;
   demoMode: boolean;
   ready: boolean;
@@ -164,9 +165,11 @@ function Grade({ photo }: { photo: Photo }) {
     <span className={`badge ${photo.status === "error" ? "red" : "muted"}`}>
       {photo.status === "error"
         ? "판독 실패"
-        : photo.status === "processing"
-          ? "AI 판독 중"
-          : "판독 대기"}
+        : photo.status === "unread"
+          ? "미판독 · 자동 판독 안 함"
+          : photo.status === "processing"
+            ? "AI 판독 중"
+            : "판독 대기"}
     </span>
   );
 }
@@ -474,7 +477,11 @@ export default function Home() {
           <div className="top-actions">
             <span className="connection">
               <i className={health?.ready ? "dot" : "dot offline"} />
-              {health?.ready ? "연결됨" : "연결 확인 중"}
+              {health?.ready
+                ? health.dataScope === "local-private"
+                  ? "로컬 전용 · 연결됨"
+                  : "연결됨"
+                : "연결 확인 중"}
             </span>
             <button
               className="icon-button"
@@ -804,6 +811,7 @@ export default function Home() {
                   <option value="all">전체 상태</option>
                   <option value="repair">보수 필요</option>
                   <option value="pending">AI 판독 대기·진행</option>
+                  <option value="unread">미판독 · 자동 판독 안 함</option>
                   <option value="done">판독 완료</option>
                   <option value="error">판독 실패</option>
                   <option value="retake">재촬영 필요</option>
@@ -2963,6 +2971,7 @@ function AuditList({ history }: { history: Audit[] }) {
       presentation: "발표용",
       verification: "검증용",
       pending: "판독 대기",
+      unread: "미판독 · 자동 판독 안 함",
       processing: "판독 중",
       done: "완료",
       error: "판독 실패",
@@ -3098,14 +3107,29 @@ function PhotoDialog({
                 : "결과 없음"}
             </p>
             {photo.ai && (
-              <details>
-                <summary>AI 판독 정보</summary>
-                <small>
-                  모델 {photo.ai.model_version}
-                  <br />
-                  전처리 {photo.ai.preprocessing_version}
-                </small>
-              </details>
+              <>
+                {photo.aiProvenance && (
+                  <p className="faint">
+                    {photo.aiProvenance.kind === "live_frozen_inference"
+                      ? "실제 모델 판독"
+                      : "보존된 기존 판독 결과"}
+                    {" · "}
+                    {photo.aiProvenance.predictedAt
+                      ? new Date(photo.aiProvenance.predictedAt).toLocaleString(
+                          "ko-KR",
+                        )
+                      : "기존 판독 시각 미확인"}
+                  </p>
+                )}
+                <details>
+                  <summary>AI 판독 정보</summary>
+                  <small>
+                    모델 {photo.ai.model_version}
+                    <br />
+                    전처리 {photo.ai.preprocessing_version}
+                  </small>
+                </details>
+              </>
             )}
             {photo.error && <p className="form-error">{photo.error}</p>}
             {photo.status === "error" && (

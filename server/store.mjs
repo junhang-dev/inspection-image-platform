@@ -12,19 +12,38 @@ export const pool = mysql.createPool({
   connectionLimit: 8,
   timezone: "Z",
 });
-export async function initializeStore() {
-  await pool.query(`CREATE TABLE IF NOT EXISTS entities (
+export async function initializeStore(
+  inferencePolicy,
+  { connection = pool, recover = true } = {},
+) {
+  await connection.query(`CREATE TABLE IF NOT EXISTS entities (
     kind VARCHAR(32) NOT NULL, id CHAR(36) NOT NULL, data JSON NOT NULL,
     created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY(kind, id), INDEX entity_created(kind, created_at)
   )`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS history (
+  await connection.query(`CREATE TABLE IF NOT EXISTS history (
     id CHAR(36) PRIMARY KEY, entity_id CHAR(36) NOT NULL, data JSON NOT NULL,
     created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3), INDEX history_entity(entity_id, created_at)
   )`);
+  if (!recover) return;
   // A process restart must not leave a job permanently in progress.
-  await pool.query(`UPDATE entities SET data = JSON_SET(data, '$.status', 'pending')
-    WHERE kind = 'inspection' AND JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'processing'`);
+  const [recovering] =
+    await pool.query(`SELECT data FROM entities WHERE kind = 'inspection'
+    AND JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'processing'`);
+  for (const row of recovering) {
+    const photo = decodeEntity(row.data, "inspection");
+    const decision = inferencePolicy?.queue(photo);
+    await update(
+      "inspection",
+      photo.id,
+      decision && !decision.allowed
+        ? { status: "unread", error: decision.message }
+        : { status: "pending" },
+      "AI 서비스",
+      "재시작 시 판독 정책 확인",
+      { inference: true },
+    );
+  }
 }
 const decode = (value) =>
   typeof value === "string" ? JSON.parse(value) : value;
@@ -83,7 +102,7 @@ export async function get(kind, id, connection = pool) {
   );
   return rows[0] ? decodeEntity(rows[0].data, kind) : null;
 }
-export async function nextInspection() {
+export async function nextInspection(inferencePolicy) {
   const staleBefore = new Date(Date.now() - 180000).toISOString();
   const [rows] = await pool.execute(
     `SELECT data FROM entities WHERE kind = 'inspection'
@@ -91,10 +110,23 @@ export async function nextInspection() {
       OR (JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'processing'
       AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.updatedAt')),
         JSON_UNQUOTE(JSON_EXTRACT(data, '$.createdAt'))) < ?))
-    ORDER BY created_at ASC LIMIT 1`,
+    ORDER BY created_at ASC LIMIT 100`,
     [staleBefore],
   );
-  return rows[0] ? decodeEntity(rows[0].data, "inspection") : null;
+  for (const row of rows) {
+    const photo = decodeEntity(row.data, "inspection");
+    const decision = inferencePolicy?.queue(photo);
+    if (!decision || decision.allowed) return photo;
+    await update(
+      "inspection",
+      photo.id,
+      { status: "unread", error: decision.message },
+      "AI 서비스",
+      "보존 자료의 자동 재판독 차단",
+      { inference: true },
+    );
+  }
+  return null;
 }
 export async function events(id) {
   const [rows] = await pool.execute(

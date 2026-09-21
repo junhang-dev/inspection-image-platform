@@ -27,7 +27,17 @@ import {
 import { photoQuerySchema, queryPhotos } from "./photo-query.mjs";
 import { registerMaintenanceRoutes } from "./maintenance-routes.mjs";
 import { locations, planPointIds, pointLocation } from "./relations.mjs";
+import { runtimeProfile, privateRequestAllowed } from "./runtime-profile.mjs";
+import { loadDatasetContract } from "./dataset-contract.mjs";
+import {
+  withVerifiedModelInput,
+  assertFrozenIdentity,
+  cleanupModelScratch,
+} from "./verified-model-input.mjs";
+import { verifyStorageProfile } from "./storage-profile.mjs";
 
+const profile = runtimeProfile();
+const dataset = await loadDatasetContract(profile);
 const app = express();
 const demoMode = process.env.PUBLIC_DEMO_ONLY === "1";
 const publicUploadsAllowed = process.env.PUBLIC_UPLOADS_ALLOWED === "1";
@@ -43,6 +53,10 @@ const origins = (
   process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000"
 ).split(",");
 app.use((req, res, next) => {
+  if (!privateRequestAllowed(profile, req.headers))
+    return res
+      .status(403)
+      .json({ error: "이 저장소는 전용 로컬 화면에서만 접근할 수 있습니다." });
   if (req.headers.origin && !origins.includes(req.headers.origin))
     return res.status(403).json({ error: "허용되지 않은 화면 주소입니다." });
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -59,6 +73,7 @@ const objects = new Client({
   secretKey: process.env.MINIO_SECRET_KEY,
 });
 const bucket = process.env.MINIO_BUCKET || "inspection-images";
+await verifyStorageProfile(pool, objects, profile, dataset);
 const uploadRoot = resolve(process.env.UPLOAD_TEMP_DIR || "uploads/incoming");
 const multipartRoot = join(uploadRoot, "multipart");
 const multipartFiles = await diskInput(multipartRoot);
@@ -164,6 +179,7 @@ app.get("/api/health", async (req, res) => {
     model,
     demoMode,
     publicUploadsAllowed,
+    dataScope: profile.scope,
   });
 });
 app.get("/api/demo/:name", async (req, res) => {
@@ -391,6 +407,7 @@ async function saveUploads(
 }
 async function validateImages(files, demoRequest) {
   for (const file of files) file.hash = await sha256File(file.path);
+  for (const file of files) dataset.policy.assertUpload({ sha256: file.hash });
   if (demoRequest && files.some((file) => !allowedHashes.has(file.hash)))
     throw fail(
       422,
@@ -596,6 +613,8 @@ app.patch("/api/inspections/:id", async (req, res) => {
 app.post("/api/inspections/:id/retry", async (req, res) => {
   const current = await get("inspection", req.params.id);
   if (!current) throw fail(404, "사진이 없습니다.");
+  const decision = dataset.policy.queue(current);
+  if (!decision.allowed) throw fail(409, decision.message);
   if (!["error", "pending"].includes(current.status))
     throw fail(409, "실패하거나 대기 중인 사진만 다시 요청할 수 있습니다.");
   res.json(
@@ -748,14 +767,17 @@ async function processNext() {
   if (busy) return;
   busy = true;
   try {
-    const next = await nextInspection();
+    const next = await nextInspection(dataset.policy);
     if (!next) return;
     const modelUrl = process.env.MODEL_API_URL || "http://127.0.0.1:8001";
     try {
       const health = await fetch(`${modelUrl}/health`, {
         signal: AbortSignal.timeout(1500),
       });
-      if (!health.ok || !(await health.json()).ready) return;
+      if (!health.ok) return;
+      const identity = await health.json();
+      if (!identity.ready) return;
+      assertFrozenIdentity(identity, dataset.freeze);
     } catch {
       return;
     }
@@ -768,10 +790,19 @@ async function processNext() {
       { inference: true },
     );
     try {
-      const stream = await objects.getObject(bucket, next.objectKey);
       const result = predictionSchema.parse(
-        await predictStream(modelUrl, stream, next),
+        await withVerifiedModelInput(
+          {
+            objects,
+            bucket,
+            photo: next,
+            directory: uploadRoot,
+            decide: dataset.policy.queue,
+          },
+          (stream) => predictStream(modelUrl, stream, next),
+        ),
       );
+      assertFrozenIdentity(result, dataset.freeze, { checkpoint: false });
       await update(
         "inspection",
         next.id,
@@ -785,9 +816,10 @@ async function processNext() {
         "inspection",
         next.id,
         {
-          status: "error",
-          error:
-            error instanceof z.ZodError
+          status: error.inferenceBlocked ? "unread" : "error",
+          error: error.inferenceBlocked
+            ? error.message
+            : error instanceof z.ZodError
               ? "모델 응답 형식이 올바르지 않습니다."
               : "모델 판독에 실패했습니다. 모델 연결을 확인하고 다시 요청하세요.",
         },
@@ -804,8 +836,12 @@ async function processNext() {
 }
 for (let attempt = 0; attempt < 30; attempt++) {
   try {
-    await initializeStore();
-    if (!(await objects.bucketExists(bucket))) await objects.makeBucket(bucket);
+    await initializeStore(dataset.policy);
+    if (!(await objects.bucketExists(bucket))) {
+      if (profile.scope === "local-private")
+        throw new Error("전용 비공개 버킷을 먼저 준비하세요.");
+      await objects.makeBucket(bucket);
+    }
     if (demoMode) {
       const [rows] = await pool.query(
         "SELECT data FROM entities WHERE kind = 'inspection'",
@@ -832,10 +868,12 @@ for (let attempt = 0; attempt < 30; attempt++) {
       validateRelation: validatePhotoRelation,
       demoOnly: demoMode,
       allowedHashes,
+      inferencePolicy: dataset.policy,
     });
     await uploads.cleanup();
     await multipartFiles.cleanup(SESSION_TTL_MS);
     await thumbnailFiles.cleanup(SESSION_TTL_MS);
+    await cleanupModelScratch(uploadRoot);
     break;
   } catch (error) {
     if (attempt === 29) throw error;
@@ -853,6 +891,7 @@ setInterval(
       await uploads.cleanup();
       await multipartFiles.cleanup(SESSION_TTL_MS);
       await thumbnailFiles.cleanup(SESSION_TTL_MS);
+      await cleanupModelScratch(uploadRoot);
     } catch (error) {
       console.error("Upload cleanup:", error.code || error.message);
     }

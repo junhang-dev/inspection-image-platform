@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
-export async function predictStream(modelUrl, source, photo) {
+export async function predictStream(modelUrl, source, photo, { signal } = {}) {
   // The source can disconnect before fetch begins consuming the multipart body.
   source.on("error", () => {});
   const boundary = `inspection-${randomUUID()}`;
@@ -17,6 +17,7 @@ export async function predictStream(modelUrl, source, photo) {
     })(),
   );
   try {
+    signal?.throwIfAborted();
     const response = await fetch(`${modelUrl}/predict`, {
       method: "POST",
       body,
@@ -25,7 +26,9 @@ export async function predictStream(modelUrl, source, photo) {
         "Content-Type": `multipart/form-data; boundary=${boundary}`,
         "Content-Length": String(header.length + photo.size + footer.length),
       },
-      signal: AbortSignal.timeout(120000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(120000)])
+        : AbortSignal.timeout(120000),
     });
     if (!response.ok) throw new Error(`모델 응답 오류 (${response.status})`);
     return await response.json();

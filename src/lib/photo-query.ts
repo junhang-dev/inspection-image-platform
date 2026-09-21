@@ -8,7 +8,15 @@ export type Photo = {
   name: string;
   pointId: string | null;
   planId: string | null;
-  status: "pending" | "processing" | "done" | "error";
+  status: "pending" | "processing" | "done" | "error" | "unread";
+  aiProvenance?: {
+    kind:
+      | "cached_frozen_training"
+      | "cached_frozen_evaluation"
+      | "live_frozen_inference";
+    predictedAt: string | null;
+    importedAt?: string;
+  };
   ai: {
     grade: number;
     confidence: number;

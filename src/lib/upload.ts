@@ -3,7 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 
 export type UploadPhoto = {
   id: string;
-  status: "pending" | "processing" | "done" | "error";
+  status: "pending" | "processing" | "done" | "error" | "unread";
 };
 export type UploadSession = {
   id: string;

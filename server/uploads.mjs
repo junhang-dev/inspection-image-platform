@@ -12,6 +12,7 @@ import {
   receiveChunk,
   reconcileFile,
   requireFreeSpace,
+  sha256File,
 } from "./upload-files.mjs";
 import {
   commitChunk,
@@ -44,6 +45,7 @@ export async function createUploadService({
   validateRelation,
   demoOnly = false,
   allowedHashes = new Set(),
+  inferencePolicy,
 }) {
   const root = await ensureUploadDirectory(directory);
   await initializeUploads(pool);
@@ -118,6 +120,7 @@ export async function createUploadService({
   }
 
   async function initialize(input) {
+    inferencePolicy?.assertUpload(input);
     const recordPurpose = input.recordPurpose ?? "inspection";
     if (!["inspection", "presentation", "verification"].includes(recordPurpose))
       throw fail(422, "올바른 기록 목적을 선택하세요.");
@@ -242,6 +245,11 @@ export async function createUploadService({
     if (demoOnly && !allowedHashes.has(upload.sha256))
       throw fail(422, "이 공유 환경에서 허용된 사진만 업로드할 수 있습니다.");
     const path = filePath(upload.id);
+    // Reject protected aliases before Sharp can decode pixels. A supplied hash
+    // is only an early check; the full received bytes are authoritative.
+    inferencePolicy?.assertUpload(upload);
+    if (upload.status === "receiving")
+      inferencePolicy?.assertUpload(upload, await sha256File(path));
     let verifiedImage;
     if (upload.status === "receiving") {
       await reconcileFile(path, upload.offset);
@@ -262,6 +270,7 @@ export async function createUploadService({
     // A previous request may have stored this object before losing its response.
     // Existing objects are verified and reused, never blindly overwritten.
     if (!(await checkStoredObject(upload))) {
+      inferencePolicy?.assertUpload(upload, await sha256File(path));
       const image = verifiedImage || (await inspectImage(path));
       if (
         image.size !== upload.size ||

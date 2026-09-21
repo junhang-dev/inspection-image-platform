@@ -22,7 +22,7 @@ export const photoQuerySchema = z
       .default("all"),
     search: z.string().trim().max(200).default(""),
     classification: z
-      .enum(["all", "repair", "pending", "retake", "done", "error"])
+      .enum(["all", "repair", "pending", "retake", "done", "error", "unread"])
       .default("all"),
     labeling: z.enum(["all", "true"]).default("all"),
     page: z.coerce.number().int().min(1).max(1000000).default(1),
@@ -47,6 +47,7 @@ export const photoConditions = {
   retake: `${text("i", "retake")} = 'true'`,
   done: `${text("i", "status")} = 'done'`,
   error: `${text("i", "status")} = 'error'`,
+  unread: `${text("i", "status")} = 'unread'`,
   labeling: `${text("i", "labeling")} = 'true'`,
 };
 const literalLike = (value) =>
