@@ -4,9 +4,11 @@
 
 2026-09-21 추가된 최종 제품 요구는 [제품 확장 설계·검증 기준](docs/product-v2.md)에 모았습니다. 계획에서 사진을 올리는 흐름, 가상 팀 구역 지도, 사진 삭제·복원, 보수 방법별 워크리스트, 업로드 제한 개선과 화면 정리를 단계적으로 구현합니다. 아래 기존 수행 결과와 새 요구의 구현 상태는 구분하며, 문서 반영만으로 새 기능을 완료 처리하지 않습니다.
 
-**현재 공유 사이트의 코드 기준(2026-09-21 23:20 KST):** [파일별 이어올리기 PR #15](https://github.com/junhang-dev/inspection-image-platform/pull/15)의 제품 `e440bf3`와 [모델 입력 개선 PR #13](https://github.com/junhang-dev/inspection-image-platform/pull/13)의 `90dc402`를 함께 사용합니다. [계획 중심 첫 구현 PR #14](https://github.com/junhang-dev/inspection-image-platform/pull/14)에 이어 10장·20MB의 임의 업로드 제한 제거, 파일별 진행·재시도·새로고침 복구, 실제 대용량 원본 저장·판독과 글자·배치 개선을 반영했습니다. 동결 모델의 가중치·전처리·평가 결과는 유지합니다. 독립 파일·화면 검증은 [QA 기록 PR #4](https://github.com/junhang-dev/inspection-image-platform/pull/4), 추가 설계와 보강 지도 자산은 [PR #5](https://github.com/junhang-dev/inspection-image-platform/pull/5)에 있습니다. 삭제·복원·워크리스트 개편·새 지도 연결·공통 집계는 후속 구현 중이며 초안 PR 게시와 `main` 병합은 구분합니다.
+**현재 공유 사이트의 코드 기준(2026-09-22 00:44 KST):** [공통 조회·가상 지도 PR #17](https://github.com/junhang-dev/inspection-image-platform/pull/17)의 제품 `eed4de8`와 [모델 입력 개선 PR #13](https://github.com/junhang-dev/inspection-image-platform/pull/13)의 `90dc402`를 함께 사용합니다. 계획 우선 등록과 대용량 이어올리기에 이어 **KPI 4개에서 해당 목록 이동, 전체 건수·페이지 조회, 최근 사진의 삭제·복원, 보강 지도에서 팀 → 랙 → 포인트 연결**을 반영했습니다. 기존 공유 주소를 유지하며 최종 QA·운영·커밋의 실행 소스 13개가 일치합니다. 독립 인수에서 외부·로컬 HTML과 실제 빌드, API 준비 상태를 확인했습니다. 모델의 가중치·전처리·평가 결과는 유지합니다.
 
-독립 업로드 검증에서는 12개 선택과 추가 긴 이름 파일 1개, 총 13개의 입력·DB·API 다운로드·MinIO 원본 크기와 SHA-256이 일치했고 실제 AI 판독을 확인했습니다. 28,323,297바이트의 유효 합성 PNG도 포함하며 그 등급은 성능 평가에 쓰지 않았습니다. 부분 실패·응답 손실·새로고침 후 같은 ID로 복구했고, 중복 완료 요청이 사진이나 이력을 늘리지 않았습니다. 공유 전환은 기존 사진 64개·포인트 4개·계획 4개와 전체 이력의 응답 값을 보존했습니다. 후속 모바일 문구 수정은 기존 저장 항목만 재확인했으며 추가 업로드·추론 없이 검증했습니다.
+표시 목적에 따른 업무·검증 자료 분리 기능도 검증했습니다. 기존 자료 정리 중 새 사진을 감지해 먼저 전체 적용을 보류하고, 새 사진과 연결 계획을 보존하는 기준으로 재검토했습니다. 이후 생성 근거가 확인된 사진 21개와 검증용 계획 1개만 분류해 **기본 업무 목록은 사진 44개·계획 3개**로 정리했습니다. 전체 사진 65개·포인트 4개·계획 4개와 기존 이력을 보존했고 변경 이력 22개만 추가했습니다. 보수 상태·방법·별도 워크리스트는 도메인과 화면 구성요소 검증을 마쳤으며 실제 백엔드 통합과 새 전체 흐름 검증이 남아 있습니다. [추가 요구별 현재 상태](records/2026-09-22-product-v2-status.md), [독립 QA PR #4](https://github.com/junhang-dev/inspection-image-platform/pull/4), [설계·지도 자산 PR #5](https://github.com/junhang-dev/inspection-image-platform/pull/5)를 함께 확인하세요. 초안 PR 게시와 `main` 병합은 구분합니다.
+
+독립 업로드 검증에서는 12개 선택과 추가 긴 이름 파일 1개, 총 13개의 입력·DB·API 다운로드·MinIO 원본 크기와 SHA-256이 일치했고 실제 AI 판독을 확인했습니다. 28,323,297바이트의 유효 합성 PNG도 포함하며 그 등급은 성능 평가에 쓰지 않았습니다. 부분 실패·응답 손실·새로고침 후 같은 ID로 복구했고, 중복 완료 요청이 사진이나 이력을 늘리지 않았습니다. 업로드 버전 전환 당시 사진 64개·포인트 4개·계획 4개를 보존했으며, 이번 조회·지도 전환 시점에는 새 사진 한 개가 추가된 65개·4개·4개입니다. 이 운영 수량과 격리 검증 환경의 1,001개 페이지 검사 자료는 구분합니다.
 
 **2026-09-21 구현을 시작했습니다. 실제 제품 기동·모델 성능·외부 접속의 완료 여부는 수행 기록으로 확인합니다.** 먼저 최신 [목표·범위·완료 기준](docs/goal.md)을 읽고, AI와 작업할 때는 [AGENTS.md](AGENTS.md)를 따릅니다.
 
@@ -39,14 +41,14 @@
 현재 공유 버전의 코드를 자료 작성·검증에 쓰려면 **새 폴더에** 제품 브랜치를 복제합니다. 출력된 커밋이 위 제품 기준과 같은지 확인하세요. 제품 브랜치에는 `ml/` 자체가 없으므로 모델 소스는 PR #13의 고정 커밋에서 검토용 폴더에 함께 가져옵니다. 아래 모델 파일 복원은 작업 폴더에 소스를 추가하며 Git 커밋이나 브랜치 병합을 수행하지 않습니다.
 
 ```sh
-git clone --branch codex/jun/platform-resumable-upload https://github.com/junhang-dev/inspection-image-platform.git inspection-image-platform-review
+git clone --branch codex/jun/platform-query-map-v2 https://github.com/junhang-dev/inspection-image-platform.git inspection-image-platform-review
 cd inspection-image-platform-review
 git rev-parse HEAD
 git fetch origin codex/jun/model-streaming-upload
 git restore --source=90dc40209ded6b330552e20079780aa7ac90f635 --worktree -- ml/
 ```
 
-실행 절차는 제품 브랜치의 `records/platform-runbook.md`, `docs/uploads.md`, `records/platform-resumable-upload.md`와 가져온 `ml/OPERATIONS.md`를 함께 읽으세요. 로컬 원본·DB·가중치·비밀 설정은 Git에 없으므로 코드 복제만으로 운영 데이터와 모델이 준비되지는 않습니다. 실제 공유 서비스는 Mac에서 실행 중이며, 위 안내는 동료의 별도 검토 환경을 위한 것입니다.
+실행 절차는 제품 브랜치의 `records/platform-runbook.md`, `docs/uploads.md`, `docs/photo-query.md`, `records/platform-query-map-v2.md`와 가져온 `ml/OPERATIONS.md`를 함께 읽으세요. 라벨링 후보의 새 페이지 조회 호환은 [PR #16](https://github.com/junhang-dev/inspection-image-platform/pull/16)에 별도로 있으며 현재 모델 서버의 교체를 뜻하지 않습니다. 로컬 원본·DB·가중치·비밀 설정은 Git에 없으므로 코드 복제만으로 운영 데이터와 모델이 준비되지는 않습니다. 실제 공유 서비스는 Mac에서 실행 중이며, 위 안내는 동료의 별도 검토 환경을 위한 것입니다.
 
 `main`에 병합된 기준부터 새 폴더에서 시작하려면 다음과 같이 복제합니다. 위 최신 초안 PR의 기능이 모두 포함된 상태는 아닙니다.
 
