@@ -17,7 +17,11 @@
 
 샘플은 사용자가 공개 활용을 허용한 과제 사진입니다. 중립적인 이름으로 복제했으며 정답·성능 평가용 테스트 세트가 아닙니다. 원본 300장과 부가 자료·기존 분리 목록은 Jun이 로컬에서 보존합니다. 고정 test 10장은 샘플 선정이나 튜닝에 사용하지 않습니다.
 
-제품·모델·목표 문서는 PR #1·#2·#3으로 `main`에 병합되었습니다(2026-09-21 확인 커밋 `64221ad`). [제품 실행 안내](https://github.com/junhang-dev/inspection-image-platform/blob/main/records/platform-runbook.md), [모델 실행 안내](https://github.com/junhang-dev/inspection-image-platform/blob/main/ml/README.md), [모델 최종 평가](https://github.com/junhang-dev/inspection-image-platform/blob/main/records/model-final-evaluation.md)를 확인하세요. Jun의 Mac에서 Next.js·API·실제 모델과 Docker Compose의 MySQL·MinIO를 연결해 검증했으며, 전체 앱의 Compose 실행은 별도 검증 중입니다.
+제품·모델·목표 문서는 PR #1·#2·#3으로 `main`에 병합되었습니다(2026-09-21 확인 커밋 `64221ad`). [제품 실행 안내](https://github.com/junhang-dev/inspection-image-platform/blob/main/records/platform-runbook.md), [모델 실행 안내](https://github.com/junhang-dev/inspection-image-platform/blob/main/ml/README.md), [모델 최종 평가](https://github.com/junhang-dev/inspection-image-platform/blob/main/records/model-final-evaluation.md)를 확인하세요. 일반 사진 업로드·시연 중복 방지·오류 안내·설비/랙 개념 맵의 후속 변경은 [PR #7](https://github.com/junhang-dev/inspection-image-platform/pull/7)에 있습니다.
+
+웹·API·MySQL·MinIO·동결 모델의 5서비스 Compose 기동과 전체 중단/재시작 후 데이터 보존도 별도 환경에서 확인했습니다. [PR #8](https://github.com/junhang-dev/inspection-image-platform/pull/8)은 PR #7 위의 추가 구성이고 [PR #6](https://github.com/junhang-dev/inspection-image-platform/pull/6)의 모델 소스가 필요합니다. 검증에는 이미 빌드한 로컬 이미지를 사용했습니다. 같은 체크아웃에 소스를 통합한 뒤 전체를 빌드하는 경로는 아직 실행하지 않았습니다. 현재 공유 사이트는 기존 Mac 실행을 유지합니다.
+
+실제 파일·화면·오류 복구·시간·동시 업무의 검증 결과는 [QA 기록 PR #4](https://github.com/junhang-dev/inspection-image-platform/pull/4)에 있습니다. 외부 업로드 10장 저장 목록까지 13.01초, 접수 후 AI 등급 10개 표시까지 17.45초를 1회 관찰했습니다. 실제 AI 처리 중 계획 작성·저장·캘린더 표시도 자동 조작으로 확인했으며, 사람이 전체 업무를 1분에 수행했다는 뜻은 아닙니다. [동료 검수표](docs/team-review.md)로 실제 사용 결과와 남은 막힘을 확인합니다.
 
 현재 모델은 **train 99.57%로 90% 기준 PASS, 고정 test 60%로 70% 기준 FAIL**입니다. 파일 업로드·저장·실제 추론 연결 성공과 모델 성능 합격을 구분합니다. 공개 저장소에 원본 데이터와 학습 가중치는 없으므로 코드 복제만으로 Jun의 실행 환경과 동일한 모델이 준비되는 것은 아닙니다. 각각의 브랜치에 있는 실행 안내와 `records/`의 한계를 함께 확인하세요.
 
