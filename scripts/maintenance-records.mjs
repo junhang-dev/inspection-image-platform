@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-// Full-purpose records, including items removed from the worklist. Reject a
+// Full-purpose records, including hidden items and worklist exclusions. Reject a
 // changing page set instead of treating a partial read as a preservation proof.
 export async function allMaintenanceRecords(read) {
   const result = [],
@@ -8,7 +8,7 @@ export async function allMaintenanceRecords(read) {
     pages = null;
   for (let page = 1; page < 1000001; page++) {
     const data = await read(
-      `/maintenance/query?recordPurpose=all&inWorklist=all&pageSize=100&page=${page}`,
+      `/maintenance/query?recordPurpose=all&inWorklist=all&visibility=all&pageSize=100&page=${page}`,
     );
     assert.ok(Number.isSafeInteger(data.total) && data.total >= 0);
     assert.ok(

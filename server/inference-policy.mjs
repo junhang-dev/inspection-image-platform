@@ -36,7 +36,7 @@ export function createInferencePolicy(
     const source = photo.sourceId ? byId.get(photo.sourceId) : null;
     const bytes = byHash.get(actualSha256);
     if (source?.canonicalSplit === "test" || bytes?.canonicalSplit === "test")
-      return deny("fixed_test", "보존된 평가 사진은 새로 판독하지 않습니다.");
+      return deny("fixed_test", scope === "shared" ? "이 사진은 기존 판독 결과를 보존하며 새로 판독하지 않습니다." : "보존된 평가 사진은 새로 판독하지 않습니다.");
     if (photo.sourceId && (!source || source.sha256 !== actualSha256))
       return deny("source_mismatch", "자료 식별자와 원본 해시가 다릅니다.");
     if (photo.sha256 && photo.sha256 !== actualSha256)

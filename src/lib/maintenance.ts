@@ -11,6 +11,7 @@ export type MaintenanceQuery = {
   planId?: string;
   pointId?: string;
   recordPurpose?: Purpose | "all";
+  visibility?: "visible" | "hidden" | "all";
   inWorklist?: "true" | "all";
   ta?: string;
   repairStatus?: string;

@@ -8,7 +8,14 @@ export type RepairMethod = "undecided" | "paint" | "replace";
 export type MaintenanceItem = {
   id: string;
   planId: string | null;
-  pointId: string;
+  pointId: string | null;
+  targetType?: "point" | "photo";
+  targetId?: string;
+  persisted?: boolean;
+  inclusionMode?: "auto" | "include" | "exclude";
+  visibility?: "visible" | "hidden";
+  evidenceVersions?: Record<string, string>;
+  newEvidenceCount?: number;
   photoIds: readonly string[];
   repairStatus: RepairStatus;
   repairMethod: RepairMethod;
@@ -19,7 +26,7 @@ export type MaintenanceItem = {
 export type MaintenanceDraft = Pick<
   MaintenanceItem,
   "repairStatus" | "repairMethod" | "inWorklist" | "ta" | "photoIds"
-> & { actor: string; reason: string };
+> & { actor: string; reason: string; inclusionMode: "auto" | "include" | "exclude"; visibility: "visible" | "hidden"; acknowledgedEvidence?: Record<string, string> };
 export type MaintenancePhoto = {
   id: string;
   name: string;
@@ -106,7 +113,7 @@ export function MaintenanceEditor({
     <section className={styles.root} aria-labelledby={titleId}>
       <header className={styles.heading}>
         <div>
-          <p className={styles.eyebrow}>계획·포인트별 보수 기록</p>
+          <p className={styles.eyebrow}>검사 대상별 보수 기록</p>
           <h3 id={titleId}>보수 검토</h3>
         </div>
         <span
@@ -125,7 +132,7 @@ export function MaintenanceEditor({
           </dd>
         </div>
         <div>
-          <dt>대상 포인트</dt>
+          <dt>검사 대상</dt>
           <dd>{pointLabel || "포인트 이름 미조회"}</dd>
         </div>
       </dl>
@@ -204,29 +211,10 @@ export function MaintenanceEditor({
             />
             <span>TA에 포함</span>
           </label>
-          <div className={styles.membership}>
-            <div className={styles.membershipHeading}>
-              <strong>워크리스트</strong>
-              <span
-                className={`${styles.badge} ${membershipChanged ? styles.amber : draft.inWorklist ? styles.green : styles.muted}`}
-                aria-live="polite"
-              >
-                {membershipLabel}
-              </span>
-            </div>
-            <button
-              type="button"
-              className={styles.secondaryButton}
-              aria-describedby={membershipId}
-              onClick={() => update({ inWorklist: !draft.inWorklist })}
-            >
-              {draft.inWorklist ? "워크리스트에서 해제" : "워크리스트에 저장"}
-            </button>
-            <p id={membershipId} className={styles.help}>
-              선택 후 아래 ‘저장 반영’을 누르면 적용됩니다. 해제해도 보수 기록과
-              근거 사진은 유지됩니다.
-            </p>
-          </div>
+          <div className={styles.formGrid}><label className={styles.field}>워크리스트 반영<select value={draft.inclusionMode} onChange={(event) => update({ inclusionMode: event.target.value as MaintenanceDraft["inclusionMode"] })}><option value="auto">등급에 따라 자동 반영</option><option value="include">수동으로 포함 유지</option><option value="exclude">수동 제외 유지</option></select></label><label className={styles.field}>항목 표시<select value={draft.visibility} onChange={(event) => update({ visibility: event.target.value as MaintenanceDraft["visibility"] })}><option value="visible">표시·복원</option><option value="hidden">삭제 (복원 가능)</option></select></label></div>
+          <p className={styles.help}>유효 3~5등급은 자동 반영됩니다. 수동 제외·삭제는 재판독 뒤에도 유지되고, 상태와 이력은 보존됩니다.</p>
+          {!!saved?.newEvidenceCount && <p className={styles.warning}>완료 후 새로 확인할 근거 {saved.newEvidenceCount}개가 있습니다.</p>}
+          {draft.repairStatus === "done" && <div className={styles.membership}><button type="button" className={styles.secondaryButton} onClick={() => update({ acknowledgedEvidence: Object.fromEntries(uniquePhotos.filter((photo) => saved?.evidenceVersions?.[photo.id]).map((photo) => [photo.id, saved!.evidenceVersions![photo.id]])) })}>현재 페이지의 판독 근거 확인</button><p className={styles.help}>{draft.acknowledgedEvidence ? `${Object.keys(draft.acknowledgedEvidence).length}개 근거 확인을 저장합니다.` : "완료 상태만 저장해도 새 근거가 확인 처리되지는 않습니다."}</p></div>}
           <fieldset className={styles.evidence}>
             <legend>
               근거 사진 <span>{draft.photoIds.length}개 선택</span>
@@ -243,6 +231,7 @@ export function MaintenanceEditor({
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={saved?.targetType === "photo"}
                           onChange={(event) =>
                             update({
                               photoIds: event.target.checked
@@ -413,7 +402,7 @@ export function MaintenanceWorklist({
     <section className={styles.root} aria-labelledby={titleId} aria-busy={busy}>
       <header className={styles.heading}>
         <div>
-          <p className={styles.eyebrow}>명시적으로 등록한 보수 항목</p>
+          <p className={styles.eyebrow}>자동 판정과 수동 업무 기록</p>
           <h3 id={titleId}>워크리스트</h3>
         </div>
         <span className={styles.total}>
@@ -452,6 +441,7 @@ export function MaintenanceWorklist({
                     방법 · {methodLabels[item.repairMethod] || "방법 미확인"}
                   </span>
                 </div>
+                {!!item.newEvidenceCount && <p className={styles.warning}>완료 후 새 근거 {item.newEvidenceCount}개</p>}
                 <h4>{item.pointLabel || "포인트 이름 미조회"}</h4>
                 <dl className={styles.rowDetails}>
                   <div>
@@ -496,16 +486,7 @@ export function MaintenanceWorklist({
                       원래 계획
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    disabled={busy}
-                    onClick={() => {
-                      if (!busy) onOpenPoint(item.pointId);
-                    }}
-                  >
-                    포인트 상세
-                  </button>
+                  {item.pointId && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => onOpenPoint(item.pointId!)}>기존 위치 보기</button>}
                 </div>
               </article>
             </li>
@@ -524,8 +505,7 @@ export function MaintenanceWorklist({
           </strong>
           {!busy && !error && (
             <p>
-              계획·포인트의 보수 검토에서 ‘워크리스트에 저장’을 선택한 뒤 저장
-              반영하세요.
+              보수 필요 등급의 사진이 자동 반영됩니다. 상세 조건에서 제외·삭제 항목도 확인할 수 있습니다.
             </p>
           )}
         </div>

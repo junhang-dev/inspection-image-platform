@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { createInferencePolicy } from "./inference-policy.mjs";
+import { validatePublicationPolicy } from "./publication-contract.mjs";
 
 export const digest = (bytes) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -167,9 +168,15 @@ export async function loadDatasetContract(profile, env = process.env) {
     plan.evidence.freeze.sha256,
   );
   validateDatasetPlan(plan, manifest, freeze);
+  let publication = null;
+  if (env.PUBLICATION_POLICY_PATH || env.PUBLICATION_POLICY_SHA256) {
+    if (profile.scope !== "shared") fail("공개 승인 정책은 별도 공유 프로필에서만 사용합니다.");
+    publication = validatePublicationPolicy(await verifiedJson(env.PUBLICATION_POLICY_PATH, env.PUBLICATION_POLICY_SHA256), plan, env.PUBLICATION_POLICY_SHA256);
+    if (!(env.CORS_ORIGINS ?? "").split(",").includes(publication.origin)) fail("승인한 최종 공개 Origin이 설정과 다릅니다.");
+  }
   const policy = createInferencePolicy(plan.entries, {
     scope: profile.scope,
-    publicHashes: plan.demo_aliases.map((e) => e.sha256),
+    publicHashes: [...plan.demo_aliases.map((e) => e.sha256), ...(publication?.hashes ?? [])],
     manifestSha256: plan.evidence.manifest.sha256,
   });
   const caches = new Map();
@@ -205,6 +212,7 @@ export async function loadDatasetContract(profile, env = process.env) {
   }
   return {
     profile,
+    publication,
     plan,
     manifest,
     freeze,

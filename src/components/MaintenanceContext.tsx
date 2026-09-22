@@ -23,6 +23,9 @@ const fields = {
   ta: "TA",
   photoIds: "근거 사진",
   recordPurpose: "기록 목적",
+  inclusionMode: "목록 반영 방식",
+  visibility: "표시 상태",
+  reviewedEvidence: "확인한 근거",
 };
 const names: Record<string, string> = {
   none: "등록 전",
@@ -55,13 +58,17 @@ const initialDraft = (
   repairMethod: item?.repairMethod ?? "undecided",
   inWorklist: item?.inWorklist ?? false,
   ta: item?.ta ?? false,
-  photoIds: item?.photoIds ?? (photoId ? [photoId] : []),
+  photoIds: item?.targetType === "photo" ? [item.targetId!] : item?.photoIds ?? (photoId ? [photoId] : []),
   actor: "현업 엔지니어",
   reason: "",
+  inclusionMode: item?.inclusionMode ?? "auto",
+  visibility: item?.visibility ?? "visible",
 });
 export default function MaintenanceContext({
   planId,
   pointId,
+  targetType,
+  targetId,
   planTitle,
   pointLabel,
   recordPurpose,
@@ -69,7 +76,9 @@ export default function MaintenanceContext({
   done,
 }: {
   planId: string | null;
-  pointId: string;
+  pointId: string | null;
+  targetType?: "point" | "photo";
+  targetId?: string;
   planTitle: string | null;
   pointLabel: string;
   recordPurpose: Purpose;
@@ -80,7 +89,6 @@ export default function MaintenanceContext({
       null,
     ),
     [draft, setDraft] = useState<MaintenanceDraft>(initialDraft(null)),
-    [purpose, setPurpose] = useState(recordPurpose),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [history, setHistory] = useState<Audit[]>([]),
@@ -93,8 +101,9 @@ export default function MaintenanceContext({
   >({});
   const photos = usePhotoQuery({
     planId: planId ?? "unassigned",
-    pointId,
-    recordPurpose: "all",
+    pointId: pointId ?? "unassigned",
+    ...(targetType === "photo" || !pointId ? { photoId: photoId ?? targetId } : {}),
+    recordPurpose,
     visibility: "all",
     page,
     pageSize: 50,
@@ -113,8 +122,7 @@ export default function MaintenanceContext({
     let current = true;
     const controller = new AbortController();
     void maintenanceApi<SavedMaintenance | null>(
-      "/pair?" +
-        new URLSearchParams({ planId: planId ?? "unassigned", pointId }),
+      (photoId || (targetType === "photo" && targetId)) ? "/target?" + new URLSearchParams({ photoId: photoId ?? targetId! }) : "/pair?" + new URLSearchParams({ planId: planId ?? "unassigned", pointId: pointId! }),
       {
         signal: AbortSignal.any([
           controller.signal,
@@ -126,7 +134,6 @@ export default function MaintenanceContext({
         if (current && active.current) {
           setBasis({ item });
           setDraft(initialDraft(item, photoId));
-          setPurpose(item?.recordPurpose ?? recordPurpose);
         }
       })
       .catch((e) => {
@@ -137,7 +144,7 @@ export default function MaintenanceContext({
       active.current = false;
       controller.abort();
     };
-  }, [planId, pointId, photoId, recordPurpose]);
+  }, [planId, pointId, photoId, targetType, targetId, recordPurpose]);
   useEffect(() => {
     if (!basis?.item) return;
     let current = true;
@@ -161,21 +168,20 @@ export default function MaintenanceContext({
     try {
       const payload = {
         ...draft,
-        recordPurpose: purpose,
-        expectedVersion: basis.item?.editVersion ?? null,
-        ...(basis.item ? {} : { planId, pointId }),
+        expectedVersion: basis.item?.persisted ? basis.item.editVersion : null,
+        ...(basis.item?.persisted ? {} : { planId, pointId, targetType: basis.item?.targetType ?? targetType, targetId: basis.item?.targetId ?? targetId }),
       };
       const saved = await maintenanceApi<SavedMaintenance>(
-        basis.item ? "/" + basis.item.id : "",
+        basis.item?.persisted ? "/" + basis.item.id : "",
         {
-          method: basis.item ? "PATCH" : "POST",
+          method: basis.item?.persisted ? "PATCH" : "POST",
           body: JSON.stringify(payload),
         },
       );
       if (active.current) {
-        setBasis({ item: saved });
-        setDraft({ ...initialDraft(saved), actor: draft.actor });
-        setPurpose(saved.recordPurpose);
+        const latest = await maintenanceApi<SavedMaintenance>("/" + saved.id);
+        setBasis({ item: latest });
+        setDraft({ ...initialDraft(latest), actor: draft.actor });
         await done("보수 기록과 변경 이력을 저장했습니다.");
       }
     } catch (e) {
@@ -196,21 +202,6 @@ export default function MaintenanceContext({
     );
   return (
     <>
-      <label className="field">
-        보수 기록 목적
-        <select
-          value={purpose}
-          disabled={busy}
-          onChange={(event) => setPurpose(event.target.value as Purpose)}
-        >
-          <option value="inspection">업무 검사</option>
-          <option value="presentation">발표용</option>
-          <option value="verification">검증용</option>
-        </select>
-        <small>
-          이 보수 기록에만 적용하며 계획·포인트·사진 목적은 바꾸지 않습니다.
-        </small>
-      </label>
       {photos.error && (
         <p className="form-error" role="alert">
           근거 사진 목록: {photos.error}
@@ -241,7 +232,7 @@ export default function MaintenanceContext({
       {photos.data && (
         <div className="list-toolbar">
           <span>
-            같은 계획·포인트의 모든 목적 사진 {photos.data.total}장 ·{" "}
+            같은 검사 대상의 사진 {photos.data.total}장 ·{" "}
             {photos.data.page}/{photos.data.pages}페이지
           </span>
           <button
@@ -260,8 +251,8 @@ export default function MaintenanceContext({
           </button>
         </div>
       )}
-      <section className="audit">
-        <h3>보수 변경 이력</h3>
+      <details className="audit">
+        <summary>보수 변경 이력 {history.length}건</summary>
         {historyError && (
           <p className="form-error" role="alert">
             {historyError}
@@ -294,7 +285,7 @@ export default function MaintenanceContext({
             </div>
           </div>
         ))}
-      </section>
+      </details>
     </>
   );
 }

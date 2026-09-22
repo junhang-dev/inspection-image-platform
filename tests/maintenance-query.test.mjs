@@ -14,9 +14,10 @@ test("보수 범위는 UUID 대소문자를 정규화하고 잘못된 상태·�
     { repairStatus: "finished" },
     { inWorklist: "false" },
     { teamId: "team-1", rackId: "team-2-rack-1" },
-    { visibility: "all" },
+    { visibility: "deleted" },
   ])
     assert.equal(maintenanceQuerySchema.safeParse(input).success, false);
+  assert.equal(maintenanceQuerySchema.parse({ visibility: "all" }).visibility, "all");
 });
 test("보수 보존 검사는 해제된 항목까지 읽고 중복·누락·범위 변화·잘못된 페이지를 실패 처리한다", async () => {
   for (const pages of [
@@ -34,7 +35,7 @@ test("보수 보존 검사는 해제된 항목까지 읽고 중복·누락·범�
     await assert.rejects(allMaintenanceRecords(async () => pages.shift()));
   let page = 0;
   const records = await allMaintenanceRecords(async (path) => {
-    assert.match(path, /recordPurpose=all&inWorklist=all/);
+    assert.match(path, /recordPurpose=all&inWorklist=all&visibility=all/);
     return {
       page: ++page,
       pages: 2,

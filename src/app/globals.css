@@ -2103,3 +2103,47 @@ button.stat-card:hover {
     grid-column: 1 / -1;
   }
 }
+
+/* Plan-first inspection workflow. */
+.brand > span:last-child { font-size: 15px; line-height: 1.35; }
+.common-scope { margin: 0 0 22px; padding: 18px 20px; border: 1px solid var(--line, #dfe7e9); border-radius: 14px; background: #fff; }
+.scope-primary { display: flex; align-items: end; gap: 16px; flex-wrap: wrap; }
+.scope-primary .field { flex: 1; min-width: 180px; margin: 0; }
+.scope-details { margin-top: 14px; }
+.scope-details > summary, .audit > summary { cursor: pointer; font-weight: 650; padding: 8px 0; }
+.scope-details .photo-scope { margin-bottom: 0; }
+.start-panel { background: #edf6f3; border: 1px solid #c3dcd4; border-radius: 16px; padding: 24px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; margin-bottom: 24px; }
+.start-panel h2 { margin: 5px 0 9px; font-size: 22px; }
+.start-panel p { margin: 0; color: #53675f; }
+.active-plan { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 15px; border-top: 1px solid #c9ded6; }
+.active-plan small { display: block; margin-top: 5px; color: #53675f; }
+.v3-plan-list { display: grid; gap: 14px; }
+.v3-plan-list article { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 20px; border: 1px solid #dfe7e9; border-radius: 12px; }
+.v3-plan-list h3 { margin: 12px 0 6px; }
+.v3-plan-list p { margin: 6px 0; color: #5d6d78; }
+.plan-next { padding: 20px; border: 1px solid #c5ded7; background: #f0f8f5; border-radius: 12px; margin-bottom: 20px; }
+.plan-next h3 { margin: 10px 0 16px; }
+.plan-scope-editor { min-width: 0; border: 1px solid #dce5e6; border-radius: 10px; padding: 14px; margin: 16px 0; }
+.plan-scope-editor legend { padding: 0 6px; font-weight: 650; }
+.rack-checks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
+.rack-checks label { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 10px 4px; border: 1px solid #d7e2df; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.rack-checks label.selected { background: #e8f5ef; border-color: #198368; color: #08634b; }
+.rack-checks input { width: 14px; height: 14px; accent-color: #087566; }
+.relation-editor { margin-bottom: 15px; }
+@media (max-width: 600px) { .start-panel { grid-template-columns: 1fr; padding: 18px; } .v3-plan-list article { flex-direction: column; align-items: stretch; } .scope-primary { align-items: stretch; } .scope-primary .field { min-width: 120px; } .rack-checks { grid-template-columns: repeat(3, minmax(0, 1fr)); } .common-scope { padding: 14px; } }
+
+.roi-panel { margin: 20px 0; padding: 16px; border: 1px solid #d8e3df; border-radius: 10px; background: #fafdfb; }
+.roi-panel > summary { font-weight: 700; cursor: pointer; padding: 5px 0; }
+.roi-panel p { font-size: 13px; line-height: 1.6; color: #566c63; }
+.roi-image { position: relative; touch-action: none; user-select: none; cursor: crosshair; margin: 12px 0; width: 100%; line-height: 0; }
+.roi-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
+.roi-image > img { display: block; width: 100%; height: auto; image-orientation: from-image; pointer-events: none; }
+.roi-selection { position: absolute; border: 2px solid #ffdd69; background: #ffd00012; box-shadow: 0 0 0 1px #1a3519; pointer-events: none; box-sizing: border-box; }
+.contribution-overlay { position: absolute; pointer-events: none; image-rendering: auto; }
+.roi-coordinates { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; }
+.roi-coordinates .field { min-width: 0; font-size: 12px; }
+.roi-coordinates input { min-width: 0; width: 100%; padding: 6px; }
+.roi-edit, .roi-result, .analysis-status { border-top: 1px solid #dce7e2; padding-top: 12px; margin-top: 15px; }
+.shap-legend { display: grid; gap: 4px; font-size: 12px !important; }
+.shap-legend span:first-child { color: #b93626; }.shap-legend span:last-child { color: #2464bc; }
+.analysis-history-item { display: block; text-align: left; border: 0; background: #eef4f1; border-radius: 5px; padding: 9px; margin-top: 6px; width: 100%; cursor: pointer; font-size: 12px; }

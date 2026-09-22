@@ -10,6 +10,7 @@ import {
 } from "@/lib/upload";
 import locations from "@/lib/virtual-locations.json";
 import InspectionMap from "@/components/InspectionMap";
+import RoiPanel from "@/components/RoiPanel";
 import MaintenanceContext from "@/components/MaintenanceContext";
 import { MaintenanceWorklist } from "@/components/MaintenancePanel";
 import { useMaintenanceQuery, type Purpose } from "@/lib/maintenance";
@@ -87,10 +88,16 @@ type Plan = {
   pointIds: string[];
   note: string;
   status: "planned" | "done" | "cancelled";
+  teamId: string | null;
+  rackIds: string[];
+  visibility: "visible" | "hidden";
+  scopeNeedsReview?: boolean;
 };
 type MaintenanceTarget = {
   planId: string | null;
-  pointId: string;
+  pointId: string | null;
+  targetType?: "point" | "photo";
+  targetId?: string;
   recordPurpose: Purpose;
   photoId?: string;
 };
@@ -126,7 +133,6 @@ const nav = [
   { id: "dashboard", label: "대시보드", icon: LayoutDashboard },
   { id: "plans", label: "검사 계획", icon: CalendarDays },
   { id: "photos", label: "사진·판독", icon: Camera },
-  { id: "points", label: "포인트 관리", icon: Box },
   { id: "worklist", label: "관리·TA 워크리스트", icon: FolderKanban },
   { id: "labels", label: "라벨링 후보", icon: Tag },
 ] as const;
@@ -250,11 +256,14 @@ export default function Home() {
   const [workTa, setWorkTa] = useState("all");
   const [maintenanceTarget, setMaintenanceTarget] =
     useState<MaintenanceTarget | null>(null);
+  const [workVisibility, setWorkVisibility] = useState("visible");
+  const [showAllWork, setShowAllWork] = useState(false);
   const maintenance = useMaintenanceQuery(
     {
       planId: scope.planId,
       recordPurpose: scope.recordPurpose,
-      inWorklist: tab === "worklist" ? "true" : "all",
+      inWorklist: tab === "worklist" && !showAllWork && workVisibility === "visible" ? "true" : "all",
+      visibility: workVisibility as "visible" | "hidden" | "all",
       ...(tab === "worklist"
         ? {
             teamId: scope.teamId,
@@ -289,6 +298,8 @@ export default function Home() {
     point?: Point;
   } | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
+  const [planVisibility, setPlanVisibility] = useState("visible");
+
   const [planDetail, setPlanDetail] = useState<Plan | null>(null);
   const [detail, setDetail] = useState<Photo | null>(null);
   const [pointDetail, setPointDetail] = useState<Point | null>(null);
@@ -297,11 +308,11 @@ export default function Home() {
   );
   const [mapPoint, setMapPoint] = useState<string | null>(null);
   const selectedPlan = plans.find((plan) => plan.id === scope.planId);
-  const visiblePlans = plans.filter(
-    (plan) =>
-      scope.recordPurpose === "all" ||
-      (plan.recordPurpose ?? "inspection") === scope.recordPurpose,
-  );
+  const visiblePlans = plans.filter((plan) => plan.recordPurpose === "inspection" &&
+    plan.visibility === planVisibility &&
+    (scope.teamId === "all" || plan.teamId === scope.teamId) &&
+    (scope.rackId === "all" || plan.rackIds.includes(scope.rackId)));
+  const activePlans = visiblePlans.filter((plan) => plan.status === "planned" && plan.visibility === "visible");
   const scopePoints = points.filter((point) => {
     if (
       scope.recordPurpose !== "all" &&
@@ -312,7 +323,7 @@ export default function Home() {
     if (
       scope.planId !== "all" &&
       scope.planId !== "unassigned" &&
-      !selectedPlan?.pointIds.includes(point.id)
+      !photoList.data?.pointCounts[point.id] && !selectedPlan?.pointIds.includes(point.id)
     )
       return false;
     if (scope.planId === "unassigned" && !photoList.data?.pointCounts[point.id])
@@ -354,7 +365,7 @@ export default function Home() {
     try {
       const [s, c, h] = await Promise.all([
         api<Point[]>("/points?recordPurpose=all"),
-        api<Plan[]>("/plans?recordPurpose=all"),
+        api<Plan[]>("/plans?visibility=all"),
         api<Health>("/health"),
       ]);
       setPoints(s);
@@ -422,18 +433,18 @@ export default function Home() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="/" aria-label="PlantPilot 대시보드">
+        <a className="brand" href="/" aria-label="Drone Inspection Platform 대시보드">
           <span className="brand-mark">
             <Layers3 size={25} />
           </span>
           <span>
-            PlantPilot<small>검사·보수 통합 관제</small>
+            Drone Inspection Platform<small>검사·보수 통합 관제</small>
           </span>
         </a>
         <div className="workspace">
           <span className="workspace-icon">P</span>
           <div>
-            검사 운영 워크스페이스<small>플랜트파일럿</small>
+            검사 운영 워크스페이스<small>드론 검사 플랫폼</small>
           </div>
           <ChevronRight size={16} />
         </div>
@@ -505,7 +516,7 @@ export default function Home() {
                 {tab === "dashboard"
                   ? "사진 판독부터 후속 조치까지, 오늘의 검사 업무를 이어가세요."
                   : tab === "plans"
-                    ? "다가오는 검사를 계획하고 포인트의 후속 관리로 연결하세요."
+                    ? "생산팀과 검사할 랙을 정하고, 계획별로 사진을 추가하세요."
                     : tab === "photos"
                       ? "검사 사진과 AI 판독 결과, 사람의 판단을 함께 관리하세요."
                       : tab === "points"
@@ -521,14 +532,14 @@ export default function Home() {
                 onClick={() => setPlanOpen(true)}
               >
                 <CalendarDays size={16} />
-                검사 계획
+                검사계획 만들기
               </button>
               <button
                 className="button primary"
-                onClick={() => setUploadOpen(true)}
+                onClick={() => { setUploadContext(null); if (plans.some((p) => p.status === "planned" && p.visibility === "visible")) setUploadOpen(true); else setPlanOpen(true); }}
               >
                 <Plus size={18} />
-                사진 업로드
+                사진 추가
               </button>
             </div>
           </div>
@@ -558,23 +569,12 @@ export default function Home() {
               </span>
             </div>
           )}
-          <div className="notice">
-            <ShieldCheck size={17} />
-            <span>
-              AI 정확도 60% · 목표 70% 미달. 판독 결과를 확인하고 필요한 판단을
-              기록하세요.
-            </span>
-          </div>
-          {["dashboard", "photos", "labels", "points", "worklist"].includes(
-            tab,
-          ) && (
-            <PhotoScopeFields
-              maintenance={tab === "worklist"}
-              scope={scope}
-              plans={plans}
-              change={changeScope}
-            />
-          )}
+          <PhotoScopeFields maintenance={tab === "worklist"} scope={scope} plans={plans} change={changeScope} />
+          {tab === "dashboard" && <section className="start-panel">
+            <div><span className="eyebrow">오늘의 검사</span><h2>{activePlans.length ? "진행 중인 계획에서 이어가세요" : "생산팀의 검사계획을 만들어 보세요"}</h2><p>검사할 랙을 선택한 뒤 사진을 추가하면 판독과 보수 검토로 이어집니다.</p></div>
+            <button className="button primary" onClick={() => setPlanOpen(true)}><Plus size={18}/>검사계획 만들기</button>
+            {activePlans.slice(0, 3).map((plan) => <div className="active-plan" key={plan.id}><div><strong>{plan.title}</strong><small>{plan.date} · {locations.teams.find((team) => team.id === plan.teamId)?.name} · {plan.rackIds.length}개 랙</small></div><button className="button secondary" onClick={() => uploadForPlan(plan)}>사진 추가</button></div>)}
+          </section>}
           {photoList.error &&
             ["dashboard", "photos", "labels", "points"].includes(tab) && (
               <div className="notice error" role="alert">
@@ -662,7 +662,7 @@ export default function Home() {
                 <section className="panel map-panel">
                   <div className="panel-title">
                     <div>
-                      <h2>검사 포인트 맵</h2>
+                      <h2>검사 위치</h2>
                       <p>현재 조회 조건의 사진 수 · 가상 팀·랙 배치</p>
                     </div>
                   </div>
@@ -676,6 +676,7 @@ export default function Home() {
                     <InspectionMap
                       points={scopePoints}
                       pointCounts={pointCounts}
+                      rackCounts={photoList.data?.rackCounts}
                       selectedTeamId={
                         scope.teamId === "all" ? null : scope.teamId
                       }
@@ -700,7 +701,6 @@ export default function Home() {
                         const point = points.find((point) => point.id === id);
                         if (point) void selectPoint(point);
                       }}
-                      onCreatePoint={({ rackId }) => setNewPointRack(rackId)}
                     />
                   )}
                 </section>
@@ -730,7 +730,7 @@ export default function Home() {
                             >
                               {p.title}
                             </button>
-                            <small>연결 포인트 {p.pointIds.length}개</small>
+                            <small>{p.teamId ? locations.teams.find((team) => team.id === p.teamId)?.name : "생산팀 미확인"} · 검사 랙 {p.rackIds.length}개</small>
                             <span className="badge green">검사 예정</span>
                           </div>
                         </div>
@@ -755,7 +755,7 @@ export default function Home() {
                     )}
                   </div>
                   <button className="panel-link" onClick={() => go("plans")}>
-                    검사 캘린더 열기 <ArrowRight size={16} />
+                    검사계획 목록 열기 <ArrowRight size={16} />
                   </button>
                 </section>
               </div>
@@ -849,7 +849,7 @@ export default function Home() {
           )}
           {tab === "worklist" && (
             <>
-              <div className="list-toolbar">
+              <details className="scope-details"><summary>보수 목록 상세 조건</summary><div className="list-toolbar">
                 <label>
                   업무 상태{" "}
                   <select
@@ -899,7 +899,8 @@ export default function Home() {
                     <option value="false">미포함</option>
                   </select>
                 </label>
-              </div>
+                <label>표시 상태<select value={workVisibility} onChange={(event) => { setWorkVisibility(event.target.value); setWorkPage(1); }}><option value="visible">현재 항목</option><option value="hidden">삭제한 항목</option><option value="all">전체 이력 항목</option></select></label><label><input type="checkbox" checked={showAllWork} onChange={(event) => { setShowAllWork(event.target.checked); setWorkPage(1); }}/>수동 제외·등급 하향 항목도 보기</label>
+              </div></details>
               <MaintenanceWorklist
                 items={maintenance.data?.items ?? []}
                 total={maintenance.data?.total ?? null}
@@ -917,6 +918,8 @@ export default function Home() {
                       planId: item.planId,
                       pointId: item.pointId,
                       recordPurpose: item.recordPurpose,
+                      targetType: item.targetType, targetId: item.targetId,
+                      ...(item.targetType === "photo" ? { photoId: item.targetId } : {}),
                     });
                 }}
                 onOpenPlan={(id) => {
@@ -930,240 +933,18 @@ export default function Home() {
               />
             </>
           )}
-          {tab === "points" && (
-            <>
-              <div className="section-hint">
-                <MapPin size={17} />
-                <span>
-                  사진 수는 현재 조회 조건입니다. 카드를 열어 계획별 보수 기록과
-                  포인트 정보를 확인하세요.
-                </span>
-              </div>
-              {maintenance.error && (
-                <p className="form-error" role="alert">
-                  보수 기록 조회 실패: {maintenance.error}
-                  {maintenance.data ? " · 마지막 조회 결과입니다." : ""}
-                </p>
-              )}
-              {mapScopePending && (
-                <p className="form-intro">
-                  {photoList.error
-                    ? "현재 조건의 포인트를 조회하지 못했습니다."
-                    : "포인트 조회 중…"}
-                </p>
-              )}
-              <div className="point-grid">
-                {scopePoints.map((p) => (
-                  <button
-                    className="point-card"
-                    key={p.id}
-                    onClick={() => selectPoint(p)}
-                  >
-                    <div>
-                      <span className="point-icon">
-                        <Box size={21} />
-                      </span>
-                      <span className="badge muted">
-                        {maintenance.data
-                          ? scope.planId === "all"
-                            ? `${maintenance.data.pointSummaries[p.id]?.total ?? 0}개 계획별 보수 기록`
-                            : Object.entries(statusName)
-                                .filter(
-                                  ([key]) =>
-                                    (maintenance.data!.pointSummaries[p.id]?.[
-                                      key as keyof typeof statusName
-                                    ] ?? 0) > 0,
-                                )
-                                .map(([, name]) => name)
-                                .join(" · ") || "보수 기록 없음"
-                          : "보수 기록 미조회"}
-                      </span>
-                    </div>
-                    <h3>{p.equipment || "설비 미확인"}</h3>
-                    <p>
-                      {p.rack ? `${p.rack} 랙` : "랙 미확인"} ·{" "}
-                      {p.name || "포인트 미확인"}
-                    </p>
-                    <div className="point-meta">
-                      <span>
-                        <Camera size={14} />
-                        {pointCounts ? `${pointCounts[p.id] ?? 0}장` : "미조회"}
-                      </span>
-                      {!!maintenance.data?.pointSummaries[p.id]?.registered && (
-                        <span>
-                          워크리스트{" "}
-                          {maintenance.data.pointSummaries[p.id].registered}건
-                        </span>
-                      )}
-                      <ArrowRight size={15} />
-                    </div>
-                  </button>
-                ))}
-              </div>
-              {!mapScopePending && !scopePoints.length && (
-                <section className="panel">
-                  <Empty text="등록된 항목이 없습니다. 사진을 포인트에 연결해 업무를 시작하세요." />
-                </section>
-              )}
-            </>
-          )}
-          {tab === "plans" && (
-            <section className="panel">
-              <div className="list-toolbar">
-                <label>
-                  기록 목적{" "}
-                  <select
-                    aria-label="계획 기록 목적 필터"
-                    value={scope.recordPurpose}
-                    onChange={(event) =>
-                      changeScope({
-                        ...scope,
-                        recordPurpose: event.target
-                          .value as PhotoScope["recordPurpose"],
-                      })
-                    }
-                  >
-                    {Object.entries(purposeName).map(([key, name]) => (
-                      <option key={key} value={key}>
-                        {name}
-                      </option>
-                    ))}
-                    <option value="all">모든 목적</option>
-                  </select>
-                </label>
-              </div>
-              <div className="panel-title">
-                <div className="month-nav">
-                  <button
-                    className="icon-button"
-                    aria-label="이전 달"
-                    onClick={() =>
-                      setMonth(
-                        new Date(month.getFullYear(), month.getMonth() - 1, 1),
-                      )
-                    }
-                  >
-                    <ChevronLeft size={18} />
-                  </button>
-                  <h2>
-                    {month.getFullYear()}년 {month.getMonth() + 1}월
-                  </h2>
-                  <button
-                    className="icon-button"
-                    aria-label="다음 달"
-                    onClick={() =>
-                      setMonth(
-                        new Date(month.getFullYear(), month.getMonth() + 1, 1),
-                      )
-                    }
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-                <button
-                  className="button primary"
-                  onClick={() => setPlanOpen(true)}
-                >
-                  <Plus size={16} />
-                  계획 추가
-                </button>
-              </div>
-              <div className="calendar">
-                {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-                  <div className="weekday" key={d}>
-                    {d}
-                  </div>
-                ))}
-                {Array.from({ length: month.getDay() }, (_, i) => (
-                  <div className="calendar-cell outside" key={`blank${i}`} />
-                ))}
-                {Array.from({ length: daysInMonth }, (_, i) => (
-                  <div className="calendar-cell" key={i}>
-                    <span
-                      className={
-                        dateKey(i + 1) ===
-                        new Date().toLocaleDateString("sv-SE")
-                          ? "today"
-                          : ""
-                      }
-                    >
-                      {i + 1}
-                    </span>
-                    {visiblePlans
-                      .filter((p) => p.date === dateKey(i + 1))
-                      .map((p) => (
-                        <button
-                          key={p.id}
-                          className={`calendar-event ${p.status}`}
-                          onClick={() => setPlanDetail(p)}
-                        >
-                          {p.status === "done" ? "✓ " : ""}
-                          {p.title}
-                        </button>
-                      ))}
-                  </div>
-                ))}
-              </div>
-              <div className="plan-list">
-                {visiblePlans.map((p) => (
-                  <div key={p.id}>
-                    <span className="badge muted">{p.date}</span>
-                    <button
-                      className="text-button plan-title-link"
-                      onClick={() => setPlanDetail(p)}
-                    >
-                      {p.title}
-                    </button>
-                    <span>연결 포인트 {p.pointIds.length}개</span>
-                    <button
-                      className="text-button"
-                      onClick={() => setPlanDetail(p)}
-                    >
-                      변경 이력
-                    </button>
-                    {p.status === "planned" ? (
-                      <button
-                        className="text-button"
-                        onClick={async () => {
-                          try {
-                            await api(`/plans/${p.id}`, {
-                              method: "PATCH",
-                              body: JSON.stringify({
-                                status: "done",
-                                expectedVersion: p.editVersion,
-                                actor: "현업 엔지니어",
-                                reason: "검사 계획 이행 확인",
-                              }),
-                            });
-                            await notify("검사 계획을 완료로 기록했습니다.");
-                          } catch (cause) {
-                            setToast({
-                              tone: "error",
-                              message: (cause as Error).message,
-                            });
-                          }
-                        }}
-                      >
-                        <Check size={15} />
-                        검사 완료 기록
-                      </button>
-                    ) : p.status === "done" ? (
-                      <span className="badge green">완료</span>
-                    ) : p.status === "cancelled" ? (
-                      <span className="badge muted">취소</span>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          {tab === "plans" && <section className="panel">
+            <div className="panel-title"><h2>검사계획 {visiblePlans.length}개</h2><label className="field">표시 상태<select value={planVisibility} onChange={(e) => setPlanVisibility(e.target.value)}><option value="visible">현재 계획</option><option value="hidden">삭제한 계획</option></select></label></div>
+            {!visiblePlans.length && <Empty text="선택한 범위의 검사계획이 없습니다." action={<button className="button primary" onClick={() => setPlanOpen(true)}>검사계획 만들기</button>}/>}
+            <div className="v3-plan-list">{visiblePlans.map((plan) => <article key={plan.id}><div><span className={`badge ${plan.status === "done" ? "green" : "muted"}`}>{plan.visibility === "hidden" ? "삭제됨" : plan.status === "planned" ? "진행 중" : plan.status === "done" ? "완료" : "취소"}</span><h3>{plan.title}</h3><p>{plan.date} · {locations.teams.find((team) => team.id === plan.teamId)?.name ?? "생산팀 확인 필요"} · {plan.rackIds.length}개 랙</p>{plan.note && <p>{plan.note}</p>}</div><div className="heading-actions"><button className="button secondary" onClick={() => setPlanDetail(plan)}>계획 상세·수정</button>{plan.status === "planned" && plan.visibility === "visible" && <button className="button primary" onClick={() => uploadForPlan(plan)}>사진 추가</button>}</div></article>)}</div>
+          </section>}
           <footer>
             <ShieldCheck size={14} />
             <span>
               등급은 사진의 시각적 부식 분류입니다. 설비 안전성이나 실제 보수
               지시를 확정하지 않습니다.
             </span>
-            <span>PlantPilot · 플랜트파일럿</span>
+            <span>Drone Inspection Platform · 드론 검사 플랫폼</span>
           </footer>
         </main>
       </div>
@@ -1223,10 +1004,7 @@ export default function Home() {
       )}
       {planOpen && (
         <PlanDialog
-          points={points}
-          recordPurpose={
-            scope.recordPurpose === "all" ? "inspection" : scope.recordPurpose
-          }
+          initialTeamId={scope.teamId === "all" ? "" : scope.teamId}
           close={() => setPlanOpen(false)}
           done={notify}
           created={setPlanDetail}
@@ -1258,12 +1036,12 @@ export default function Home() {
       )}
       {maintenanceTarget && (
         <Modal
-          title="계획·포인트 보수 기록"
+          title="보수 기록"
           wide
           close={() => setMaintenanceTarget(null)}
         >
           <MaintenanceContext
-            key={`${maintenanceTarget.planId}/${maintenanceTarget.pointId}`}
+            key={`${maintenanceTarget.planId}/${maintenanceTarget.pointId}/${maintenanceTarget.photoId ?? maintenanceTarget.targetId}`}
             {...maintenanceTarget}
             planTitle={
               maintenanceTarget.planId
@@ -1304,144 +1082,14 @@ const purposeName = {
   presentation: "발표용",
   verification: "검증용",
 };
-function PhotoScopeFields({
-  scope,
-  plans,
-  change,
-  maintenance = false,
-}: {
-  scope: PhotoScope;
-  plans: Plan[];
-  change: (scope: PhotoScope) => void;
-  maintenance?: boolean;
-}) {
+function PhotoScopeFields({ scope, plans, change, maintenance = false }: { scope: PhotoScope; plans: Plan[]; change: (scope: PhotoScope) => void; maintenance?: boolean }) {
   const set = (patch: Partial<PhotoScope>) => change({ ...scope, ...patch });
-  return (
-    <section
-      className="photo-scope"
-      aria-label={maintenance ? "보수 기록 조회 조건" : "공통 사진 조회 조건"}
-    >
-      <label>
-        검사 계획
-        <select
-          aria-label="검사 계획 필터"
-          value={scope.planId}
-          onChange={(e) => set({ planId: e.target.value })}
-        >
-          <option value="all">모든 검사 계획</option>
-          <option value="unassigned">계획 미지정</option>
-          {plans
-            .filter(
-              (plan) =>
-                maintenance ||
-                scope.recordPurpose === "all" ||
-                plan.recordPurpose === scope.recordPurpose ||
-                plan.id === scope.planId,
-            )
-            .map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.title}
-              </option>
-            ))}
-        </select>
-      </label>
-      <label>
-        기록 목적
-        <select
-          aria-label="기록 목적 필터"
-          value={scope.recordPurpose}
-          onChange={(e) =>
-            set({
-              recordPurpose: e.target.value as PhotoScope["recordPurpose"],
-            })
-          }
-        >
-          {Object.entries(purposeName).map(([key, name]) => (
-            <option key={key} value={key}>
-              {name}
-            </option>
-          ))}
-          <option value="all">모든 목적</option>
-        </select>
-      </label>
-      {!maintenance && (
-        <label>
-          사진 표시
-          <select
-            aria-label="사진 표시 필터"
-            value={scope.visibility}
-            onChange={(e) =>
-              set({ visibility: e.target.value as PhotoScope["visibility"] })
-            }
-          >
-            <option value="visible">표시 중</option>
-            <option value="hidden">숨긴 사진</option>
-            <option value="all">표시·숨김 모두</option>
-          </select>
-        </label>
-      )}
-      <label>
-        가상 팀
-        <select
-          aria-label="팀 필터"
-          value={scope.teamId}
-          onChange={(e) => set({ teamId: e.target.value, rackId: "all" })}
-        >
-          <option value="all">모든 팀</option>
-          {locations.teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        파이프랙
-        <select
-          aria-label="파이프랙 필터"
-          value={scope.rackId}
-          onChange={(e) => {
-            const rack = locations.racks.find(
-              (rack) => rack.id === e.target.value,
-            );
-            set({
-              rackId: e.target.value,
-              ...(rack ? { teamId: rack.teamId } : {}),
-            });
-          }}
-        >
-          <option value="all">모든 랙</option>
-          {locations.racks
-            .filter(
-              (rack) => scope.teamId === "all" || rack.teamId === scope.teamId,
-            )
-            .map((rack) => (
-              <option key={rack.id} value={rack.id}>
-                {rackName(rack.id)}
-              </option>
-            ))}
-        </select>
-      </label>
-      <label className="photo-search">
-        검색
-        <input
-          type="search"
-          aria-label={maintenance ? "보수 기록 검색" : "사진 검색"}
-          placeholder={
-            maintenance
-              ? "계획, 설비, 포인트 검색"
-              : "사진명, 설비, 포인트 검색"
-          }
-          value={scope.search}
-          onChange={(e) => set({ search: e.target.value })}
-          maxLength={200}
-        />
-      </label>
-      <button className="text-button" onClick={() => change(defaultPhotoScope)}>
-        조회 조건 초기화
-      </button>
-    </section>
-  );
+  return <section className="common-scope" aria-label="공통 조회 조건"><div className="scope-primary">
+    <label className="field">생산팀<select aria-label="생산팀 필터" value={scope.teamId} onChange={(event) => set({ teamId: event.target.value, rackId: "all" })}><option value="all">모든 생산팀</option>{locations.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+    <label className="field">파이프랙<select aria-label="파이프랙 필터" value={scope.rackId} onChange={(event) => { const rack = locations.racks.find((rack) => rack.id === event.target.value); set({ rackId: event.target.value, ...(rack ? { teamId: rack.teamId } : {}) }); }}><option value="all">모든 랙</option>{locations.racks.filter((rack) => scope.teamId === "all" || rack.teamId === scope.teamId).map((rack) => <option key={rack.id} value={rack.id}>{rackName(rack.id)}</option>)}</select></label>
+    <button className="text-button" onClick={() => change(defaultPhotoScope)}>조회 초기화</button></div>
+    <details className="scope-details"><summary>상세 조건{scope.planId !== "all" || scope.search || scope.visibility !== "visible" ? " · 적용 중" : ""}</summary><div className="photo-scope"><label>검사계획<select aria-label="검사 계획 필터" value={scope.planId} onChange={(event) => set({ planId: event.target.value })}><option value="all">모든 검사계획</option><option value="unassigned">계획 미지정</option>{plans.filter((plan) => plan.recordPurpose === "inspection").map((plan) => <option key={plan.id} value={plan.id}>{plan.title}{plan.visibility === "hidden" ? " (삭제됨)" : ""}</option>)}</select></label>{!maintenance && <label>사진 표시<select value={scope.visibility} onChange={(event) => set({ visibility: event.target.value as PhotoScope["visibility"] })}><option value="visible">현재 사진</option><option value="hidden">삭제한 사진</option><option value="all">전체 사진</option></select></label>}<label>검색<input type="search" maxLength={200} value={scope.search} onChange={(event) => set({ search: event.target.value })} placeholder="사진명, 계획 또는 위치"/></label></div></details>
+  </section>;
 }
 function PhotoPagination({
   data,
@@ -1501,11 +1149,10 @@ function PhotoRecordActions({
   finish: () => void;
 }) {
   const [error, setError] = useState("");
-  const [purpose, setPurpose] = useState(photo.recordPurpose);
   const hidden = photo.visibility === "hidden";
   return (
     <details className="record-actions">
-      <summary>사진 숨김·복원 / 기록 목적 변경</summary>
+      <summary>사진 삭제·복원</summary>
       <p className="form-intro">
         숨김은 원본을 보존합니다. 숨긴 사진은 조회 조건에서 찾아 복원할 수
         있습니다. 아래 작업은 오른쪽 판단 입력을 저장하지 않습니다.
@@ -1527,9 +1174,7 @@ function PhotoRecordActions({
                 expectedVersion: photo.editVersion,
                 actor: form.get("actor"),
                 reason: form.get("reason"),
-                ...(action === "visibility"
-                  ? { visibility: hidden ? "visible" : "hidden" }
-                  : { recordPurpose: purpose }),
+                visibility: hidden ? "visible" : "hidden",
               }),
             });
             await done(
@@ -1566,30 +1211,6 @@ function PhotoRecordActions({
           disabled={busy}
         >
           {hidden ? "사진 복원" : "사진 숨기기"}
-        </button>
-        <div className="divider" />
-        <label className="field">
-          기록 목적
-          <select
-            value={purpose}
-            onChange={(e) =>
-              setPurpose(e.target.value as Photo["recordPurpose"])
-            }
-          >
-            {Object.entries(purposeName).map(([key, name]) => (
-              <option key={key} value={key}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className="button secondary full-width"
-          name="action"
-          value="purpose"
-          disabled={busy || purpose === photo.recordPurpose}
-        >
-          기록 목적 변경
         </button>
         {error && (
           <p className="form-error" role="alert">
@@ -1743,8 +1364,7 @@ function PhotoTable({
                   <span>
                     {photo.name}
                     <small>
-                      {photo.id.slice(0, 8)} ·{" "}
-                      {purposeName[photo.recordPurpose]}
+                      {photo.id.slice(0, 8)}
                     </small>
                   </span>
                 </button>
@@ -1755,7 +1375,7 @@ function PhotoTable({
                     (photo.planId ? "계획 정보 확인 필요" : "계획 미지정")}
                 </b>
                 <small>
-                  {pointName(points.find((p) => p.id === photo.pointId))}
+                  {photo.pointId ? pointName(points.find((p) => p.id === photo.pointId)) : rackName(photo.rackId ?? null) || "위치 미확인"}
                 </small>
               </td>
               <td>
@@ -1876,13 +1496,9 @@ function UploadDialog({
   done: (s: string, tone?: ToastTone) => Promise<void>;
 }) {
   const [files, setFiles] = useState<File[]>([]);
-  const [recordPurpose, setRecordPurpose] = useState<Photo["recordPurpose"]>(
-    context?.plan.recordPurpose ?? "inspection",
-  );
   const [planId, setPlanId] = useState(context?.plan.id || "");
   const [pointId, setPointId] = useState(context?.point?.id || "");
-  const [createdPoint, setCreatedPoint] = useState<Point | null>(null);
-  const [newRackId, setNewRackId] = useState("");
+  const [rackId, setRackId] = useState(context?.point?.rackId || "");
   const [queue, setQueue] = useState<UploadEntry[]>([]);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -1895,13 +1511,8 @@ function UploadDialog({
     context?.plan.id === planId
       ? context.plan
       : plans.find((plan) => plan.id === planId);
-  const knownPoints =
-    createdPoint && !points.some((point) => point.id === createdPoint.id)
-      ? [...points, createdPoint]
-      : points;
-  const availablePoints = selectedPlan
-    ? knownPoints.filter((point) => selectedPlan.pointIds.includes(point.id))
-    : knownPoints;
+  const knownPoints = points;
+  const availablePoints = points.filter((point) => point.rackId === rackId && point.recordPurpose === "inspection");
 
   function saveQueue(next: UploadEntry[]) {
     if (!alive.current) return;
@@ -2067,32 +1678,15 @@ function UploadDialog({
     if (operation.current) return;
     setError("");
     if (!files.length) return setError("추가할 사진을 선택하세요.");
-    if (planId && (!pointId || pointId === "new"))
-      return setError("검사 계획에 연결된 포인트를 선택하세요.");
-    const values = new FormData(event.currentTarget);
+    if (!selectedPlan) return setError("사진을 추가할 검사계획을 선택하세요.");
+    if (!rackId || !selectedPlan.rackIds.includes(rackId)) return setError("사진이 속한 랙을 선택하세요.");
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
     try {
-      let id = pointId;
-      let target = knownPoints.find((point) => point.id === id);
-      if (id === "new") {
-        target = await api<Point>("/points", {
-          method: "POST",
-          body: JSON.stringify({
-            recordPurpose,
-            equipment: values.get("equipment"),
-            rack: values.get("rack") || "",
-            rackId: newRackId || null,
-            name: values.get("name"),
-          }),
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        id = target.id;
-        setCreatedPoint(target);
-        setPointId(id);
-      }
+      const id = pointId;
+      const target = knownPoints.find((point) => point.id === id);
+      const batchId = crypto.randomUUID();
       const added: UploadEntry[] = files.map((file) => ({
         id: crypto.randomUUID(),
         name: file.name,
@@ -2100,8 +1694,9 @@ function UploadDialog({
         sha256: null,
         pointId: id || null,
         planId: planId || null,
-        recordPurpose,
-        targetLabel: `${purposeName[recordPurpose]} · ${selectedPlan?.title || "계획 미지정"} · ${target ? pointName(target) : "위치 미확인"}`,
+        recordPurpose: "inspection",
+        rackId, batchId,
+        targetLabel: `${selectedPlan.title} · ${rackName(rackId)}${target ? " · " + pointName(target) : ""}`,
         state: "waiting",
         progress: 0,
         error: "",
@@ -2156,7 +1751,7 @@ function UploadDialog({
         <p className="form-intro">
           {publicUploadsAllowed
             ? "공개 가능한 사진만 선택하세요. 링크를 가진 사람이 사진을 조회할 수 있습니다."
-            : "사진을 원본 그대로 저장하고 포인트에 연결합니다."}
+            : "선택한 계획과 랙에 원본을 저장합니다. 같은 계획에 사진을 여러 번 추가할 수 있습니다."}
         </p>
         <label className="dropzone">
           <Upload size={32} />
@@ -2187,97 +1782,10 @@ function UploadDialog({
             ))}
           </div>
         )}
-        <label className="field">
-          사진 기록 목적
-          <select
-            value={recordPurpose}
-            disabled={busy}
-            onChange={(event) =>
-              setRecordPurpose(event.target.value as Photo["recordPurpose"])
-            }
-          >
-            {Object.entries(purposeName).map(([key, name]) => (
-              <option key={key} value={key}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          검사 계획
-          <select
-            value={planId}
-            disabled={busy || !!context}
-            onChange={(event) => {
-              setPlanId(event.target.value);
-              setPointId("");
-            }}
-          >
-            <option value="">계획 미지정</option>
-            {plans.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.title}
-              </option>
-            ))}
-            {context && !plans.some((plan) => plan.id === context.plan.id) && (
-              <option value={context.plan.id}>{context.plan.title}</option>
-            )}
-          </select>
-        </label>
-        <label className="field">
-          연결할 포인트
-          <select
-            value={pointId}
-            disabled={busy}
-            onChange={(event) => setPointId(event.target.value)}
-          >
-            <option value="">
-              {planId ? "계획의 포인트 선택" : "위치 미확인으로 저장"}
-            </option>
-            {!planId && <option value="new">+ 새 포인트 등록</option>}
-            {availablePoints.map((point) => (
-              <option key={point.id} value={point.id}>
-                {pointName(point)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {pointId === "new" && (
-          <div className="form-grid">
-            <div className="full">
-              <RackFields rackId={newRackId} change={setNewRackId} />
-            </div>
-            <label className="field">
-              설비번호
-              <input
-                name="equipment"
-                placeholder="예: EQ-101"
-                maxLength={120}
-                disabled={busy}
-              />
-            </label>
-            {!newRackId && (
-              <label className="field">
-                랙 번호
-                <input
-                  name="rack"
-                  placeholder="예: 2"
-                  maxLength={120}
-                  disabled={busy}
-                />
-              </label>
-            )}
-            <label className="field full">
-              포인트 이름
-              <input
-                name="name"
-                placeholder="예: 상부 배관 P-01"
-                maxLength={120}
-                disabled={busy}
-              />
-            </label>
-          </div>
-        )}
+        <label className="field">검사계획<select required aria-label="업로드 검사계획" value={planId} disabled={busy} onChange={(event) => { setPlanId(event.target.value); setRackId(""); setPointId(""); }}><option value="">검사계획 선택</option>{plans.filter((plan) => plan.recordPurpose === "inspection" && plan.visibility === "visible" && plan.status === "planned").map((plan) => <option key={plan.id} value={plan.id}>{plan.title} · {locations.teams.find((team) => team.id === plan.teamId)?.name}</option>)}</select></label>
+        {selectedPlan && <p className="form-intro">{locations.teams.find((team) => team.id === selectedPlan.teamId)?.name ?? "생산팀 확인 필요"} · 계획의 랙 {selectedPlan.rackIds.length}개</p>}
+        <label className="field">이번 사진의 랙<select required aria-label="업로드 파이프랙" disabled={busy || !selectedPlan} value={rackId} onChange={(event) => { setRackId(event.target.value); setPointId(""); }}><option value="">랙 선택</option>{locations.racks.filter((rack) => selectedPlan?.rackIds.includes(rack.id)).map((rack) => <option key={rack.id} value={rack.id}>{rack.name}</option>)}</select><small>선택한 사진은 이 랙에 각각 한 번 저장됩니다. 다른 랙 사진은 다음 묶음으로 추가하세요.</small></label>
+        <details><summary>기존 포인트 연결 (선택)</summary><label className="field">연결할 포인트<select value={pointId} disabled={busy || !rackId} onChange={(event) => setPointId(event.target.value)}><option value="">포인트 없이 저장</option>{availablePoints.map((point) => <option key={point.id} value={point.id}>{pointName(point)}</option>)}</select></label></details>
         {error && (
           <p className="form-error" role="alert">
             {error}
@@ -2442,116 +1950,35 @@ function UploadDialog({
     </Modal>
   );
 }
-function PlanDialog({
-  points,
-  recordPurpose,
-  close,
-  done,
-  created,
-}: {
-  points: Point[];
-  recordPurpose: Photo["recordPurpose"];
-  close: () => void;
-  done: (s: string) => Promise<void>;
-  created: (plan: Plan) => void;
+function PlanScopeEditor({ teamId, rackIds, change, disabled = false }: {
+  teamId: string; rackIds: string[]; change: (teamId: string, rackIds: string[]) => void; disabled?: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const racks = locations.racks.filter((rack) => rack.teamId === teamId);
+  return <fieldset className="plan-scope-editor" disabled={disabled}>
+    <legend>검사 범위</legend>
+    <label className="field">생산팀<select required aria-label="계획 생산팀" value={teamId} onChange={(e) => change(e.target.value, [])}><option value="">생산팀 선택</option>{locations.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+    {teamId && <><div className="list-toolbar"><strong>검사할 랙 {rackIds.length}개 선택</strong><button type="button" className="text-button" onClick={() => change(teamId, racks.map((rack) => rack.id))}>전체 선택</button><button type="button" className="text-button" onClick={() => change(teamId, [])}>전체 해제</button></div><div className="rack-checks">{racks.map((rack, index) => <label key={rack.id} className={rackIds.includes(rack.id) ? "selected" : ""}><input type="checkbox" aria-label={`${rack.name} 선택`} checked={rackIds.includes(rack.id)} onChange={(e) => change(teamId, e.target.checked ? [...new Set([...rackIds, rack.id])] : rackIds.filter((id) => id !== rack.id))}/><span>랙 {index + 1}</span></label>)}</div></>}
+  </fieldset>;
+}
+function PlanFields({ plan }: { plan?: Plan }) {
+  return <><label className="field">계획 이름<input name="title" required maxLength={120} defaultValue={plan?.title} placeholder="예: 정유 1팀 배관 정기 검사"/></label><label className="field">검사 예정일<input name="date" type="date" required defaultValue={plan?.date ?? new Date().toLocaleDateString("sv-SE")}/></label><label className="field">메모<textarea name="note" rows={2} maxLength={1000} defaultValue={plan?.note} placeholder="촬영 조건이나 확인할 사항"/></label></>;
+}
+function PlanDialog({ initialTeamId, close, done, created }: {
+  initialTeamId: string; close: () => void; done: (s: string) => Promise<void>; created: (plan: Plan) => void;
+}) {
+  const [teamId, setTeamId] = useState(initialTeamId);
+  const [rackIds, setRackIds] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const lock = useRef(false);
   const complete = useDialogCompletion(done, close);
-  return (
-    <Modal title="검사 계획 만들기" close={close}>
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const data = new FormData(e.currentTarget);
-          setBusy(true);
-          setError("");
-          try {
-            const plan = await api<Plan>("/plans", {
-              method: "POST",
-              body: JSON.stringify({
-                recordPurpose: data.get("recordPurpose"),
-                title: data.get("title"),
-                date: data.get("date"),
-                pointId: data.get("pointId") || null,
-                note: data.get("note"),
-              }),
-            });
-            await complete(
-              "검사 계획을 저장했습니다. 대상 포인트와 사진을 추가하세요.",
-              () => created(plan),
-            );
-          } catch (cause) {
-            setError((cause as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <label className="field">
-          기록 목적
-          <select name="recordPurpose" defaultValue={recordPurpose}>
-            {Object.entries(purposeName).map(([key, name]) => (
-              <option key={key} value={key}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          검사 제목
-          <input
-            name="title"
-            required
-            maxLength={120}
-            placeholder="예: 2번 랙 정기 사진 검사"
-          />
-        </label>
-        <label className="field">
-          검사 예정일
-          <input
-            name="date"
-            type="date"
-            required
-            defaultValue={new Date().toLocaleDateString("sv-SE")}
-          />
-        </label>
-        <label className="field">
-          검사 포인트
-          <select name="pointId">
-            <option value="">아직 정하지 않음</option>
-            {points.map((p) => (
-              <option key={p.id} value={p.id}>
-                {pointName(p)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          메모
-          <textarea
-            name="note"
-            maxLength={1000}
-            rows={3}
-            placeholder="촬영 조건이나 확인할 사항"
-          />
-        </label>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="form-actions">
-          <button type="button" className="button secondary" onClick={close}>
-            취소
-          </button>
-          <button className="button primary" disabled={busy}>
-            {busy ? "저장 중…" : "계획 저장"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
+  return <Modal title="검사계획 만들기" close={close}><form onSubmit={async (event) => {
+    event.preventDefault(); if (lock.current) return;
+    if (!rackIds.length) return setError("검사할 랙을 하나 이상 선택하세요.");
+    lock.current = true; setBusy(true); setError("");
+    const data = new FormData(event.currentTarget);
+    try { const plan = await api<Plan>("/plans", { method: "POST", body: JSON.stringify({ title: data.get("title"), date: data.get("date"), note: data.get("note"), teamId, rackIds, pointIds: [] }) }); await complete("검사계획을 저장했습니다. 이제 이 계획에 사진을 추가하세요.", () => created(plan)); }
+    catch (cause) { setError((cause as Error).message); } finally { lock.current = false; setBusy(false); }
+  }}><PlanFields/><PlanScopeEditor teamId={teamId} rackIds={rackIds} change={(team, racks) => { setTeamId(team); setRackIds(racks); }} disabled={busy}/>{error && <p className="form-error" role="alert">{error}</p>}<div className="form-actions"><button className="button secondary" type="button" onClick={close}>취소</button><button className="button primary" disabled={busy || !teamId || !rackIds.length}>{busy ? "저장 중…" : "계획 저장"}</button></div></form></Modal>;
 }
 function RackFields({
   rackId,
@@ -2608,329 +2035,39 @@ function RackFields({
   );
 }
 
-function PlanDetailDialog({
-  initialPlan,
-  scope,
-  points,
-  close,
-  done,
-  refresh,
-  reportHistoryError,
-  upload,
-  viewPhotos,
-  selectPhoto,
-}: {
-  initialPlan: Plan;
-  scope: PhotoScope;
-  points: Point[];
-  close: () => void;
-  done: (message: string) => Promise<void>;
-  refresh: () => Promise<void>;
-  reportHistoryError: (message: string) => void;
-  upload: (plan: Plan, point?: Point) => void;
-  viewPhotos: (plan: Plan) => void;
-  selectPhoto: (photo: Photo) => void;
+function PlanDetailDialog({ initialPlan, close, done, reportHistoryError, upload, viewPhotos }: {
+  initialPlan: Plan; scope: PhotoScope; points: Point[]; close: () => void; done: (message: string) => Promise<void>; refresh: () => Promise<void>; reportHistoryError: (message: string) => void; upload: (plan: Plan, point?: Point) => void; viewPhotos: (plan: Plan) => void; selectPhoto: (photo: Photo) => void;
 }) {
-  const [plan, setPlan] = useState(initialPlan);
-  const [rackId, setRackId] = useState(
-    points.find((point) => initialPlan.pointIds.includes(point.id))?.rackId ||
-      "team-1-rack-1",
-  );
-  const [selected, setSelected] = useState("");
-  const [addedPoints, setAddedPoints] = useState<Point[]>([]);
-  const [pendingPoint, setPendingPoint] = useState<Point | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const complete = useDialogCompletion(done, () => {});
-  const knownPoints = [
-    ...new Map(
-      [...points, ...addedPoints].map((point) => [point.id, point]),
-    ).values(),
-  ];
-  const linked = knownPoints.filter((point) =>
-    plan.pointIds.includes(point.id),
-  );
-  const available = knownPoints.filter(
-    (point) =>
-      point.rackId === (rackId || null) && !plan.pointIds.includes(point.id),
-  );
-  const [page, setPage] = useState(1);
-  const photoList = usePhotoQuery({ ...scope, planId: plan.id, page });
-  const history = useAuditHistory(
-    `/plans/${plan.id}/history?version=${plan.editVersion}`,
-    reportHistoryError,
-  );
-
-  async function connect(point: Point, basis = plan) {
-    if (basis.pointIds.includes(point.id)) {
-      setPlan(basis);
-      setPendingPoint(null);
-      await complete("이 포인트는 이미 계획에 연결되어 있습니다.");
-      return;
-    }
-    const saved = await api<Plan>(`/plans/${basis.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        pointIds: [...basis.pointIds, point.id],
-        expectedVersion: basis.editVersion,
-        actor: "현업 엔지니어",
-        reason: `검사 계획 대상 포인트 연결: ${pointName(point)}`,
-      }),
-    });
-    setPlan(saved);
-    setSelected("");
-    setPendingPoint(null);
-    await complete("검사 계획에 포인트를 연결했습니다.");
-  }
-  return (
-    <Modal title="검사 계획 상세" wide close={close}>
-      <div className="plan-detail-summary">
-        <div>
-          <span className="badge muted">{plan.date}</span>
-          <h3>{plan.title}</h3>
-          <p>{plan.note || "등록된 메모가 없습니다."}</p>
-        </div>
-        <div className="form-actions">
-          <button className="button secondary" onClick={() => viewPhotos(plan)}>
-            계획 사진 보기
-          </button>
-          <button
-            className="button primary"
-            disabled={!plan.pointIds.length || busy}
-            onClick={() => upload(plan)}
-          >
-            <Upload size={16} /> 사진 추가
-          </button>
-        </div>
-      </div>
-      <div className="plan-workspace-grid">
-        <section className="plan-points">
-          <h3>
-            연결된 포인트{" "}
-            <span className="badge muted">{plan.pointIds.length}</span>
-          </h3>
-          {!plan.pointIds.length && (
-            <p className="form-intro">
-              검사할 포인트를 연결한 뒤 사진을 추가하세요.
-            </p>
-          )}
-          {linked.length < plan.pointIds.length && (
-            <p className="form-intro">
-              일부 연결 포인트의 정보를 아직 조회하지 못했습니다. 저장된 연결은
-              유지됩니다.
-            </p>
-          )}
-          {linked.map((point) => (
-            <article
-              className="plan-point-row"
-              key={point.id}
-              aria-label={pointName(point)}
-            >
-              <div>
-                <b>{point.name || "포인트 미확인"}</b>
-                <p>{pointName(point)}</p>
-                <small>
-                  {photoList.loaded
-                    ? `이 계획의 사진 ${photoList.data?.pointCounts[point.id] ?? 0}장${photoList.error ? " (마지막 조회)" : ""}`
-                    : photoList.error
-                      ? "사진 미조회"
-                      : "사진 조회 중…"}
-                </small>
-              </div>
-              <button
-                className="button secondary"
-                disabled={busy}
-                onClick={() => upload(plan, point)}
-              >
-                이 포인트에 사진 추가
-              </button>
-            </article>
-          ))}
-        </section>
-        <section className="plan-point-entry">
-          <h3>검사 대상 추가</h3>
-          <p className="form-intro">
-            팀·랙은 가상 구역입니다. 실제 확인한 위치를 뜻하지 않습니다. 다른
-            랙의 포인트도 이 계획에 연결할 수 있습니다.
-          </p>
-          <fieldset disabled={busy || !!pendingPoint}>
-            <RackFields
-              rackId={rackId}
-              change={(next) => {
-                setRackId(next);
-                setSelected("");
-              }}
-            />
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const point = knownPoints.find(
-                  (point) => point.id === selected,
-                );
-                if (!point) return setError("연결할 포인트를 선택하세요.");
-                setBusy(true);
-                setError("");
-                try {
-                  await connect(point);
-                } catch (cause) {
-                  setError((cause as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              <label className="field">
-                기존 포인트
-                <select
-                  value={selected}
-                  onChange={(e) => setSelected(e.target.value)}
-                  required
-                >
-                  <option value="">연결할 포인트 선택</option>
-                  {available.map((point) => (
-                    <option key={point.id} value={point.id}>
-                      {pointName(point)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="button secondary full-width"
-                disabled={!selected}
-              >
-                기존 포인트 연결
-              </button>
-            </form>
-            <div className="divider" />
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.currentTarget;
-                const values = new FormData(form);
-                setBusy(true);
-                setError("");
-                let registered: Point | null = null;
-                try {
-                  registered = await api<Point>("/points", {
-                    method: "POST",
-                    body: JSON.stringify({
-                      recordPurpose: plan.recordPurpose,
-                      equipment: values.get("equipment"),
-                      name: values.get("name"),
-                      rackId: rackId || null,
-                    }),
-                  });
-                  setAddedPoints((previous) => [
-                    ...previous.filter((point) => point.id !== registered!.id),
-                    registered!,
-                  ]);
-                  setPendingPoint(registered);
-                  await connect(registered);
-                  form.reset();
-                } catch (cause) {
-                  setError(
-                    registered
-                      ? `포인트는 등록됐습니다. 계획 연결 결과를 확인해 주세요. ${(cause as Error).message}`
-                      : (cause as Error).message,
-                  );
-                  await refresh();
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              <h4>새 포인트 등록</h4>
-              <label className="field">
-                설비번호
-                <input
-                  name="equipment"
-                  maxLength={120}
-                  placeholder="예: EQ-101"
-                />
-              </label>
-              <label className="field">
-                포인트 이름
-                <input
-                  name="name"
-                  maxLength={120}
-                  required
-                  placeholder="예: 상부 배관 P-01"
-                />
-              </label>
-              <button
-                className="button primary full-width"
-                disabled={!!pendingPoint}
-              >
-                새 포인트 등록·연결
-              </button>
-            </form>
-          </fieldset>
-          {pendingPoint && (
-            <div className="form-intro">
-              <p>등록된 포인트: {pointName(pendingPoint)}</p>
-              <button
-                className="button secondary"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  setError("");
-                  try {
-                    const latest = await api<Plan>(`/plans/${plan.id}`);
-                    await connect(pendingPoint, latest);
-                  } catch (cause) {
-                    setError((cause as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                등록된 포인트 연결 확인·재시도
-              </button>
-            </div>
-          )}
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
-        </section>
-      </div>
-      <section className="plan-photos">
-        <h3>이 계획의 검사 사진</h3>
-        <p className="form-intro">
-          현재 표시 목적·숨김·팀·랙·검색 조건을 적용합니다.
-        </p>
-        {photoList.error && (
-          <p className="form-error" role="alert">
-            {photoList.error}
-          </p>
-        )}
-        {!photoList.loaded ? (
-          <p className="form-intro">
-            {photoList.error
-              ? "계획 사진은 아직 조회하지 못했습니다. 잠시 후 다시 확인합니다."
-              : "계획 사진을 불러오는 중…"}
-          </p>
-        ) : photoList.data?.items.length ? (
-          <PhotoTable
-            photos={photoList.data!.items}
-            points={knownPoints}
-            plans={[plan]}
-            onSelect={selectPhoto}
-          />
-        ) : photoList.error ? null : (
-          <p className="form-intro">이 계획에 등록된 사진이 없습니다.</p>
-        )}
-        <PhotoPagination data={photoList.data} change={setPage} />
-      </section>
-      <AuditList history={history} />
-    </Modal>
-  );
+  const plan = initialPlan;
+  const [teamId, setTeamId] = useState(plan.teamId ?? ""), [rackIds, setRackIds] = useState(plan.rackIds);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const lock = useRef(false), history = useAuditHistory(`/plans/${plan.id}/history`, reportHistoryError);
+  const complete = useDialogCompletion(done, close);
+  return <Modal title="검사계획 상세" close={close}>
+    <div className="plan-next"><span className="badge muted">{plan.visibility === "hidden" ? "삭제됨" : plan.status === "planned" ? "진행 중" : plan.status === "done" ? "완료" : "취소"}</span><h3>{plan.title}</h3><div className="heading-actions">{plan.visibility === "visible" && plan.status === "planned" && <button className="button primary" onClick={() => upload(plan)}>이 계획에 사진 추가</button>}<button className="button secondary" onClick={() => viewPhotos(plan)}>저장된 사진 보기</button></div>{plan.status !== "planned" && <p>사진을 추가하려면 계획을 재개하세요.</p>}</div>
+    <form onSubmit={async (event) => {
+      event.preventDefault(); if (lock.current) return;
+      const action = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") ?? "edit";
+      const data = new FormData(event.currentTarget);
+      const patch = action === "edit" ? { title: data.get("title"), date: data.get("date"), note: data.get("note"), teamId, rackIds } : action === "visibility" ? { visibility: plan.visibility === "hidden" ? "visible" : "hidden" } : { status: action };
+      lock.current = true; setBusy(true); setError("");
+      try { await api(`/plans/${plan.id}`, { method: "PATCH", body: JSON.stringify({ ...patch, expectedVersion: plan.editVersion, actor: data.get("actor"), reason: data.get("reason") }) }); await complete(action === "visibility" ? plan.visibility === "hidden" ? "계획을 복원했습니다. 기존 진행 상태는 유지됩니다." : "계획을 삭제했습니다. 사진·보수·이력은 보존되며 복원할 수 있습니다." : action === "edit" ? "계획 정보를 저장했습니다." : action === "planned" ? "계획을 재개했습니다. 사진을 추가할 수 있습니다." : action === "done" ? "검사계획을 완료로 기록했습니다." : "검사계획을 취소했습니다."); }
+      catch (cause) { setError((cause as Error).message); } finally { lock.current = false; setBusy(false); }
+    }}><PlanFields plan={plan}/><PlanScopeEditor teamId={teamId} rackIds={rackIds} change={(team, racks) => { setTeamId(team); setRackIds(racks); }} disabled={busy}/>
+    {plan.pointIds.length > 0 && <details><summary>기존 위치 관계 {plan.pointIds.length}개</summary><p>연결된 포인트와 사진의 원래 위치는 유지됩니다. 사용 중인 랙을 제외하려면 관련 기록을 먼저 확인하세요.</p></details>}
+    <label className="field">수정자<input name="actor" required maxLength={60} defaultValue="현업 엔지니어"/></label><label className="field">변경 사유<textarea name="reason" required maxLength={1000} rows={2}/></label>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <div className="form-actions"><button value="edit" className="button primary" disabled={busy || !teamId || !rackIds.length}>변경 저장</button>{plan.status === "planned" ? <><button value="done" className="button secondary" disabled={busy}>검사계획 완료</button><button value="cancelled" className="button secondary" disabled={busy}>계획 취소</button></> : <button value="planned" className="button secondary" disabled={busy || plan.visibility === "hidden"}>계획 재개</button>}<button value="visibility" className="button secondary" disabled={busy}>{plan.visibility === "hidden" ? "계획 복원" : "계획 삭제"}</button></div></form><AuditList history={history}/>
+  </Modal>;
 }
-
 function AuditList({ history }: { history: Audit[] }) {
   const labels: Record<string, string> = {
     humanGrade: "사람 수정 등급",
+    title: "계획 이름",
+    date: "검사 날짜",
+    note: "계획 메모",
+    teamId: "생산팀",
+    rackIds: "계획 랙 범위",
     retake: "재촬영",
     retakeReason: "재촬영 사유",
     labeling: "라벨링 후보",
@@ -2946,14 +2083,14 @@ function AuditList({ history }: { history: Audit[] }) {
     equipment: "설비번호",
     rack: "랙",
     name: "이름",
-    visibility: "사진 표시",
+    visibility: "표시 여부",
     recordPurpose: "기록 목적",
     hiddenReason: "숨김 사유",
   };
   const value = (v: unknown) => {
     if (v === null || v === undefined) return "미지정";
     if (typeof v === "boolean") return v ? "포함" : "해제";
-    if (Array.isArray(v)) return `${v.length}개 포인트`;
+    if (Array.isArray(v)) return v.join(", ");
     if (typeof v === "object") {
       const result = v as {
         grade?: number;
@@ -2961,7 +2098,7 @@ function AuditList({ history }: { history: Audit[] }) {
         model_version?: string;
       };
       return result.grade
-        ? `${result.grade}등급 · 모델 점수(보정 전) ${((result.confidence || 0) * 100).toFixed(1)}% · 모델 ${result.model_version || "미확인"}`
+        ? `${result.grade}등급 · 모델 ${result.model_version || "미확인"}`
         : "상세 정보 변경";
     }
     const states: Record<string, string> = {
@@ -2984,8 +2121,8 @@ function AuditList({ history }: { history: Audit[] }) {
     return states[String(v)] || String(v);
   };
   return (
-    <section className="audit">
-      <h3>변경 이력</h3>
+    <details className="audit">
+      <summary>변경 이력 {history.length}건</summary>
       {history.length === 0 && <p className="faint">표시할 이력이 없습니다.</p>}
       {history.map((h) => (
         <div className="audit-item" key={h.id}>
@@ -3012,7 +2149,7 @@ function AuditList({ history }: { history: Audit[] }) {
           </div>
         </div>
       ))}
-    </section>
+    </details>
   );
 }
 function PhotoDialog({
@@ -3036,6 +2173,8 @@ function PhotoDialog({
   // Keep the editable values and their version together while polling refreshes AI.
   const [initial] = useState(seed);
   const [pointId, setPointId] = useState(photo.pointId || "");
+  const [planId, setPlanId] = useState(photo.planId || "");
+  const [rackId, setRackId] = useState(photo.rackId || points.find((point) => point.id === photo.pointId)?.rackId || "");
   const [retake, setRetake] = useState(photo.retake);
   const [busy, setBusy] = useState(false);
   const [judgmentDirty, setJudgmentDirty] = useState(false);
@@ -3056,10 +2195,8 @@ function PhotoDialog({
     reportHistoryError,
   );
   const complete = useDialogCompletion(done, close);
-  const linkedPlan = plans.find((plan) => plan.id === initial.planId);
-  const availablePoints = initial.planId
-    ? points.filter((point) => linkedPlan?.pointIds.includes(point.id))
-    : points;
+  const linkedPlan = plans.find((plan) => plan.id === planId);
+  const availablePoints = points.filter((point) => !rackId || point.rackId === rackId);
   return (
     <Modal title="사진 판독·후속 관리" wide close={close}>
       {readError && (
@@ -3069,7 +2206,6 @@ function PhotoDialog({
       )}
       <div
         className="detail-grid"
-        onChangeCapture={() => setJudgmentDirty(true)}
       >
         <div>
           <div className="detail-image">
@@ -3085,7 +2221,7 @@ function PhotoDialog({
             )}
           </div>
           <div className="image-caption">
-            {photo.name} · {purposeName[photo.recordPurpose]}
+            {photo.name}
           </div>
           <PhotoRecordActions
             photo={initial}
@@ -3099,11 +2235,10 @@ function PhotoDialog({
               <span>현재 분류</span>
               <Grade photo={photo} />
             </div>
-            <small>AI 정확도 60% · 목표 70% 미달</small>
             <p>
               원래 AI 등급:{" "}
               {photo.ai
-                ? `${photo.ai.grade}등급 · 모델 점수(보정 전) ${(photo.ai.confidence * 100).toFixed(1)}%`
+                ? `${photo.ai.grade}등급`
                 : "결과 없음"}
             </p>
             {photo.ai && (
@@ -3155,34 +2290,17 @@ function PhotoDialog({
               </button>
             )}
           </div>
-          {photo.pointId ? (
-            <button
-              className="button secondary full-width"
-              disabled={busy || judgmentDirty}
-              onClick={() =>
-                openMaintenance({
-                  planId: photo.planId,
-                  pointId: photo.pointId!,
-                  recordPurpose: photo.recordPurpose,
-                  photoId: photo.id,
-                })
-              }
-            >
-              저장된 연결의 보수 기록 열기
-            </button>
-          ) : (
-            <p className="form-intro">
-              보수 기록을 만들려면 먼저 사진을 포인트에 연결해 저장하세요.
-            </p>
-          )}
+          <button className="button secondary full-width" disabled={busy || judgmentDirty} onClick={() => openMaintenance({ planId: photo.planId, pointId: photo.pointId, targetType: photo.pointId ? "point" : "photo", targetId: photo.pointId ?? photo.id, recordPurpose: photo.recordPurpose, photoId: photo.id })}>보수 기록 열기</button>
           {judgmentDirty && (
             <p className="form-intro">
               입력한 사진 판단을 먼저 저장한 뒤 보수 기록을 여세요.
             </p>
           )}
+          <RoiPanel key={`${photo.id}/${photo.sha256}/${photo.visibility}`} photo={photo} />
           <AuditList history={history} />
         </div>
         <form
+          onChangeCapture={() => setJudgmentDirty(true)}
           onSubmit={async (e) => {
             e.preventDefault();
             const form = new FormData(e.currentTarget);
@@ -3193,7 +2311,9 @@ function PhotoDialog({
                 method: "PATCH",
                 body: JSON.stringify({
                   expectedVersion: initial.editVersion,
-                  pointId: pointId || null,
+                  ...(pointId !== (initial.pointId || "") ? { pointId: pointId || null } : {}),
+                  ...(planId !== (initial.planId || "") ? { planId: planId || null } : {}),
+                  ...(rackId !== (initial.rackId || points.find((point) => point.id === initial.pointId)?.rackId || "") ? { rackId: rackId || null } : {}),
                   humanGrade: form.get("grade")
                     ? Number(form.get("grade"))
                     : null,
@@ -3212,13 +2332,8 @@ function PhotoDialog({
             }
           }}
         >
-          <div className="form-intro">
-            <b>검사 계획</b>
-            <p>
-              {linkedPlan?.title ||
-                (initial.planId ? "계획 정보 확인 필요" : "계획 미지정")}
-            </p>
-          </div>
+          <details className="relation-editor"><summary>계획·랙 연결 수정</summary><label className="field">검사계획<select value={planId} onChange={(event) => { setPlanId(event.target.value); setRackId(""); setPointId(""); }}><option value="">기존 계획 미지정</option>{plans.filter((plan) => plan.visibility === "visible" || plan.id === planId).map((plan) => <option key={plan.id} value={plan.id}>{plan.title}</option>)}</select></label><label className="field">사진의 랙<select value={rackId} onChange={(event) => { setRackId(event.target.value); setPointId(""); }}><option value="">기존 위치 미확인</option>{locations.racks.filter((rack) => !linkedPlan || linkedPlan.rackIds.includes(rack.id)).map((rack) => <option key={rack.id} value={rack.id}>{rackName(rack.id)}</option>)}</select></label></details>
+          <p className="form-intro">{linkedPlan?.title ?? "계획 미지정"} · {rackName(rackId) || "위치 미확인"}</p>
           <label className="field">
             연결 포인트
             <select
@@ -3226,7 +2341,7 @@ function PhotoDialog({
               value={pointId}
               onChange={(e) => setPointId(e.target.value)}
             >
-              {!initial.planId && <option value="">위치 미확인</option>}
+              <option value="">포인트 연결 없음</option>
               {pointId &&
                 !availablePoints.some((point) => point.id === pointId) && (
                   <option value={pointId}>

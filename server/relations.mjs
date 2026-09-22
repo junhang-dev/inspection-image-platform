@@ -21,6 +21,13 @@ export function pointLocation(rackId, identity, legacyRack = "") {
     throw Object.assign(new Error("팀과 파이프랙을 다시 선택하세요."), {
       status: 422,
     });
+  if (!Number.isFinite(rack.x) || !Number.isFinite(rack.y))
+    return {
+      rackId: rack.id,
+      rack: rack.name,
+      virtualPosition: null,
+      locationSource: "unconfirmed",
+    };
   const hash = createHash("sha256").update(identity).digest();
   return {
     rackId: rack.id,

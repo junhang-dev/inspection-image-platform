@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { locations } from "./relations.mjs";
+import { deriveMaintenance, maintenancePage } from "./maintenance-view.mjs";
 const id = z.union([
   z
     .string()
@@ -23,6 +24,7 @@ export const maintenanceQuerySchema = z
     recordPurpose: z
       .enum(["inspection", "presentation", "verification", "all"])
       .default("inspection"),
+    visibility: z.enum(["visible", "hidden", "all"]).default("visible"),
     inWorklist: z.enum(["true", "all"]).default("true"),
     ta: z.enum(["all", "true", "false"]).default("all"),
     repairStatus: z
@@ -49,89 +51,31 @@ export const maintenanceQuerySchema = z
       locations.racks.some((r) => r.id === q.rackId && r.teamId === q.teamId),
     "선택한 팀에 속한 랙을 선택하세요.",
   );
-const text = (alias, key) =>
-  `NULLIF(JSON_UNQUOTE(JSON_EXTRACT(${alias}.data, '$.${key}')), 'null')`;
-export async function queryMaintenance(pool, decodeEntity, query) {
-  const clauses = ["m.kind = 'maintenance'"],
-    values = [];
-  for (const key of ["planId", "pointId"])
-    if (query[key] !== "all") {
-      clauses.push(`COALESCE(${text("m", key)}, '') = ?`);
-      values.push(query[key] === "unassigned" ? "" : query[key]);
-    }
-  if (query.recordPurpose !== "all") {
-    clauses.push(`COALESCE(${text("m", "recordPurpose")}, 'inspection') = ?`);
-    values.push(query.recordPurpose);
+export async function readMaintenanceSnapshot(connection, decodeEntity) {
+  const [rows] = await connection.execute("SELECT kind, data FROM entities WHERE kind IN ('inspection', 'maintenance', 'point', 'plan')");
+  const data = { photos: [], saved: [], points: [], plans: [], history: [] };
+  const names = { inspection: "photos", maintenance: "saved", point: "points", plan: "plans" };
+  for (const row of rows) data[names[row.kind]].push(decodeEntity(row.data, row.kind));
+  const legacy = data.saved.filter((item) => !item.inclusionMode && !item.inWorklist).map((item) => item.id);
+  if (legacy.length) {
+    const [events] = await connection.execute(`SELECT data FROM history WHERE entity_id IN (${legacy.map(() => "?").join(",")})`, legacy);
+    data.history = events.map((row) => typeof row.data === "string" ? JSON.parse(row.data) : row.data);
   }
-  if (query.inWorklist === "true")
-    clauses.push(`${text("m", "inWorklist")} = 'true'`);
-  for (const key of ["ta", "repairStatus", "repairMethod"])
-    if (query[key] !== "all") {
-      clauses.push(`${text("m", key)} = ?`);
-      values.push(query[key]);
-    }
-  if (query.rackId !== "all") {
-    clauses.push(`${text("p", "rackId")} = ?`);
-    values.push(query.rackId);
-  } else if (query.teamId !== "all") {
-    const racks = locations.racks.filter((r) => r.teamId === query.teamId);
-    clauses.push(
-      `${text("p", "rackId")} IN (${racks.map(() => "?").join(",")})`,
-    );
-    values.push(...racks.map((r) => r.id));
-  }
-  if (query.search) {
-    clauses.push(
-      `CONCAT_WS(' ', ${["equipment", "rack", "name"].map((key) => text("p", key)).join(",")}, ${text("l", "title")}) LIKE ? ESCAPE '='`,
-    );
-    values.push(`%${query.search.replace(/[=%_]/g, (c) => "=" + c)}%`);
-  }
-  const from = `FROM entities m LEFT JOIN entities p ON p.kind = 'point' AND p.id = ${text("m", "pointId")} LEFT JOIN entities l ON l.kind = 'plan' AND l.id = ${text("m", "planId")} WHERE ${clauses.map((c) => "(" + c + ")").join(" AND ")}`;
+  return data;
+}
+export async function allMaintenanceViews(pool, decodeEntity) {
   const connection = await pool.getConnection();
   try {
     await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
     await connection.beginTransaction();
-    const [counts] = await connection.execute(
-      `SELECT COUNT(*) AS total ${from}`,
-      values,
-    );
-    const total = Number(counts[0].total),
-      pages = Math.max(1, Math.ceil(total / query.pageSize)),
-      page = Math.min(query.page, pages);
-    const [rows] = await connection.execute(
-      `SELECT m.data, ${text("l", "title")} AS planTitle, CONCAT_WS(' · ', ${["equipment", "rack", "name"].map((key) => `NULLIF(${text("p", key)}, '')`).join(",")}) AS pointLabel, JSON_LENGTH(m.data, '$.photoIds') AS photoCount ${from} ORDER BY m.created_at DESC, m.id DESC LIMIT ${query.pageSize} OFFSET ${(page - 1) * query.pageSize}`,
-      values,
-    );
-    const [summaries] = await connection.execute(
-      `SELECT ${text("m", "pointId")} AS pointId, COUNT(*) AS total, COALESCE(SUM(${text("m", "inWorklist")} = 'true'),0) AS registered, ${["none", "review", "planned", "progress", "done"].map((status) => `COALESCE(SUM(${text("m", "repairStatus")} = '${status}'),0) AS ${status}`).join(",")} ${from} GROUP BY ${text("m", "pointId")}`,
-      values,
-    );
+    const items = deriveMaintenance(await readMaintenanceSnapshot(connection, decodeEntity));
     await connection.commit();
-    return {
-      items: rows.map((row) => ({
-        ...decodeEntity(row.data, "maintenance"),
-        planTitle: row.planTitle,
-        pointLabel: row.pointLabel || "포인트 이름 미조회",
-        photoCount: Number(row.photoCount),
-      })),
-      total,
-      page,
-      pages,
-      pageSize: query.pageSize,
-      scope: query,
-      pointSummaries: Object.fromEntries(
-        summaries.map(({ pointId, ...counts }) => [
-          pointId,
-          Object.fromEntries(
-            Object.entries(counts).map(([key, value]) => [key, Number(value)]),
-          ),
-        ]),
-      ),
-    };
+    return items;
   } catch (error) {
     await connection.rollback().catch(() => {});
     throw error;
-  } finally {
-    connection.release();
-  }
+  } finally { connection.release(); }
+}
+export async function queryMaintenance(pool, decodeEntity, query) {
+  return maintenancePage(await allMaintenanceViews(pool, decodeEntity), query);
 }

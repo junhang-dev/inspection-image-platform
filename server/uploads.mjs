@@ -31,6 +31,8 @@ const identityKeys = [
   "sha256",
   "pointId",
   "planId",
+  "rackId",
+  "batchId",
   "recordPurpose",
 ];
 const missingObject = (error) =>
@@ -129,33 +131,37 @@ export async function createUploadService({
       const current = await readUpload(connection, input.id);
       if (current) {
         current.recordPurpose ??= "inspection";
-        if (identityKeys.some((key) => current[key] !== input[key]))
+        if (identityKeys.some((key) => (current[key] ?? null) !== (input[key] ?? null)))
           throw fail(
             409,
             "이 전송 기록과 선택한 사진 또는 검사 대상이 다릅니다. 새 사진은 별도로 추가하세요.",
           );
         return publicStatus(connection, await expire(connection, current));
       }
-      await validateRelation(input.planId, input.pointId, connection);
       if (demoOnly && !allowedHashes.has(input.sha256))
         throw fail(422, "이 공유 환경에서 허용된 사진만 업로드할 수 있습니다.");
       await requireFreeSpace(root, Math.min(input.size, CHUNK_BYTES) * 2);
-      const time = new Date().toISOString();
-      const upload = {
-        ...input,
-        inspectionId: randomUUID(),
-        objectKey: `uploads/${input.id}`,
-        offset: 0,
-        status: "receiving",
-        error: null,
-        createdAt: time,
-        updatedAt: time,
-      };
-      await connection.execute(
-        "INSERT INTO upload_sessions(id, data) VALUES (?, ?)",
-        [upload.id, JSON.stringify(upload)],
-      );
-      return publicStatus(connection, upload);
+      try {
+        await connection.beginTransaction();
+        const relation = await validateRelation(input.planId, input.pointId, connection, input, { lock: true, phase: "create" });
+        const time = new Date().toISOString();
+        const upload = {
+          ...input, ...relation,
+          contractVersion: "plan-rack-v3",
+          inspectionId: randomUUID(),
+          objectKey: `uploads/${input.id}`,
+          offset: 0, status: "receiving", error: null,
+          createdAt: time, updatedAt: time,
+        };
+        await connection.execute("INSERT INTO upload_sessions(id, data) VALUES (?, ?)", [upload.id, JSON.stringify(upload)]);
+        await connection.commit();
+        return publicStatus(connection, upload);
+      } catch (error) {
+        await connection.rollback().catch(() => {});
+        // Retry/status reuses the committed identity after a lost response.
+        // Never acquire a second pool connection while holding this session lock.
+        throw error;
+      }
     });
   }
 
@@ -241,7 +247,7 @@ export async function createUploadService({
         409,
         "사진 전송이 아직 끝나지 않았습니다. 남은 부분을 전송한 뒤 저장하세요.",
       );
-    await validateRelation(upload.planId, upload.pointId, connection);
+    await validateRelation(upload.planId, upload.pointId, connection, upload, { phase: "finalize" });
     if (demoOnly && !allowedHashes.has(upload.sha256))
       throw fail(422, "이 공유 환경에서 허용된 사진만 업로드할 수 있습니다.");
     const path = filePath(upload.id);
@@ -298,6 +304,9 @@ export async function createUploadService({
       mime: upload.mime,
       pointId: upload.pointId,
       planId: upload.planId,
+      teamId: upload.teamId ?? null,
+      rackId: upload.rackId ?? null,
+      batchId: upload.batchId ?? null,
       recordPurpose: upload.recordPurpose ?? "inspection",
       visibility: "visible",
       status: "pending",
@@ -314,6 +323,10 @@ export async function createUploadService({
     let committedConnection = connection;
     try {
       await connection.beginTransaction();
+      // Plan close/scope edits take the same row lock. Recheck immediately
+      // before commit, after object storage, retaining the session on conflict.
+      const relation = await validateRelation(upload.planId, upload.pointId, connection, upload, { lock: true, phase: "finalize" });
+      Object.assign(photo, relation);
       await insertEntity(
         connection,
         "inspection",
@@ -329,11 +342,12 @@ export async function createUploadService({
       await connection.commit();
     } catch (error) {
       await connection.rollback().catch(() => {});
-      // Use a fresh connection: a COMMIT response can disappear after success.
-      const current = await readUpload(pool, upload.id).catch(() => null);
+      // If this connection remains usable, recover a lost COMMIT response.
+      // Otherwise the caller's next locked status request performs recovery.
+      const current = await readUpload(connection, upload.id).catch(() => null);
       if (current?.status === "completed") {
         completed = current;
-        committedConnection = pool;
+        committedConnection = connection;
       } else throw error;
     }
     await rm(path, { force: true }).catch(() => {});

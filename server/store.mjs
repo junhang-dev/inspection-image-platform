@@ -1,7 +1,7 @@
 import mysql from "mysql2/promise";
 import { randomUUID } from "node:crypto";
 import { planPointIds } from "./relations.mjs";
-import { maintenanceId } from "./maintenance-domain.mjs";
+import { maintenanceId, photoMaintenanceId } from "./maintenance-domain.mjs";
 
 export const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || "127.0.0.1",
@@ -207,7 +207,7 @@ export async function update(
   patch,
   actor,
   reason,
-  { expectedVersion, inference = false } = {},
+  { expectedVersion, inference = false, validate } = {},
 ) {
   if ("editVersion" in patch || "expectedVersion" in patch)
     throw fail(422, "수정 버전은 직접 변경할 수 없습니다.");
@@ -233,8 +233,8 @@ export async function update(
   try {
     const relationWrite =
       kind === "inspection" &&
-      ["planId", "pointId"].some((key) => Object.hasOwn(patch, key));
-    if (relationWrite)
+      ["planId", "pointId", "rackId"].some((key) => Object.hasOwn(patch, key));
+    if (relationWrite || validate)
       await connection.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     await connection.beginTransaction();
     const [rows] = await connection.execute(
@@ -258,6 +258,11 @@ export async function update(
       editVersion: inference ? before.editVersion : before.editVersion + 1,
       updatedAt: new Date().toISOString(),
     };
+    if (validate) await validate(connection, before, after, patch);
+    if (relationWrite && !before.pointId && ["planId", "pointId", "rackId"].some((key) => (before[key] ?? null) !== (after[key] ?? null))) {
+      const target = await get("maintenance", photoMaintenanceId(before.id), connection);
+      if (target) throw fail(409, "이 사진의 보수 기록이 저장되어 있습니다. 보수 대상 관계를 보존하기 위해 계획·랙·포인트를 이동할 수 없습니다.");
+    }
     if (
       relationWrite &&
       before.pointId &&

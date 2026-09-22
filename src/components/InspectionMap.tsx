@@ -24,6 +24,7 @@ export type InspectionMapProps = {
   points: readonly InspectionMapPoint[];
   /** Photo counts from the server under those same filters. Missing is unknown, not zero. */
   pointCounts?: Readonly<Record<string, number>>;
+  rackCounts?: Readonly<Record<string, number>>;
   selectedTeamId: string | null;
   selectedRackId: string | null;
   selectedPointId: string | null;
@@ -36,18 +37,22 @@ export type InspectionMapProps = {
 };
 
 type Rack = (typeof locations.racks)[number];
+type PositionedRack = Rack & { x: number; y: number };
+const hasPosition = (rack: Rack): rack is PositionedRack =>
+  typeof rack.x === "number" && typeof rack.y === "number";
 const rackById = new Map(locations.racks.map((rack) => [rack.id, rack]));
 const pointName = (point: InspectionMapPoint) => point.name.trim() || point.equipment.trim() || "이름 없는 포인트";
 const finiteUnit = (value: number) => Number.isFinite(value) && value >= 0 && value <= 1;
 
-function placedRack(point: InspectionMapPoint): Rack | undefined {
+function placedRack(point: InspectionMapPoint): PositionedRack | undefined {
   const position = point.virtualPosition;
-  return point.locationSource === "virtual" && position && finiteUnit(position.x) && finiteUnit(position.y)
-    ? rackById.get(point.rackId ?? "")
+  const rack = rackById.get(point.rackId ?? "");
+  return rack && hasPosition(rack) && point.locationSource === "virtual" && position && finiteUnit(position.x) && finiteUnit(position.y)
+    ? rack
     : undefined;
 }
 
-function projection(point: InspectionMapPoint, rack: Rack) {
+function projection(point: InspectionMapPoint, rack: PositionedRack) {
   // A display-only projection of persisted coordinates, independent of list order/count.
   // The smooth bound keeps outlying, but valid, normalized coordinates on the image.
   const position = point.virtualPosition!;
@@ -57,7 +62,7 @@ function projection(point: InspectionMapPoint, rack: Rack) {
   };
 }
 
-function teamFrame(racks: readonly Rack[]) {
+function teamFrame(racks: readonly PositionedRack[]) {
   const xs = racks.map((rack) => rack.x), ys = racks.map((rack) => rack.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
@@ -74,13 +79,13 @@ function photoTotal(points: readonly InspectionMapPoint[], counts: InspectionMap
   return points.reduce((total, point) => total + counts[point.id], 0);
 }
 
-function Count({ points, counts }: { points: readonly InspectionMapPoint[]; counts: InspectionMapProps["pointCounts"] }) {
-  const photos = photoTotal(points, counts);
+function Count({ points, counts, total }: { points: readonly InspectionMapPoint[]; counts: InspectionMapProps["pointCounts"]; total?: number }) {
+  const photos = total ?? photoTotal(points, counts);
   return <span className={styles.count}>포인트 {points.length}개{photos === null ? "" : ` · 사진 ${photos}장`}</span>;
 }
 
 export default function InspectionMap({
-  points, pointCounts, selectedTeamId, selectedRackId, selectedPointId,
+  points, pointCounts, rackCounts, selectedTeamId, selectedRackId, selectedPointId,
   onSelectionChange, onOpenPoint, onCreatePoint,
   overviewImageUrl = "/maps/refinery-overview-v1.png",
   rackImageUrl = "/maps/refinery-rack-v1.png",
@@ -101,7 +106,8 @@ export default function InspectionMap({
   const team = locations.teams.find((item) => item.id === selectedTeamId);
   const rack = locations.racks.find((item) => item.id === selectedRackId && item.teamId === team?.id);
   const teamRacks = locations.racks.filter((item) => item.teamId === team?.id);
-  const frame = team && !rack ? teamFrame(teamRacks) : null;
+  const positionedRacks = teamRacks.filter(hasPosition);
+  const frame = team && !rack && positionedRacks.length ? teamFrame(positionedRacks) : null;
   const rackPoints = rack ? points.filter((point) => point.rackId === rack.id) : [];
   const unknownPoints = points.filter((point) => !placedRack(point));
   const activePoint = points.find((point) => point.id === selectedPointId);
@@ -171,7 +177,7 @@ export default function InspectionMap({
         <div className={styles.viewport} style={{ aspectRatio: rack ? "1403 / 1121" : "1189 / 1323" }} tabIndex={0} role="region" aria-label="확대 가능한 가상 지도" aria-describedby={noticeId}>
           {imageFailed ? <div className={styles.imageError} role="status">지도를 불러오지 못했습니다. 옆의 목록에서 모든 위치를 선택할 수 있습니다.</div> :
             <div className={`${styles.canvas} ${rack ? styles.rackCanvas : styles.overviewCanvas}`} style={{ width: `${zoom * 100}%` }}>
-              {/* Native img preserves the full reference frame, including its source markings. */}
+              {/* Keep the supplied image intact; the team viewport crops its displayed area. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img key={imageUrl} ref={backgroundRef} className={styles.background} src={imageUrl}
                 style={frame ? { width: `${100 / frame.size}%`, height: `${100 / frame.size}%`,
@@ -179,22 +185,22 @@ export default function InspectionMap({
                 alt={rack ? "파이프랙의 AI 보강 시각 참고 이미지" : "전체 공장의 AI 보강 시각 참고 이미지"}
                 onError={() => setFailedImage(imageUrl)} draggable={false} />
               {!team && locations.teams.map((item) => {
-                const racks = locations.racks.filter((itemRack) => itemRack.teamId === item.id);
+                const racks = locations.racks.filter((itemRack) => itemRack.teamId === item.id).filter(hasPosition);
                 const xs = racks.map((itemRack) => itemRack.x), ys = racks.map((itemRack) => itemRack.y);
                 const left = Math.min(...xs) - 0.065, top = Math.min(...ys) - 0.035;
                 const width = Math.max(...xs) - left + 0.065, height = Math.max(...ys) - top + 0.035;
                 return <button type="button" key={item.id} className={styles.teamZone}
                   style={{ left: `${left * 100}%`, top: `${top * 100}%`, width: `${width * 100}%`, height: `${height * 100}%` }}
                   onClick={() => select({ teamId: item.id, rackId: null, pointId: null })} aria-label={`${item.name} 가상 구역 선택`}>
-                  <span>{item.name}<small>파이프랙 {racks.length}개</small></span>
+                  <span>{item.name}<small>파이프랙 30개</small></span>
                 </button>;
               })}
-              {team && frame && teamRacks.map((item, index) => <button type="button" key={item.id} className={styles.rackMarker}
+              {team && frame && positionedRacks.map((item, index) => <button type="button" key={item.id} className={styles.rackMarker}
                 style={{ left: `${(item.x - frame.left) * 100 / frame.size}%`, top: `${(item.y - frame.top) * 100 / frame.size}%` }}
                 onClick={() => select({ teamId: team.id, rackId: item.id, pointId: null })} aria-label={`${team.name} ${item.name} 선택`} title={item.name}>
                 <strong aria-hidden="true">{index + 1}</strong>
               </button>)}
-              {rack && rackPoints.filter((point) => placedRack(point)).map((point) => <button type="button" key={point.id}
+              {rack && hasPosition(rack) && rackPoints.filter((point) => placedRack(point)).map((point) => <button type="button" key={point.id}
                 className={`${styles.pointMarker} ${point.id === selectedPointId ? styles.selectedMarker : ""}`}
                 style={projection(point, rack)} aria-label={`${pointName(point)} 선택`} title={pointName(point)}
                 aria-pressed={point.id === selectedPointId} onClick={() => selectPoint(point)}>
@@ -216,15 +222,15 @@ export default function InspectionMap({
           const teamPoints = points.filter((point) => point.rackId !== null && ids.has(point.rackId));
           return <li key={item.id}><button type="button" className={styles.locationRow} onClick={() => select({ teamId: item.id, rackId: null, pointId: null })}>
             <span className={styles.locationNumber} aria-hidden="true">0{index + 1}</span>
-            <span><strong>{item.name}</strong><Count points={teamPoints} counts={pointCounts} /><small>파이프랙 {racks.length}개</small></span><span aria-hidden="true">›</span>
+            <span><strong>{item.name}</strong><Count points={teamPoints} counts={pointCounts} total={rackCounts ? racks.reduce((sum, rack) => sum + (rackCounts[rack.id] ?? 0), 0) : undefined} /><small>파이프랙 {racks.length}개</small></span><span aria-hidden="true">›</span>
           </button></li>;
         })}</ul>}
         {team && !rack && <ul className={styles.locationList}>{teamRacks.map((item) => <li key={item.id}>
           <button type="button" className={styles.locationRow} onClick={() => select({ teamId: team.id, rackId: item.id, pointId: null })}>
-            <span><strong>{item.name}</strong><Count points={points.filter((point) => point.rackId === item.id)} counts={pointCounts} /></span><span aria-hidden="true">›</span>
+            <span><strong>{item.name}</strong><Count points={points.filter((point) => point.rackId === item.id)} counts={pointCounts} total={rackCounts ? rackCounts[item.id] ?? 0 : undefined} />{!hasPosition(item) && <small>지도 위치 미확인</small>}</span><span aria-hidden="true">›</span>
           </button></li>)}</ul>}
         {rack && <>
-          <div className={styles.rackSummary}><Count points={rackPoints} counts={pointCounts} />{onCreatePoint && <button type="button" className={styles.addButton} onClick={() => onCreatePoint({ teamId: rack.teamId, rackId: rack.id })}>+ 새 포인트</button>}</div>
+          <div className={styles.rackSummary}><Count points={rackPoints} counts={pointCounts} total={rackCounts ? rackCounts[rack.id] ?? 0 : undefined} />{onCreatePoint && <button type="button" className={styles.addButton} onClick={() => onCreatePoint({ teamId: rack.teamId, rackId: rack.id })}>+ 새 포인트</button>}</div>
           {rackPoints.length ? renderPointList(rackPoints) : <p className={styles.empty}>등록된 포인트가 없습니다.{onCreatePoint ? " 새 포인트를 추가해 검사를 시작하세요." : ""}</p>}
         </>}
         {visibleActivePoint && <div className={styles.selectionDetail} aria-live="polite">

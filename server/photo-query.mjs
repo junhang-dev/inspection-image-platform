@@ -9,6 +9,7 @@ const id = z.union([
 export const photoQuerySchema = z
   .object({
     planId: id.default("all"),
+    photoId: z.union([z.string().uuid(), z.literal("all")]).default("all"),
     pointId: id.default("all"),
     recordPurpose: z
       .enum(["inspection", "presentation", "verification", "all"])
@@ -41,6 +42,7 @@ export const photoQuerySchema = z
 
 const text = (alias, field) =>
   `NULLIF(JSON_UNQUOTE(JSON_EXTRACT(${alias}.data, '$.${field}')), 'null')`;
+const rackLocation = `COALESCE(${text("i", "rackId")}, ${text("p", "rackId")})`;
 export const photoConditions = {
   repair: `COALESCE(${text("i", "humanGrade")}, ${text("i", "ai.grade")}, 0) + 0 >= 3`,
   pending: `${text("i", "status")} IN ('pending', 'processing')`,
@@ -57,6 +59,7 @@ const literalLike = (value) =>
 export function photoWhere(query, { classification = true } = {}) {
   const clauses = ["i.kind = 'inspection'"];
   const values = [];
+  if (query.photoId && query.photoId !== "all") { clauses.push("i.id = ?"); values.push(query.photoId); }
   for (const key of ["planId", "pointId"]) {
     if (query[key] !== "all") {
       clauses.push(`COALESCE(${text("i", key)}, '') = ?`);
@@ -73,14 +76,14 @@ export function photoWhere(query, { classification = true } = {}) {
     }
   }
   if (query.rackId !== "all") {
-    clauses.push(`${text("p", "rackId")} = ?`);
+    clauses.push(`${rackLocation} = ?`);
     values.push(query.rackId);
   } else if (query.teamId !== "all") {
     const racks = locations.racks.filter(
       (rack) => rack.teamId === query.teamId,
     );
     clauses.push(
-      `${text("p", "rackId")} IN (${racks.map(() => "?").join(",")})`,
+      `${rackLocation} IN (${racks.map(() => "?").join(",")})`,
     );
     values.push(...racks.map((rack) => rack.id));
   }
@@ -119,16 +122,23 @@ export async function queryPhotos(pool, decodeEntity, query) {
     const pages = Math.max(1, Math.ceil(total / query.pageSize));
     const page = Math.min(query.page, pages);
     const [rows] = await connection.execute(
-      `SELECT i.data ${from} WHERE ${filtered.sql} ORDER BY i.created_at DESC, i.id DESC LIMIT ${query.pageSize} OFFSET ${(page - 1) * query.pageSize}`,
+      `SELECT i.data, ${rackLocation} AS resolvedRackId ${from} WHERE ${filtered.sql} ORDER BY i.created_at DESC, i.id DESC LIMIT ${query.pageSize} OFFSET ${(page - 1) * query.pageSize}`,
       filtered.values,
     );
     const [counts] = await connection.execute(
       `SELECT ${text("i", "pointId")} AS pointId, COUNT(*) AS total ${from} WHERE ${filtered.sql} GROUP BY ${text("i", "pointId")}`,
       filtered.values,
     );
+    const [rackCounts] = await connection.execute(
+      `SELECT ${rackLocation} AS rackId, COUNT(*) AS total ${from} WHERE ${filtered.sql} GROUP BY ${rackLocation}`,
+      filtered.values,
+    );
     await connection.commit();
     return {
-      items: rows.map((row) => decodeEntity(row.data, "inspection")),
+      items: rows.map((row) => {
+        const item = decodeEntity(row.data, "inspection");
+        return { ...item, rackId: row.resolvedRackId ?? null, teamId: item.teamId ?? locations.racks.find((rack) => rack.id === row.resolvedRackId)?.teamId ?? null };
+      }),
       total,
       page,
       pageSize: query.pageSize,
@@ -144,6 +154,7 @@ export async function queryPhotos(pool, decodeEntity, query) {
           .filter((row) => row.pointId)
           .map((row) => [row.pointId, Number(row.total)]),
       ),
+      rackCounts: Object.fromEntries(rackCounts.filter((row) => row.rackId).map((row) => [row.rackId, Number(row.total)])),
       scope: query,
     };
   } catch (error) {
