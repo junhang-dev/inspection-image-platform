@@ -39,7 +39,9 @@ services:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MINIO_ENDPOINT: minio
+      UPLOAD_TEMP_DIR: /uploads-tmp
       MODEL_API_URL: ${MODEL_DOCKER_API_URL:-http://host.docker.internal:8001}
+    volumes: ["api-uploads:/uploads-tmp"]
     ports: ["127.0.0.1:4000:4000"]
     depends_on:
       mysql: { condition: service_healthy }
@@ -53,6 +55,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
         NEXT_PUBLIC_DEMO_ONLY: ${NEXT_PUBLIC_DEMO_ONLY:-0}
+        NEXT_PUBLIC_PUBLIC_UPLOADS_ALLOWED: ${NEXT_PUBLIC_PUBLIC_UPLOADS_ALLOWED:-0}
     environment:
       API_INTERNAL_BASE_URL: http://api:4000
     ports: ["127.0.0.1:3000:3000"]
@@ -61,3 +64,4 @@ services:
 volumes:
   mysql-data:
   minio-data:
+  api-uploads:

@@ -14,7 +14,7 @@ try {
     mode: 0o600,
   });
   console.log(
-    "로컬 .env 생성 완료. 기존 원본과 전역 설정은 변경하지 않았습니다.",
+    "로컬 .env 생성 완료. API 시작 전 DATASET_PLAN_PATH/SHA256과 저장소 표식을 설정하세요. docs/private-import.md를 참고하세요.",
   );
 } catch (error) {
   if (error.code !== "EEXIST") throw error;

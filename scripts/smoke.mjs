@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 const base = process.env.TEST_API_URL || "http://127.0.0.1:4000/api";
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const json = async (path, init) => {
@@ -25,7 +25,9 @@ const sources = [
   "demo-04.jpg",
   "demo-05.jpg",
 ];
+const uploadIds = Array.from({ length: 10 }, () => randomUUID());
 const payload = new FormData();
+payload.append("uploadIds", JSON.stringify(uploadIds));
 payload.append("pointId", point.id);
 const sourceHashes = [];
 for (let i = 0; i < 10; i++) {
@@ -40,10 +42,17 @@ for (let i = 0; i < 10; i++) {
     name,
   );
 }
+// Preserve this attempt before sending: reuse these IDs for an uncertain retry.
+await mkdir("records", { recursive: true });
+await writeFile(
+  `records/platform-smoke-attempt-${uploadIds[0]}.local.json`,
+  JSON.stringify({ base, pointId: point.id, uploadIds, sourceHashes }, null, 2),
+);
 const started = performance.now();
 const uploaded = await json("/inspections", { method: "POST", body: payload });
 const uploadSeconds = (performance.now() - started) / 1000;
 assert.equal(uploaded.length, 10);
+assert.equal(new Set(uploaded.map((photo) => photo.id)).size, 10);
 const hashes = [];
 for (const [index, photo] of uploaded.entries()) {
   const result = await fetch(`${base}/inspections/${photo.id}/image`);
@@ -62,8 +71,14 @@ for (const [index, photo] of uploaded.entries()) {
 const deadline = Date.now() + 180000;
 let results;
 do {
-  const all = await json("/inspections");
-  results = all.filter((p) => uploaded.some((x) => x.id === p.id));
+  results = await Promise.all(
+    uploaded.map((photo) => json(`/inspections/${photo.id}`)),
+  );
+  assert.equal(results.length, uploaded.length);
+  assert.deepEqual(
+    results.map((photo) => photo.id).sort(),
+    uploaded.map((photo) => photo.id).sort(),
+  );
   if (results.every((p) => p.status === "done" || p.status === "error")) break;
   await new Promise((resolve) => setTimeout(resolve, 1500));
 } while (Date.now() < deadline);

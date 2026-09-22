@@ -1,5 +1,7 @@
 import mysql from "mysql2/promise";
 import { randomUUID } from "node:crypto";
+import { planPointIds } from "./relations.mjs";
+import { maintenanceId } from "./maintenance-domain.mjs";
 
 export const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || "127.0.0.1",
@@ -10,35 +12,121 @@ export const pool = mysql.createPool({
   connectionLimit: 8,
   timezone: "Z",
 });
-export async function initializeStore() {
-  await pool.query(`CREATE TABLE IF NOT EXISTS entities (
+export async function initializeStore(
+  inferencePolicy,
+  { connection = pool, recover = true } = {},
+) {
+  await connection.query(`CREATE TABLE IF NOT EXISTS entities (
     kind VARCHAR(32) NOT NULL, id CHAR(36) NOT NULL, data JSON NOT NULL,
     created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY(kind, id), INDEX entity_created(kind, created_at)
   )`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS history (
+  await connection.query(`CREATE TABLE IF NOT EXISTS history (
     id CHAR(36) PRIMARY KEY, entity_id CHAR(36) NOT NULL, data JSON NOT NULL,
     created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3), INDEX history_entity(entity_id, created_at)
   )`);
+  if (!recover) return;
   // A process restart must not leave a job permanently in progress.
-  await pool.query(`UPDATE entities SET data = JSON_SET(data, '$.status', 'pending')
-    WHERE kind = 'inspection' AND JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'processing'`);
+  const [recovering] =
+    await pool.query(`SELECT data FROM entities WHERE kind = 'inspection'
+    AND JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'processing'`);
+  for (const row of recovering) {
+    const photo = decodeEntity(row.data, "inspection");
+    const decision = inferencePolicy?.queue(photo);
+    await update(
+      "inspection",
+      photo.id,
+      decision && !decision.allowed
+        ? { status: "unread", error: decision.message }
+        : { status: "pending" },
+      "AI 서비스",
+      "재시작 시 판독 정책 확인",
+      { inference: true },
+    );
+  }
 }
 const decode = (value) =>
   typeof value === "string" ? JSON.parse(value) : value;
-export async function list(kind) {
-  const [rows] = await pool.execute(
-    "SELECT data FROM entities WHERE kind = ? ORDER BY created_at DESC LIMIT 1000",
-    [kind],
-  );
-  return rows.map((row) => decode(row.data));
+export function decodeEntity(value, kind) {
+  const data = decode(value);
+  return {
+    ...data,
+    editVersion: data.editVersion ?? 0,
+    recordPurpose: data.recordPurpose ?? "inspection",
+    ...(kind === "plan" ? { pointIds: planPointIds(data) } : {}),
+    ...(kind === "inspection"
+      ? {
+          planId: data.planId ?? null,
+          recordPurpose: data.recordPurpose ?? "inspection",
+          visibility: data.visibility ?? "visible",
+          hiddenAt: data.hiddenAt ?? null,
+          hiddenBy: data.hiddenBy ?? null,
+          hiddenReason: data.hiddenReason ?? null,
+        }
+      : {}),
+    ...(kind === "point"
+      ? {
+          rackId: data.rackId ?? null,
+          virtualPosition: data.virtualPosition ?? null,
+          locationSource: data.locationSource ?? "unconfirmed",
+        }
+      : {}),
+  };
 }
-export async function get(kind, id) {
+const fail = (status, message) => Object.assign(new Error(message), { status });
+export async function list(kind, filters = {}) {
+  const where = ["kind = ?"];
+  const values = [kind];
+  if (["point", "plan"].includes(kind) && filters.recordPurpose !== "all") {
+    where.push(
+      "COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.recordPurpose')), 'null'), 'inspection') = ?",
+    );
+    values.push(filters.recordPurpose || "inspection");
+  }
+  if (kind === "inspection" && Object.hasOwn(filters, "planId")) {
+    where.push(
+      "COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(data, '$.planId')), 'null'), '') = ?",
+    );
+    values.push(filters.planId || "");
+  }
   const [rows] = await pool.execute(
+    `SELECT data FROM entities WHERE ${where.join(" AND ")} ORDER BY created_at DESC, id DESC LIMIT 1000`,
+    values,
+  );
+  return rows.map((row) => decodeEntity(row.data, kind));
+}
+export async function get(kind, id, connection = pool) {
+  const [rows] = await connection.execute(
     "SELECT data FROM entities WHERE kind = ? AND id = ?",
     [kind, id],
   );
-  return rows[0] ? decode(rows[0].data) : null;
+  return rows[0] ? decodeEntity(rows[0].data, kind) : null;
+}
+export async function nextInspection(inferencePolicy) {
+  const staleBefore = new Date(Date.now() - 180000).toISOString();
+  const [rows] = await pool.execute(
+    `SELECT data FROM entities WHERE kind = 'inspection'
+    AND (JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'pending'
+      OR (JSON_UNQUOTE(JSON_EXTRACT(data, '$.status')) = 'processing'
+      AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(data, '$.updatedAt')),
+        JSON_UNQUOTE(JSON_EXTRACT(data, '$.createdAt'))) < ?))
+    ORDER BY created_at ASC LIMIT 100`,
+    [staleBefore],
+  );
+  for (const row of rows) {
+    const photo = decodeEntity(row.data, "inspection");
+    const decision = inferencePolicy?.queue(photo);
+    if (!decision || decision.allowed) return photo;
+    await update(
+      "inspection",
+      photo.id,
+      { status: "unread", error: decision.message },
+      "AI 서비스",
+      "보존 자료의 자동 재판독 차단",
+      { inference: true },
+    );
+  }
+  return null;
 }
 export async function events(id) {
   const [rows] = await pool.execute(
@@ -47,7 +135,15 @@ export async function events(id) {
   );
   return rows.map((row) => decode(row.data));
 }
-async function append(connection, id, action, before, after, actor, reason) {
+export async function append(
+  connection,
+  id,
+  action,
+  before,
+  after,
+  actor,
+  reason,
+) {
   const event = {
     id: randomUUID(),
     entityId: id,
@@ -63,6 +159,15 @@ async function append(connection, id, action, before, after, actor, reason) {
     [event.id, id, JSON.stringify(event)],
   );
 }
+// The upload session supplies its already persisted inspection ID. Its caller
+// owns the transaction that also marks the session completed.
+export async function insertEntity(connection, kind, data, actor, reason) {
+  await connection.execute(
+    "INSERT INTO entities(kind, id, data) VALUES (?, ?, ?)",
+    [kind, data.id, JSON.stringify(data)],
+  );
+  await append(connection, data.id, "등록", null, data, actor, reason);
+}
 export async function insert(
   kind,
   input,
@@ -74,6 +179,7 @@ export async function insert(
 export async function insertBatch(kind, inputs, actor, reason) {
   const items = inputs.map((input) => ({
     ...input,
+    editVersion: 0,
     id: randomUUID(),
     createdAt: new Date().toISOString(),
   }));
@@ -82,11 +188,7 @@ export async function insertBatch(kind, inputs, actor, reason) {
   try {
     await connection.beginTransaction();
     for (const data of items) {
-      await connection.execute(
-        "INSERT INTO entities(kind, id, data) VALUES (?, ?, ?)",
-        [kind, data.id, JSON.stringify(data)],
-      );
-      await append(connection, data.id, "등록", null, data, actor, reason);
+      await insertEntity(connection, kind, data, actor, reason);
     }
     commitAttempted = true;
     await connection.commit();
@@ -99,9 +201,41 @@ export async function insertBatch(kind, inputs, actor, reason) {
     connection.release();
   }
 }
-export async function update(kind, id, patch, actor, reason, action = "수정") {
+export async function update(
+  kind,
+  id,
+  patch,
+  actor,
+  reason,
+  { expectedVersion, inference = false } = {},
+) {
+  if ("editVersion" in patch || "expectedVersion" in patch)
+    throw fail(422, "수정 버전은 직접 변경할 수 없습니다.");
+  // Only explicit server calls may update inference fields without a human edit.
+  // Never infer this privilege from the user-supplied actor name.
+  if (inference) {
+    if (
+      kind !== "inspection" ||
+      Object.keys(patch).some((key) => !["status", "ai", "error"].includes(key))
+    )
+      throw fail(422, "판독 처리로 업무 판단을 변경할 수 없습니다.");
+  } else if (
+    !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 0 ||
+    expectedVersion >= Number.MAX_SAFE_INTEGER
+  ) {
+    throw fail(
+      422,
+      "화면 정보가 오래되었거나 올바르지 않습니다. 입력 내용을 별도로 보관한 뒤 새로고침하고 다시 시도하세요.",
+    );
+  }
   const connection = await pool.getConnection();
   try {
+    const relationWrite =
+      kind === "inspection" &&
+      ["planId", "pointId"].some((key) => Object.hasOwn(patch, key));
+    if (relationWrite)
+      await connection.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     await connection.beginTransaction();
     const [rows] = await connection.execute(
       "SELECT data FROM entities WHERE kind = ? AND id = ? FOR UPDATE",
@@ -111,18 +245,44 @@ export async function update(kind, id, patch, actor, reason, action = "수정") 
       await connection.rollback();
       return null;
     }
-    const before = decode(rows[0].data);
+    const before = decodeEntity(rows[0].data, kind);
+    if (!inference && before.editVersion !== expectedVersion)
+      throw fail(
+        409,
+        "다른 화면에서 이 항목을 수정하여 저장하지 못했습니다. 입력 내용은 유지됩니다. 필요한 내용을 복사한 뒤 창을 닫고 새로고침하여 최신 내용을 확인해 주세요.",
+      );
     const after = {
       ...before,
       ...patch,
       id: before.id,
+      editVersion: inference ? before.editVersion : before.editVersion + 1,
       updatedAt: new Date().toISOString(),
     };
+    if (
+      relationWrite &&
+      before.pointId &&
+      ((after.planId ?? null) !== (before.planId ?? null) ||
+        after.pointId !== before.pointId)
+    ) {
+      // A maintenance writer must lock this photo before adding/removing evidence.
+      // Read committed sees references committed before this photo lock was taken.
+      // Do not lock maintenance here: its writer locks maintenance -> photos.
+      const referenced = await get(
+        "maintenance",
+        maintenanceId(before.planId ?? null, before.pointId),
+        connection,
+      );
+      if (referenced?.photoIds?.includes(before.id))
+        throw fail(
+          409,
+          "보수 기록의 근거 사진입니다. 보수 기록에서 근거 선택을 해제한 뒤 계획·포인트를 변경하세요.",
+        );
+    }
     await connection.execute(
       "UPDATE entities SET data = ? WHERE kind = ? AND id = ?",
       [JSON.stringify(after), kind, id],
     );
-    await append(connection, id, action, before, after, actor, reason);
+    await append(connection, id, "수정", before, after, actor, reason);
     await connection.commit();
     return after;
   } catch (error) {

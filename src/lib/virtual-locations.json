@@ -1,0 +1,95 @@
+{
+  "locationSource": "virtual",
+  "teams": [
+    { "id": "team-1", "name": "정유1팀" },
+    { "id": "team-2", "name": "정유2팀" },
+    { "id": "team-3", "name": "정유3팀" },
+    { "id": "team-4", "name": "정유4팀" }
+  ],
+  "racks": [
+    {
+      "id": "team-1-rack-1",
+      "teamId": "team-1",
+      "name": "파이프랙 1",
+      "x": 0.2,
+      "y": 0.18
+    },
+    {
+      "id": "team-1-rack-2",
+      "teamId": "team-1",
+      "name": "파이프랙 2",
+      "x": 0.3,
+      "y": 0.26
+    },
+    {
+      "id": "team-1-rack-3",
+      "teamId": "team-1",
+      "name": "파이프랙 3",
+      "x": 0.2,
+      "y": 0.34
+    },
+    {
+      "id": "team-2-rack-1",
+      "teamId": "team-2",
+      "name": "파이프랙 1",
+      "x": 0.65,
+      "y": 0.18
+    },
+    {
+      "id": "team-2-rack-2",
+      "teamId": "team-2",
+      "name": "파이프랙 2",
+      "x": 0.75,
+      "y": 0.26
+    },
+    {
+      "id": "team-2-rack-3",
+      "teamId": "team-2",
+      "name": "파이프랙 3",
+      "x": 0.65,
+      "y": 0.34
+    },
+    {
+      "id": "team-3-rack-1",
+      "teamId": "team-3",
+      "name": "파이프랙 1",
+      "x": 0.15,
+      "y": 0.43
+    },
+    {
+      "id": "team-3-rack-2",
+      "teamId": "team-3",
+      "name": "파이프랙 2",
+      "x": 0.26,
+      "y": 0.48
+    },
+    {
+      "id": "team-3-rack-3",
+      "teamId": "team-3",
+      "name": "파이프랙 3",
+      "x": 0.32,
+      "y": 0.54
+    },
+    {
+      "id": "team-4-rack-1",
+      "teamId": "team-4",
+      "name": "파이프랙 1",
+      "x": 0.65,
+      "y": 0.63
+    },
+    {
+      "id": "team-4-rack-2",
+      "teamId": "team-4",
+      "name": "파이프랙 2",
+      "x": 0.75,
+      "y": 0.71
+    },
+    {
+      "id": "team-4-rack-3",
+      "teamId": "team-4",
+      "name": "파이프랙 3",
+      "x": 0.65,
+      "y": 0.79
+    }
+  ]
+}
