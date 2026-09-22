@@ -1,0 +1,5 @@
+{
+  "model_version": "mobilenetv3small-ft-20260921T074822Z",
+  "preprocessing_version": "rgb-first-frame-exif-full-resize224-imagenet-v1",
+  "checkpoint_sha256": "21245b2f2d8b478b7b2762c51e7882692babd062eb1de8ec305cb090a7906753"
+}

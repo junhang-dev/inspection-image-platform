@@ -4,13 +4,13 @@ from __future__ import annotations
 import io
 from pathlib import Path
 import warnings
+from typing import BinaryIO
 
 import torch
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps
 from torchvision import models, transforms
 
 PREPROCESSING_VERSION = "rgb-first-frame-exif-full-resize224-imagenet-v1"
-MAX_BYTES = 20 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 40_000_000
 TRANSFORM = transforms.Compose([
     transforms.Resize((224, 224), antialias=True),
@@ -19,18 +19,25 @@ TRANSFORM = transforms.Compose([
 ])
 
 
-def decode_image(data: bytes) -> torch.Tensor:
-    if not data or len(data) > MAX_BYTES:
-        raise ValueError("empty_or_oversized_image")
+def decode_image(data: bytes | BinaryIO) -> torch.Tensor:
+    # File inputs avoid duplicating the upload in RAM. Pillow seeks to frame zero;
+    # the caller owns the file and closes it after decoding/inference completes.
+    source = io.BytesIO(data) if isinstance(data, bytes) else data
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(data)) as image:
+            with Image.open(source) as image:
                 if image.format not in {"JPEG", "PNG", "MPO"}:
                     raise ValueError("unsupported_image_format")
                 image.seek(0)
                 return TRANSFORM(ImageOps.exif_transpose(image).convert("RGB"))
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError,
+    except OSError as exc:
+        # Pillow's format/truncation errors have no errno. A real file-device
+        # failure must remain distinguishable from a malformed image.
+        if exc.errno is not None:
+            raise
+        raise ValueError("invalid_image") from exc
+    except (Image.DecompressionBombError,
             Image.DecompressionBombWarning) as exc:
         raise ValueError("invalid_image") from exc
 
@@ -57,7 +64,7 @@ class Predictor:
         self.model_version = artifact["model_version"]
 
     @torch.inference_mode()
-    def predict(self, data: bytes) -> dict:
+    def predict(self, data: bytes | BinaryIO) -> dict:
         x = decode_image(data).unsqueeze(0)
         features = self.model(x)
         probabilities = torch.softmax(features @ self.coef.T + self.intercept, dim=1)[0]

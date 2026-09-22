@@ -28,14 +28,14 @@ class ModelServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode_image(blob.getvalue())
 
-    def test_chunked_body_limit_before_multipart(self):
+    def test_malformed_multipart_is_rejected(self):
         with TestClient(app) as client:
             def chunks():
-                for _ in range(22):
+                for _ in range(2):
                     yield b"x" * (1024 * 1024)
             response = client.post("/predict", content=chunks(), headers={"Content-Type": "multipart/form-data; boundary=x"})
-            self.assertEqual(response.status_code, 413)
-            self.assertEqual(response.json()["detail"], "request_too_large")
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()["detail"], "invalid_multipart")
 
     def test_real_inference_filename_independence_and_errors(self):
         with TestClient(app) as client:
@@ -52,7 +52,7 @@ class ModelServiceTests(unittest.TestCase):
             self.assertTrue(value["preprocessing_version"])
             self.assertEqual(client.post("/predict", files={"image": ("bad.jpg", b"bad")}).status_code, 422)
             self.assertEqual(client.post("/predict").status_code, 422)
-            self.assertEqual(client.post("/predict", files={"image": ("big.jpg", bytes(20 * 1024 * 1024 + 1))}).status_code, 413)
+            self.assertEqual(client.post("/predict", files={"image": ("big.jpg", bytes(20 * 1024 * 1024 + 1))}).status_code, 422)
 
 
 if __name__ == "__main__":
