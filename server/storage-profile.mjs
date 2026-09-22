@@ -22,6 +22,7 @@ const expected = (profile, dataset, env) => ({
   user: env.MYSQL_USER,
   bucket: env.MINIO_BUCKET,
   manifestSha256: dataset.manifestSha256,
+  ...(dataset.publication ? { publicationPolicySha256: dataset.publication.sha256 } : {}),
 });
 const same = (a, b) =>
   Object.keys(a).length === Object.keys(b).length &&
@@ -103,6 +104,13 @@ export async function verifyStorageProfile(
       "DB·버킷의 실행 범위가 설정과 다릅니다. 시작을 중단했습니다.",
     );
   await assertPrivateCredentials(pool, objects, profile, env);
+  if (profile.scope === "shared") {
+    const [tables] = await pool.query("SHOW TABLES LIKE 'entities'");
+    if (tables.length) {
+      const [photos] = await pool.query("SELECT data FROM entities WHERE kind = 'inspection'");
+      assertPublicationRecords(photos.map((row) => decode(row.data)), dataset);
+    }
+  }
 }
 export async function bootstrapStorageProfile(
   pool,
@@ -122,13 +130,8 @@ export async function bootstrapStorageProfile(
         "기존 자료가 있는 DB를 비공개 저장소로 덮어 지정하지 않습니다.",
       );
     if (profile.scope === "shared") {
-      const [privateRows] = await pool.query(
-        "SELECT COUNT(*) AS n FROM entities WHERE JSON_EXTRACT(data,'$.datasetManifestSha256') IS NOT NULL",
-      );
-      if (privateRows[0].n)
-        throw new Error(
-          "비공개 원본 기록이 있는 DB를 공유 범위로 지정할 수 없습니다.",
-        );
+      const [privateRows] = await pool.query("SELECT data FROM entities WHERE kind = 'inspection'");
+      assertPublicationRecords(privateRows.map((row) => decode(row.data)), dataset);
     }
   }
   await pool.query(
@@ -166,3 +169,4 @@ export async function bootstrapStorageProfile(
   }
   await verifyStorageProfile(pool, objects, profile, dataset, env);
 }
+import { assertPublicationRecords } from "./publication-contract.mjs";

@@ -1,11 +1,15 @@
 import { pool, get, decodeEntity, insertEntity, append } from "./store.mjs";
 import {
   maintenanceId,
+  maintenanceTarget,
+  targetMaintenanceId,
   createMaintenanceItem,
   applyMaintenancePatch,
   migrateLegacyPoint,
 } from "./maintenance-domain.mjs";
 import { planPointIds } from "./relations.mjs";
+import { getPlan } from "./plan-store.mjs";
+import { evidenceFingerprint, repairNeeded, legacyInclusionMode } from "./maintenance-view.mjs";
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const conflict = () =>
@@ -53,7 +57,8 @@ async function locked(connection, kind, id, raw = false) {
     : decodeEntity(rows[0].data, kind);
 }
 async function parents(connection, planId, pointId) {
-  const point = await get("point", pointId, connection);
+  const planView = planId ? await getPlan(planId, connection, { lock: true }) : null;
+  const point = await locked(connection, "point", pointId);
   if (!point) throw fail(422, "포인트를 찾을 수 없습니다.");
   if (
     point.maintenanceMigrationVersion !== 1 &&
@@ -65,7 +70,8 @@ async function parents(connection, planId, pointId) {
     );
   if (planId !== null) {
     const plan = await get("plan", planId, connection);
-    if (!plan || !planPointIds(plan).includes(pointId))
+    const view = planView;
+    if (!plan || (!planPointIds(plan).includes(pointId) && !view.rackIds.includes(point.rackId)))
       throw fail(
         422,
         "선택한 계획에 연결된 포인트만 보수 기록을 만들 수 있습니다.",
@@ -89,13 +95,17 @@ export async function saveMaintenance(input) {
   const {
     planId,
     pointId,
+    targetType,
+    targetId,
     expectedVersion,
     actor,
     reason,
     recordPurpose,
+    acknowledgedEvidence,
     ...patch
   } = input;
-  const id = maintenanceId(planId, pointId);
+  const target = maintenanceTarget({ planId, pointId, targetType, targetId });
+  const id = targetMaintenanceId(target);
   return maintenanceTransaction(async (connection) => {
     const current = await locked(connection, "maintenance", id);
     if (
@@ -104,22 +114,46 @@ export async function saveMaintenance(input) {
         : expectedVersion !== null
     )
       throw conflict();
-    await parents(connection, planId, pointId);
+    if (target.targetType !== "photo") await parents(connection, planId, pointId);
+    else {
+      const photo = await locked(connection, "inspection", target.targetId);
+      if (!photo || photo.pointId || (photo.planId ?? null) !== planId) throw fail(422, "사진별 보수 대상의 계획·포인트 관계가 변경되었습니다.");
+      patch.photoIds ??= current?.photoIds ?? [photo.id];
+      if (patch.photoIds.length !== 1 || patch.photoIds[0] !== photo.id) throw fail(422, "사진별 보수 항목은 해당 원본 한 장에 연결됩니다.");
+    }
     const photos = await evidence(
       connection,
       current?.photoIds ?? [],
-      patch.photoIds ?? current?.photoIds ?? [],
+      [...(patch.photoIds ?? current?.photoIds ?? []), ...Object.keys(acknowledgedEvidence ?? {})],
     );
     const now = new Date().toISOString();
+    if (Object.hasOwn(patch, "inWorklist") && patch.inclusionMode === undefined) patch.inclusionMode = patch.inWorklist ? "include" : "exclude";
+    if (patch.inclusionMode === undefined && !current?.inclusionMode) {
+      const [rows] = current ? await connection.execute("SELECT data FROM history WHERE entity_id = ?", [id]) : [[]];
+      patch.inclusionMode = current ? legacyInclusionMode(current, rows.map((row) => typeof row.data === "string" ? JSON.parse(row.data) : row.data)) : "auto";
+    }
     const candidate = current
       ? applyMaintenancePatch(current, patch, photos)
-      : createMaintenanceItem({ planId, pointId, ...patch }, photos);
+      : createMaintenanceItem({ ...target, ...patch }, photos);
     const after = {
       ...candidate,
+      ...(target.targetType === "photo" ? { sourceInspectionId: target.targetId } : {}),
       recordPurpose: recordPurpose ?? current?.recordPurpose ?? "inspection",
       editVersion: current ? current.editVersion + 1 : 0,
       ...(current ? { updatedAt: now } : { createdAt: now }),
     };
+    if (patch.visibility !== undefined) Object.assign(after, { hiddenAt: patch.visibility === "hidden" ? now : null, hiddenBy: patch.visibility === "hidden" ? actor : null, hiddenReason: patch.visibility === "hidden" ? reason : null });
+    if (patch.repairStatus === "done" && current?.repairStatus !== "done") after.reviewedEvidence = {};
+    if (acknowledgedEvidence) {
+      const accepted = {};
+      for (const [photoId, fingerprint] of Object.entries(acknowledgedEvidence)) {
+        const photo = photos.find((photo) => photo.id === photoId);
+        if (!photo || !repairNeeded(photo) || evidenceFingerprint(photo) !== fingerprint) throw fail(409, "확인하는 동안 사진 판독이 바뀌었습니다. 최신 근거를 확인하세요.");
+        if (target.targetType === "photo" ? photo.id !== target.targetId : photo.pointId !== pointId || (photo.planId ?? null) !== planId) throw fail(422, "다른 보수 대상의 근거를 확인할 수 없습니다.");
+        accepted[photoId] = fingerprint;
+      }
+      after.reviewedEvidence = { ...(after.reviewedEvidence ?? {}), ...accepted };
+    }
     if (current) {
       await connection.execute(
         "UPDATE entities SET data = ? WHERE kind = ? AND id = ?",

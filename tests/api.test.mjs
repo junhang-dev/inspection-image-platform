@@ -1,8 +1,11 @@
-import test from "node:test";
+import nodeTest from "node:test";
 import { allPhotoRecords } from "../scripts/photo-records.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-const base = process.env.TEST_API_URL || "http://127.0.0.1:4000/api";
+const base = process.env.TEST_API_URL;
+// Integration requests need an explicitly selected instance. Unit runs must
+// never fall back to the live shared API on port 4000.
+const test = (name, run) => nodeTest(name, { skip: !base }, run);
 const allPhotos = () =>
   allPhotoRecords(async (path) => {
     const response = await fetch(base + path);

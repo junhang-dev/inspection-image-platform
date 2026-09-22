@@ -1,10 +1,22 @@
 {
   "locationSource": "virtual",
   "teams": [
-    { "id": "team-1", "name": "정유1팀" },
-    { "id": "team-2", "name": "정유2팀" },
-    { "id": "team-3", "name": "정유3팀" },
-    { "id": "team-4", "name": "정유4팀" }
+    {
+      "id": "team-1",
+      "name": "정유1팀"
+    },
+    {
+      "id": "team-2",
+      "name": "정유2팀"
+    },
+    {
+      "id": "team-3",
+      "name": "정유3팀"
+    },
+    {
+      "id": "team-4",
+      "name": "정유4팀"
+    }
   ],
   "racks": [
     {
@@ -29,6 +41,195 @@
       "y": 0.34
     },
     {
+      "id": "team-1-rack-4",
+      "teamId": "team-1",
+      "name": "파이프랙 4",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-5",
+      "teamId": "team-1",
+      "name": "파이프랙 5",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-6",
+      "teamId": "team-1",
+      "name": "파이프랙 6",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-7",
+      "teamId": "team-1",
+      "name": "파이프랙 7",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-8",
+      "teamId": "team-1",
+      "name": "파이프랙 8",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-9",
+      "teamId": "team-1",
+      "name": "파이프랙 9",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-10",
+      "teamId": "team-1",
+      "name": "파이프랙 10",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-11",
+      "teamId": "team-1",
+      "name": "파이프랙 11",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-12",
+      "teamId": "team-1",
+      "name": "파이프랙 12",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-13",
+      "teamId": "team-1",
+      "name": "파이프랙 13",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-14",
+      "teamId": "team-1",
+      "name": "파이프랙 14",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-15",
+      "teamId": "team-1",
+      "name": "파이프랙 15",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-16",
+      "teamId": "team-1",
+      "name": "파이프랙 16",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-17",
+      "teamId": "team-1",
+      "name": "파이프랙 17",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-18",
+      "teamId": "team-1",
+      "name": "파이프랙 18",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-19",
+      "teamId": "team-1",
+      "name": "파이프랙 19",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-20",
+      "teamId": "team-1",
+      "name": "파이프랙 20",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-21",
+      "teamId": "team-1",
+      "name": "파이프랙 21",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-22",
+      "teamId": "team-1",
+      "name": "파이프랙 22",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-23",
+      "teamId": "team-1",
+      "name": "파이프랙 23",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-24",
+      "teamId": "team-1",
+      "name": "파이프랙 24",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-25",
+      "teamId": "team-1",
+      "name": "파이프랙 25",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-26",
+      "teamId": "team-1",
+      "name": "파이프랙 26",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-27",
+      "teamId": "team-1",
+      "name": "파이프랙 27",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-28",
+      "teamId": "team-1",
+      "name": "파이프랙 28",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-29",
+      "teamId": "team-1",
+      "name": "파이프랙 29",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-1-rack-30",
+      "teamId": "team-1",
+      "name": "파이프랙 30",
+      "x": null,
+      "y": null
+    },
+    {
       "id": "team-2-rack-1",
       "teamId": "team-2",
       "name": "파이프랙 1",
@@ -48,6 +249,195 @@
       "name": "파이프랙 3",
       "x": 0.65,
       "y": 0.34
+    },
+    {
+      "id": "team-2-rack-4",
+      "teamId": "team-2",
+      "name": "파이프랙 4",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-5",
+      "teamId": "team-2",
+      "name": "파이프랙 5",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-6",
+      "teamId": "team-2",
+      "name": "파이프랙 6",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-7",
+      "teamId": "team-2",
+      "name": "파이프랙 7",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-8",
+      "teamId": "team-2",
+      "name": "파이프랙 8",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-9",
+      "teamId": "team-2",
+      "name": "파이프랙 9",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-10",
+      "teamId": "team-2",
+      "name": "파이프랙 10",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-11",
+      "teamId": "team-2",
+      "name": "파이프랙 11",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-12",
+      "teamId": "team-2",
+      "name": "파이프랙 12",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-13",
+      "teamId": "team-2",
+      "name": "파이프랙 13",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-14",
+      "teamId": "team-2",
+      "name": "파이프랙 14",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-15",
+      "teamId": "team-2",
+      "name": "파이프랙 15",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-16",
+      "teamId": "team-2",
+      "name": "파이프랙 16",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-17",
+      "teamId": "team-2",
+      "name": "파이프랙 17",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-18",
+      "teamId": "team-2",
+      "name": "파이프랙 18",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-19",
+      "teamId": "team-2",
+      "name": "파이프랙 19",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-20",
+      "teamId": "team-2",
+      "name": "파이프랙 20",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-21",
+      "teamId": "team-2",
+      "name": "파이프랙 21",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-22",
+      "teamId": "team-2",
+      "name": "파이프랙 22",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-23",
+      "teamId": "team-2",
+      "name": "파이프랙 23",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-24",
+      "teamId": "team-2",
+      "name": "파이프랙 24",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-25",
+      "teamId": "team-2",
+      "name": "파이프랙 25",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-26",
+      "teamId": "team-2",
+      "name": "파이프랙 26",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-27",
+      "teamId": "team-2",
+      "name": "파이프랙 27",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-28",
+      "teamId": "team-2",
+      "name": "파이프랙 28",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-29",
+      "teamId": "team-2",
+      "name": "파이프랙 29",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-2-rack-30",
+      "teamId": "team-2",
+      "name": "파이프랙 30",
+      "x": null,
+      "y": null
     },
     {
       "id": "team-3-rack-1",
@@ -71,6 +461,195 @@
       "y": 0.54
     },
     {
+      "id": "team-3-rack-4",
+      "teamId": "team-3",
+      "name": "파이프랙 4",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-5",
+      "teamId": "team-3",
+      "name": "파이프랙 5",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-6",
+      "teamId": "team-3",
+      "name": "파이프랙 6",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-7",
+      "teamId": "team-3",
+      "name": "파이프랙 7",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-8",
+      "teamId": "team-3",
+      "name": "파이프랙 8",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-9",
+      "teamId": "team-3",
+      "name": "파이프랙 9",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-10",
+      "teamId": "team-3",
+      "name": "파이프랙 10",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-11",
+      "teamId": "team-3",
+      "name": "파이프랙 11",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-12",
+      "teamId": "team-3",
+      "name": "파이프랙 12",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-13",
+      "teamId": "team-3",
+      "name": "파이프랙 13",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-14",
+      "teamId": "team-3",
+      "name": "파이프랙 14",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-15",
+      "teamId": "team-3",
+      "name": "파이프랙 15",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-16",
+      "teamId": "team-3",
+      "name": "파이프랙 16",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-17",
+      "teamId": "team-3",
+      "name": "파이프랙 17",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-18",
+      "teamId": "team-3",
+      "name": "파이프랙 18",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-19",
+      "teamId": "team-3",
+      "name": "파이프랙 19",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-20",
+      "teamId": "team-3",
+      "name": "파이프랙 20",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-21",
+      "teamId": "team-3",
+      "name": "파이프랙 21",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-22",
+      "teamId": "team-3",
+      "name": "파이프랙 22",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-23",
+      "teamId": "team-3",
+      "name": "파이프랙 23",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-24",
+      "teamId": "team-3",
+      "name": "파이프랙 24",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-25",
+      "teamId": "team-3",
+      "name": "파이프랙 25",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-26",
+      "teamId": "team-3",
+      "name": "파이프랙 26",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-27",
+      "teamId": "team-3",
+      "name": "파이프랙 27",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-28",
+      "teamId": "team-3",
+      "name": "파이프랙 28",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-29",
+      "teamId": "team-3",
+      "name": "파이프랙 29",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-3-rack-30",
+      "teamId": "team-3",
+      "name": "파이프랙 30",
+      "x": null,
+      "y": null
+    },
+    {
       "id": "team-4-rack-1",
       "teamId": "team-4",
       "name": "파이프랙 1",
@@ -90,6 +669,195 @@
       "name": "파이프랙 3",
       "x": 0.65,
       "y": 0.79
+    },
+    {
+      "id": "team-4-rack-4",
+      "teamId": "team-4",
+      "name": "파이프랙 4",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-5",
+      "teamId": "team-4",
+      "name": "파이프랙 5",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-6",
+      "teamId": "team-4",
+      "name": "파이프랙 6",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-7",
+      "teamId": "team-4",
+      "name": "파이프랙 7",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-8",
+      "teamId": "team-4",
+      "name": "파이프랙 8",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-9",
+      "teamId": "team-4",
+      "name": "파이프랙 9",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-10",
+      "teamId": "team-4",
+      "name": "파이프랙 10",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-11",
+      "teamId": "team-4",
+      "name": "파이프랙 11",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-12",
+      "teamId": "team-4",
+      "name": "파이프랙 12",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-13",
+      "teamId": "team-4",
+      "name": "파이프랙 13",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-14",
+      "teamId": "team-4",
+      "name": "파이프랙 14",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-15",
+      "teamId": "team-4",
+      "name": "파이프랙 15",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-16",
+      "teamId": "team-4",
+      "name": "파이프랙 16",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-17",
+      "teamId": "team-4",
+      "name": "파이프랙 17",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-18",
+      "teamId": "team-4",
+      "name": "파이프랙 18",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-19",
+      "teamId": "team-4",
+      "name": "파이프랙 19",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-20",
+      "teamId": "team-4",
+      "name": "파이프랙 20",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-21",
+      "teamId": "team-4",
+      "name": "파이프랙 21",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-22",
+      "teamId": "team-4",
+      "name": "파이프랙 22",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-23",
+      "teamId": "team-4",
+      "name": "파이프랙 23",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-24",
+      "teamId": "team-4",
+      "name": "파이프랙 24",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-25",
+      "teamId": "team-4",
+      "name": "파이프랙 25",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-26",
+      "teamId": "team-4",
+      "name": "파이프랙 26",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-27",
+      "teamId": "team-4",
+      "name": "파이프랙 27",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-28",
+      "teamId": "team-4",
+      "name": "파이프랙 28",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-29",
+      "teamId": "team-4",
+      "name": "파이프랙 29",
+      "x": null,
+      "y": null
+    },
+    {
+      "id": "team-4-rack-30",
+      "teamId": "team-4",
+      "name": "파이프랙 30",
+      "x": null,
+      "y": null
     }
   ]
 }

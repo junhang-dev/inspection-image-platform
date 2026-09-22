@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { pool, get, decodeEntity, events } from "./store.mjs";
 import { maintenanceId } from "./maintenance-domain.mjs";
+import { photoTarget } from "./maintenance-view.mjs";
 import { saveMaintenance } from "./maintenance-store.mjs";
 import {
   maintenanceQuerySchema,
   queryMaintenance,
+  allMaintenanceViews,
 } from "./maintenance-query.mjs";
 const uuid = z
   .string()
@@ -27,6 +29,9 @@ const fields = {
   repairMethod: z.enum(["undecided", "paint", "replace"]).optional(),
   inWorklist: z.boolean().optional(),
   ta: z.boolean().optional(),
+  inclusionMode: z.enum(["auto", "include", "exclude"]).optional(),
+  visibility: z.enum(["visible", "hidden"]).optional(),
+  acknowledgedEvidence: z.record(uuid, z.string().regex(/^[a-f0-9]{64}$/)).refine((value) => Object.keys(value).length <= 2000).optional(),
   recordPurpose: z
     .enum(["inspection", "presentation", "verification"])
     .optional(),
@@ -34,7 +39,9 @@ const fields = {
 const createSchema = z
   .object({
     planId: uuid.nullable(),
-    pointId: uuid,
+    pointId: uuid.nullable(),
+    targetType: z.enum(["point", "photo"]).optional(),
+    targetId: uuid.optional(),
     expectedVersion: z.null(),
     ...audit,
     ...fields,
@@ -60,18 +67,20 @@ export function registerMaintenanceRoutes(app) {
       })
       .strict()
       .parse(req.query);
-    res.json(
-      await get(
-        "maintenance",
-        maintenanceId(q.planId === "unassigned" ? null : q.planId, q.pointId),
-      ),
-    );
+    const id = maintenanceId(q.planId === "unassigned" ? null : q.planId, q.pointId);
+    res.json((await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === id) ?? null);
+  });
+  app.get("/api/maintenance/target", async (req, res) => {
+    const photo = await get("inspection", uuid.parse(req.query.photoId));
+    if (!photo) throw fail(404, "사진을 찾을 수 없습니다.");
+    res.json((await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === photoTarget(photo).id) ?? null);
   });
   app.get("/api/maintenance/:id/history", async (req, res) =>
     res.json(await events(uuid.parse(req.params.id))),
   );
   app.get("/api/maintenance/:id", async (req, res) => {
-    const item = await get("maintenance", uuid.parse(req.params.id));
+    const id = uuid.parse(req.params.id);
+    const item = (await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === id);
     if (!item) throw fail(404, "보수 기록을 찾을 수 없습니다.");
     res.json(item);
   });
@@ -86,6 +95,8 @@ export function registerMaintenanceRoutes(app) {
       await saveMaintenance({
         planId: current.planId,
         pointId: current.pointId,
+        targetType: current.targetType,
+        targetId: current.targetId,
         ...input,
       }),
     );

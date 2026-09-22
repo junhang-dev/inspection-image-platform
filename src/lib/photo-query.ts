@@ -6,8 +6,12 @@ export type Photo = {
   id: string;
   editVersion: number;
   name: string;
+  sha256?: string;
   pointId: string | null;
   planId: string | null;
+  teamId?: string | null;
+  rackId?: string | null;
+  evidenceFingerprint?: string;
   status: "pending" | "processing" | "done" | "error" | "unread";
   aiProvenance?: {
     kind:
@@ -51,6 +55,7 @@ export const defaultPhotoScope: PhotoScope = {
 };
 export type PhotoQuery = Partial<PhotoScope> & {
   pointId?: string;
+  photoId?: string;
   classification?: string;
   labeling?: "all" | "true";
   page?: number;
@@ -70,6 +75,7 @@ export type PhotoPage = {
     labeling: number;
   };
   pointCounts: Record<string, number>;
+  rackCounts: Record<string, number>;
 };
 export function usePhotoQuery(query: PhotoQuery) {
   const key = new URLSearchParams(

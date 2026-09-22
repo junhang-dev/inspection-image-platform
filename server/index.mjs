@@ -26,7 +26,10 @@ import {
 } from "./store.mjs";
 import { photoQuerySchema, queryPhotos } from "./photo-query.mjs";
 import { registerMaintenanceRoutes } from "./maintenance-routes.mjs";
-import { locations, planPointIds, pointLocation } from "./relations.mjs";
+import { registerPlanRoutes } from "./plan-routes.mjs";
+import { registerRoiRoutes } from "./roi-routes.mjs";
+import { validateNewPhotoRelation, validatePhotoEdit, validatePointEdit } from "./plan-store.mjs";
+import { locations, pointLocation } from "./relations.mjs";
 import { runtimeProfile, privateRequestAllowed } from "./runtime-profile.mjs";
 import { loadDatasetContract } from "./dataset-contract.mjs";
 import {
@@ -35,10 +38,16 @@ import {
   cleanupModelScratch,
 } from "./verified-model-input.mjs";
 import { verifyStorageProfile } from "./storage-profile.mjs";
+import { publicPayload } from "./publication-contract.mjs";
 
 const profile = runtimeProfile();
 const dataset = await loadDatasetContract(profile);
 const app = express();
+if (profile.scope === "shared") app.use((_req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = (value) => json(publicPayload(value));
+  next();
+});
 const demoMode = process.env.PUBLIC_DEMO_ONLY === "1";
 const publicUploadsAllowed = process.env.PUBLIC_UPLOADS_ALLOWED === "1";
 const demoFiles = JSON.parse(
@@ -81,7 +90,7 @@ const thumbnailFiles = await diskInput(join(uploadRoot, "thumbnails"));
 let uploads;
 const upload = multer({
   storage: multipartFiles.storage,
-  limits: { fields: 5, fieldSize: 100 * 1024 },
+  limits: { fields: 8, fieldSize: 100 * 1024 },
 });
 const field = z.string().trim().max(120);
 const actor = z.string().trim().min(1, "수정자를 입력하세요.").max(60);
@@ -119,6 +128,7 @@ const inspectionPatch = z
   .object({
     pointId: z.string().uuid().nullable().optional(),
     planId: z.string().uuid().nullable().optional(),
+    rackId: z.enum(locations.racks.map((rack) => rack.id)).nullable().optional(),
     humanGrade: z.number().int().min(1).max(5).nullable().optional(),
     retake: z.boolean().optional(),
     retakeReason: z.string().trim().max(1000).optional(),
@@ -135,21 +145,6 @@ const predictionSchema = z.object({
   preprocessing_version: z.string().min(1),
 });
 const fail = (status, message) => Object.assign(new Error(message), { status });
-async function validatePhotoRelation(planId, pointId, connection = pool) {
-  if (pointId && !(await get("point", pointId, connection)))
-    throw fail(422, "연결할 포인트를 찾을 수 없습니다. 다시 선택하세요.");
-  if (!planId) return;
-  const plan = await get("plan", planId, connection);
-  if (!plan) throw fail(422, "검사 계획을 찾을 수 없습니다. 다시 선택하세요.");
-  if (!pointId || !planPointIds(plan).includes(pointId))
-    throw fail(422, "검사 계획에 연결된 포인트를 선택하세요.");
-}
-async function validatePlanPoints(ids) {
-  for (const id of ids)
-    if (!(await get("point", id)))
-      throw fail(422, "연결할 포인트를 다시 선택하세요.");
-}
-
 app.get("/api/health", async (req, res) => {
   const dependencies = await Promise.allSettled([
     pool.query("SELECT 1"),
@@ -256,7 +251,7 @@ app.patch("/api/points/:id", async (req, res) => {
   )
     throw fail(422, "팀에 속한 파이프랙은 이름만 변경할 수 없습니다.");
   const result = await update("point", req.params.id, patch, actor, reason, {
-    expectedVersion,
+    expectedVersion, validate: validatePointEdit,
   });
   if (!result) throw fail(404, "포인트를 찾을 수 없습니다.");
   res.json(result);
@@ -365,6 +360,8 @@ async function saveUploads(
   reuseDemo,
   planId = null,
   purpose = "inspection",
+  rackId = null,
+  batchId = null,
 ) {
   const byHash = new Map();
   if (reuseDemo) {
@@ -377,7 +374,7 @@ async function saveUploads(
     );
     for (const row of rows) {
       const photo = decodeEntity(row.data, "inspection");
-      if (photo.recordPurpose === purpose && !byHash.has(photo.sha256))
+      if (photo.recordPurpose === purpose && photo.rackId === rackId && !byHash.has(photo.sha256))
         byHash.set(photo.sha256, photo);
     }
   }
@@ -397,6 +394,7 @@ async function saveUploads(
         pointId,
         planId,
         recordPurpose: purpose,
+        rackId, batchId,
       },
       file.path,
     );
@@ -420,14 +418,15 @@ async function validateImages(files, demoRequest) {
   }
 }
 app.post("/api/demo-inspections", async (req, res) => {
-  const { pointId, planId } = z
+  const { pointId, planId, rackId } = z
     .object({
       pointId: z.string().uuid().nullable().default(null),
-      planId: z.string().uuid().nullable().default(null),
+      planId: z.string().uuid(),
+      rackId: z.enum(locations.racks.map((rack) => rack.id)),
     })
     .strict()
     .parse(req.body);
-  await validatePhotoRelation(planId, pointId);
+  await validateNewPhotoRelation(planId, pointId, pool, { rackId });
   const files = await Promise.all(
     demoFiles.map(async (file) => {
       const path = fileURLToPath(
@@ -438,7 +437,7 @@ app.post("/api/demo-inspections", async (req, res) => {
   );
   await validateImages(files, true);
   const result = await withDemoLock(() =>
-    saveUploads(files, pointId, true, planId),
+    saveUploads(files, pointId, true, planId, "inspection", rackId, null),
   );
   res
     .status(
@@ -451,19 +450,19 @@ app.post("/api/inspections", upload.array("images"), async (req, res) => {
     if (!req.files?.length)
       throw fail(400, "사진이 없습니다. JPG 또는 PNG 사진을 선택하세요.");
     const demoRequest = demoMode || req.body.demo === "1";
-    const purpose = recordPurpose
-      .default("inspection")
-      .parse(req.body.recordPurpose);
-    const { pointId, planId } = z
+    const purpose = "inspection";
+    const { pointId, planId, rackId } = z
       .object({
         pointId: z.string().uuid().nullable(),
-        planId: z.string().uuid().nullable(),
+        planId: z.string().uuid(),
+        rackId: z.enum(locations.racks.map((rack) => rack.id)),
       })
       .parse({
         pointId: req.body.pointId || null,
-        planId: req.body.planId || null,
+        planId: req.body.planId,
+        rackId: req.body.rackId,
       });
-    await validatePhotoRelation(planId, pointId);
+    await validateNewPhotoRelation(planId, pointId, pool, { rackId });
     let ids = null;
     if (req.body.uploadIds) {
       let supplied;
@@ -492,7 +491,7 @@ app.post("/api/inspections", upload.array("images"), async (req, res) => {
     }
     await validateImages(req.files, demoRequest);
     const save = () =>
-      saveUploads(req.files, pointId, demoRequest, planId, purpose);
+      saveUploads(req.files, pointId, demoRequest, planId, purpose, rackId, null);
     const result = demoRequest ? await withDemoLock(save) : await save();
     res
       .status(
@@ -511,16 +510,18 @@ app.post("/api/upload-sessions", async (req, res) => {
   const input = z
     .object({
       id: sessionId,
-      recordPurpose: recordPurpose.default("inspection"),
+      recordPurpose: recordPurpose.optional(),
       name: z.string().min(1).max(200),
       size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
       sha256,
-      pointId: sessionId.nullable(),
+      pointId: sessionId.nullable().default(null),
       planId: sessionId.nullable(),
+      rackId: z.enum(locations.racks.map((rack) => rack.id)).nullable().optional(),
+      batchId: sessionId.nullable().default(null),
     })
     .strict()
     .parse(req.body);
-  res.json(await uploads.initialize(input));
+  res.json(await uploads.initialize({ ...input, recordPurpose: input.recordPurpose ?? "inspection" }));
 });
 app.get("/api/upload-sessions/:id", async (req, res) =>
   res.json(await uploads.status(sessionId.parse(req.params.id))),
@@ -593,22 +594,11 @@ app.patch("/api/inspections/:id", async (req, res) => {
   const { actor, reason, expectedVersion, ...patch } = inspectionPatch.parse(
     req.body,
   );
-  const current = await get("inspection", req.params.id);
-  if (!current) throw fail(404, "사진을 찾을 수 없습니다.");
-  await validatePhotoRelation(
-    Object.hasOwn(patch, "planId") ? patch.planId : current.planId,
-    Object.hasOwn(patch, "pointId") ? patch.pointId : current.pointId,
-  );
-  if (
-    (patch.retake ?? current.retake) &&
-    !(patch.retakeReason ?? current.retakeReason).trim()
-  )
-    throw fail(422, "재촬영 사유를 입력하세요.");
-  res.json(
-    await update("inspection", req.params.id, patch, actor, reason, {
-      expectedVersion,
-    }),
-  );
+  const result = await update("inspection", req.params.id, patch, actor, reason, {
+    expectedVersion, validate: validatePhotoEdit,
+  });
+  if (!result) throw fail(404, "사진을 찾을 수 없습니다.");
+  res.json(result);
 });
 app.post("/api/inspections/:id/retry", async (req, res) => {
   const current = await get("inspection", req.params.id);
@@ -628,21 +618,7 @@ app.post("/api/inspections/:id/retry", async (req, res) => {
     ),
   );
 });
-app.get("/api/plans", async (req, res) =>
-  res.json(
-    await list("plan", {
-      recordPurpose: purposeScope.parse(req.query.recordPurpose),
-    }),
-  ),
-);
-app.get("/api/plans/:id", async (req, res) => {
-  const plan = await get("plan", req.params.id);
-  if (!plan) throw fail(404, "계획이 없습니다.");
-  res.json(plan);
-});
-app.get("/api/plans/:id/history", async (req, res) =>
-  res.json(await events(req.params.id)),
-);
+registerPlanRoutes(app);
 for (const [path, kind] of [
   ["points", "point"],
   ["plans", "plan"],
@@ -664,79 +640,8 @@ for (const [path, kind] of [
     res.json(result);
   });
 }
-app.post("/api/plans", async (req, res) => {
-  const input = z
-    .object({
-      recordPurpose: recordPurpose.default("inspection"),
-      title: z.string().trim().min(1).max(120),
-      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      pointId: z.string().uuid().nullable().default(null),
-      pointIds: z.array(z.string().uuid()).optional(),
-      note: z.string().max(1000).default(""),
-    })
-    .parse(req.body);
-  if (
-    Number.isNaN(Date.parse(input.date)) ||
-    new Date(input.date).toISOString().slice(0, 10) !== input.date
-  )
-    throw fail(422, "올바른 날짜를 선택하세요.");
-  const pointIds = planPointIds(input);
-  if (input.pointId && !pointIds.includes(input.pointId))
-    throw fail(422, "계획의 포인트 선택이 서로 다릅니다. 다시 선택하세요.");
-  await validatePlanPoints(pointIds);
-  res
-    .status(201)
-    .json(
-      await insert(
-        "plan",
-        { ...input, pointIds, pointId: pointIds[0] || null, status: "planned" },
-        "현업 엔지니어",
-        "검사 계획 등록",
-      ),
-    );
-});
-app.patch("/api/plans/:id", async (req, res) => {
-  const input = z
-    .object({
-      status: z.enum(["planned", "done", "cancelled"]).optional(),
-      pointIds: z.array(z.string().uuid()).optional(),
-      expectedVersion,
-      actor,
-      reason,
-    })
-    .strict()
-    .refine(
-      (input) => input.status !== undefined || input.pointIds !== undefined,
-      "변경할 내용을 선택하세요.",
-    )
-    .parse(req.body);
-  const current = await get("plan", req.params.id);
-  if (!current) throw fail(404, "계획이 없습니다.");
-  if (current.editVersion !== input.expectedVersion)
-    throw fail(
-      409,
-      "다른 화면에서 검사 계획을 수정하여 저장하지 못했습니다. 입력은 유지됩니다. 최신 계획에서 포인트 연결 여부를 확인해 주세요.",
-    );
-  const patch = input.status === undefined ? {} : { status: input.status };
-  if (input.pointIds !== undefined) {
-    const pointIds = [...new Set(input.pointIds)];
-    if (planPointIds(current).some((id) => !pointIds.includes(id)))
-      throw fail(422, "기존 검사 포인트의 연결은 유지해야 합니다.");
-    await validatePlanPoints(pointIds);
-    Object.assign(patch, { pointIds, pointId: pointIds[0] || null });
-  }
-  const result = await update(
-    "plan",
-    req.params.id,
-    patch,
-    input.actor,
-    input.reason,
-    { expectedVersion: input.expectedVersion },
-  );
-  if (!result) throw fail(404, "계획이 없습니다.");
-  res.json(result);
-});
 registerMaintenanceRoutes(app);
+const roiService = registerRoiRoutes(app, { objects, bucket, directory: uploadRoot, dataset, modelUrl: process.env.ROI_API_URL });
 app.use((error, req, res, next) => {
   if (error instanceof z.ZodError)
     return res
@@ -759,6 +664,7 @@ app.use((error, req, res, next) => {
       status >= 500 && !error.status
         ? "저장소 연결에 문제가 있습니다. 잠시 후 다시 시도하세요."
         : error.message,
+    ...(error.details ? { details: error.details } : {}),
   });
 });
 
@@ -865,7 +771,7 @@ for (let attempt = 0; attempt < 30; attempt++) {
       objects,
       bucket,
       directory: uploadRoot,
-      validateRelation: validatePhotoRelation,
+      validateRelation: validateNewPhotoRelation,
       demoOnly: demoMode,
       allowedHashes,
       inferencePolicy: dataset.policy,
@@ -884,6 +790,7 @@ for (let attempt = 0; attempt < 30; attempt++) {
 const host = process.env.API_HOST || "127.0.0.1";
 const port = Number(process.env.API_PORT || 4000);
 app.listen(port, host, () => console.log(`검사 API http://${host}:${port}`));
+await roiService.start();
 setInterval(processNext, 1500);
 setInterval(
   async () => {

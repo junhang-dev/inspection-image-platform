@@ -19,8 +19,10 @@ const EDITABLE = Object.freeze([
   "repairMethod",
   "inWorklist",
   "ta",
+  "inclusionMode",
+  "visibility",
 ]);
-const CREATABLE = new Set(["planId", "pointId", ...EDITABLE]);
+const CREATABLE = new Set(["planId", "pointId", "targetType", "targetId", ...EDITABLE]);
 const PATCHABLE = new Set(EDITABLE);
 const fail = (status, code, message) =>
   Object.assign(new Error(message), { status, code });
@@ -90,6 +92,10 @@ export function maintenanceId(planId, pointId) {
     relation.planId,
     relation.pointId,
   ])}`;
+  return uuidForName(name);
+}
+
+function uuidForName(name) {
   const bytes = createHash("sha1")
     .update(NAMESPACE)
     .update(name, "utf8")
@@ -101,10 +107,28 @@ export function maintenanceId(planId, pointId) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export function photoMaintenanceId(photoId) {
+  return uuidForName(`inspection-image-platform/maintenance/photo/v1:${uuid(photoId, "사진")}`);
+}
+export function maintenanceTarget(input) {
+  if (input.targetType === "photo") {
+    if (input.pointId !== null && input.pointId !== undefined) throw invalid("invalid_target", "사진별 보수 대상에는 포인트를 함께 지정할 수 없습니다.");
+    return { planId: input.planId === null ? null : uuid(input.planId, "계획"), pointId: null, targetType: "photo", targetId: uuid(input.targetId, "사진") };
+  }
+  if (input.targetType !== undefined && input.targetType !== "point") throw invalid("invalid_target", "보수 대상 형식이 올바르지 않습니다.");
+  const relation = pair(input.planId, input.pointId);
+  if (input.targetId !== undefined && input.targetId !== relation.pointId) throw invalid("invalid_target", "포인트 식별자가 일치하지 않습니다.");
+  return relation;
+}
+export function targetMaintenanceId(input) {
+  const relation = maintenanceTarget(input);
+  return relation.targetType === "photo" ? photoMaintenanceId(relation.targetId) : maintenanceId(relation.planId, relation.pointId);
+}
+
 function shape(item) {
   record(item, "보수 항목");
   uuid(item.id, "보수 항목");
-  const relation = pair(item.planId, item.pointId);
+  const relation = maintenanceTarget(item);
   const evidence = photoIds(item.photoIds);
   enumeration(
     item.repairStatus,
@@ -120,6 +144,8 @@ function shape(item) {
   );
   boolean(item.inWorklist, "워크리스트 포함 여부");
   boolean(item.ta, "TA 포함 여부");
+  if (item.inclusionMode !== undefined) enumeration(item.inclusionMode, ["auto", "include", "exclude"], "invalid_inclusion", "목록 반영 방식");
+  if (item.visibility !== undefined) enumeration(item.visibility, ["visible", "hidden"], "invalid_visibility", "표시 상태");
   if (!Number.isSafeInteger(item.editVersion) || item.editVersion < 0)
     throw invalid("invalid_edit_version", "수정 버전이 올바르지 않습니다.");
   if (Object.hasOwn(item, "migratedFromPointId")) {
@@ -167,6 +193,10 @@ function validatePhotos(relation, photos) {
         "선택한 근거 사진을 찾을 수 없습니다. 다시 확인하세요.",
       );
     const photoPlanId = Object.hasOwn(photo, "planId") ? photo.planId : null;
+    if (relation.targetType === "photo") {
+      if (photo.id !== relation.targetId || photo.pointId || photoPlanId !== relation.planId) throw invalid("photo_relation_mismatch", "사진별 보수 항목의 원본 사진과 계획이 다릅니다.");
+      continue;
+    }
     const actual = pair(photoPlanId, photo.pointId);
     if (
       actual.planId !== relation.planId ||
@@ -193,9 +223,9 @@ export function validateMaintenanceItem(item, photos = []) {
 export function createMaintenanceItem(input, photos = []) {
   record(input, "새 보수 항목");
   knownKeys(input, CREATABLE);
-  const relation = pair(input.planId, input.pointId);
+  const relation = maintenanceTarget(input);
   const item = {
-    id: maintenanceId(relation.planId, relation.pointId),
+    id: targetMaintenanceId(input),
     ...relation,
     photoIds: Object.hasOwn(input, "photoIds") ? photoIds(input.photoIds) : [],
     repairStatus: Object.hasOwn(input, "repairStatus")
@@ -207,6 +237,8 @@ export function createMaintenanceItem(input, photos = []) {
     inWorklist: Object.hasOwn(input, "inWorklist") ? input.inWorklist : false,
     ta: Object.hasOwn(input, "ta") ? input.ta : false,
     editVersion: 0,
+    ...(input.inclusionMode !== undefined ? { inclusionMode: input.inclusionMode } : {}),
+    ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
   };
   return validateMaintenanceItem(item, photos);
 }

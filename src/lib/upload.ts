@@ -13,6 +13,8 @@ export type UploadSession = {
   sha256: string;
   pointId: string | null;
   planId: string | null;
+  rackId?: string | null;
+  batchId?: string | null;
   recordPurpose?: "inspection" | "presentation" | "verification";
   offset: number;
   chunkBytes: number;
@@ -27,6 +29,8 @@ export type UploadEntry = {
   sha256: string | null;
   pointId: string | null;
   planId: string | null;
+  rackId?: string | null;
+  batchId?: string | null;
   recordPurpose?: "inspection" | "presentation" | "verification";
   targetLabel: string;
   state:
@@ -177,6 +181,8 @@ export async function transferFile(
         sha256: hash,
         pointId: entry.pointId,
         planId: entry.planId,
+        rackId: entry.rackId,
+        batchId: entry.batchId ?? null,
         recordPurpose: entry.recordPurpose ?? "inspection",
       }),
     },
