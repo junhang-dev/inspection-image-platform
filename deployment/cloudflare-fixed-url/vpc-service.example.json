@@ -1,0 +1,11 @@
+{
+  "type": "http",
+  "name": "drone-inspection-g10",
+  "http_port": 3000,
+  "host": {
+    "ipv4": "127.0.0.1",
+    "network": {
+      "tunnel_id": "REPLACE_WITH_APPROVED_TUNNEL_ID"
+    }
+  }
+}

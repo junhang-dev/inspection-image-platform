@@ -1,0 +1,13 @@
+{
+  "config": {
+    "ingress": [
+      {
+        "hostname": "REPLACE_WITH_APPROVED_PUBLIC_HOSTNAME",
+        "service": "http://127.0.0.1:3000"
+      },
+      {
+        "service": "http_status:404"
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "drone-inspection-g10",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-22",
+  "account_id": "REPLACE_WITH_APPROVED_ACCOUNT_ID",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "PUBLIC_HOSTNAME": "drone-inspection-g10.REPLACE_WITH_ACCOUNT_SUBDOMAIN.workers.dev"
+  },
+  "vpc_services": [
+    {
+      "binding": "SHARED_WEB",
+      "service_id": "REPLACE_WITH_APPROVED_VPC_SERVICE_ID"
+    }
+  ],
+  "observability": {
+    "enabled": false
+  }
+}
