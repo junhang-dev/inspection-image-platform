@@ -1,0 +1,653 @@
+{
+  "asOf": "2026-09-29",
+  "drone": {
+    "repository": "junhang-dev/inspection-image-platform",
+    "commit": "a2c407cc9cd3ccb50fe66e35b0adcdeaeda344a2",
+    "sourceFiles": [
+      {
+        "path": "deployment/cloudflare-fixed-url/config.test.mjs",
+        "bytes": 2755,
+        "readDeeply": false
+      },
+      {
+        "path": "deployment/cloudflare-fixed-url/validate-config.mjs",
+        "bytes": 2709,
+        "readDeeply": false
+      },
+      {
+        "path": "deployment/cloudflare-fixed-url/worker.mjs",
+        "bytes": 1917,
+        "readDeeply": true
+      },
+      {
+        "path": "deployment/cloudflare-fixed-url/worker.test.mjs",
+        "bytes": 5576,
+        "readDeeply": false
+      },
+      {
+        "path": "labeling/__init__.py",
+        "bytes": 0,
+        "readDeeply": false
+      },
+      {
+        "path": "labeling/bridge.py",
+        "bytes": 20656,
+        "readDeeply": false
+      },
+      {
+        "path": "labeling/local_runtime.py",
+        "bytes": 2918,
+        "readDeeply": false
+      },
+      {
+        "path": "labeling/loopback_proxy.py",
+        "bytes": 2659,
+        "readDeeply": false
+      },
+      {
+        "path": "labeling/test_bridge.py",
+        "bytes": 6282,
+        "readDeeply": false
+      },
+      {
+        "path": "labeling/test_candidate_pages.py",
+        "bytes": 9987,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/__init__.py",
+        "bytes": 44,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/contract.py",
+        "bytes": 1817,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/evaluate.py",
+        "bytes": 4340,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/explain.py",
+        "bytes": 5456,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/explain_worker.py",
+        "bytes": 3683,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/finetune.py",
+        "bytes": 6868,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/healthcheck.py",
+        "bytes": 987,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/retraining.py",
+        "bytes": 12336,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/roi.py",
+        "bytes": 2299,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/roi_service.py",
+        "bytes": 8405,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/runtime.py",
+        "bytes": 3135,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/serve.py",
+        "bytes": 1460,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/service.py",
+        "bytes": 6380,
+        "readDeeply": true
+      },
+      {
+        "path": "ml/test_evaluate.py",
+        "bytes": 3242,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/test_finetune.py",
+        "bytes": 1307,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/test_retraining.py",
+        "bytes": 5889,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/test_roi_explain.py",
+        "bytes": 7425,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/test_service.py",
+        "bytes": 2700,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/test_serving_contract.py",
+        "bytes": 3469,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/test_streaming_upload.py",
+        "bytes": 9014,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/train.py",
+        "bytes": 6811,
+        "readDeeply": false
+      },
+      {
+        "path": "ml/v3_candidates.py",
+        "bytes": 8315,
+        "readDeeply": false
+      },
+      {
+        "path": "next-env.d.ts",
+        "bytes": 288,
+        "readDeeply": false
+      },
+      {
+        "path": "next.config.ts",
+        "bytes": 442,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/bootstrap-private-bucket.mjs",
+        "bytes": 5259,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/import-private.mjs",
+        "bytes": 4443,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/infer-private.mjs",
+        "bytes": 3790,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/maintenance-records.mjs",
+        "bytes": 1440,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/mark-storage-profile.mjs",
+        "bytes": 1004,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/migrate-maintenance.mjs",
+        "bytes": 832,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/photo-records.mjs",
+        "bytes": 1177,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/setup-private.mjs",
+        "bytes": 3340,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/setup.mjs",
+        "bytes": 710,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/smoke.mjs",
+        "bytes": 3664,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/start-web.mjs",
+        "bytes": 409,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/verify-maintenance.mjs",
+        "bytes": 16301,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/verify-persistence.mjs",
+        "bytes": 3713,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/verify-photo-query.mjs",
+        "bytes": 11623,
+        "readDeeply": false
+      },
+      {
+        "path": "scripts/verify-private.mjs",
+        "bytes": 7302,
+        "readDeeply": false
+      },
+      {
+        "path": "server/dataset-contract.mjs",
+        "bytes": 7491,
+        "readDeeply": false
+      },
+      {
+        "path": "server/disk-input.mjs",
+        "bytes": 2205,
+        "readDeeply": false
+      },
+      {
+        "path": "server/index.mjs",
+        "bytes": 27523,
+        "readDeeply": true
+      },
+      {
+        "path": "server/inference-policy.mjs",
+        "bytes": 3548,
+        "readDeeply": true
+      },
+      {
+        "path": "server/maintenance-domain.mjs",
+        "bytes": 11918,
+        "readDeeply": true
+      },
+      {
+        "path": "server/maintenance-query.mjs",
+        "bytes": 3238,
+        "readDeeply": false
+      },
+      {
+        "path": "server/maintenance-routes.mjs",
+        "bytes": 3844,
+        "readDeeply": true
+      },
+      {
+        "path": "server/maintenance-store.mjs",
+        "bytes": 9014,
+        "readDeeply": false
+      },
+      {
+        "path": "server/maintenance-view.mjs",
+        "bytes": 6800,
+        "readDeeply": true
+      },
+      {
+        "path": "server/model-input.mjs",
+        "bytes": 1356,
+        "readDeeply": false
+      },
+      {
+        "path": "server/photo-query.mjs",
+        "bytes": 6510,
+        "readDeeply": true
+      },
+      {
+        "path": "server/plan-domain.mjs",
+        "bytes": 4259,
+        "readDeeply": true
+      },
+      {
+        "path": "server/plan-routes.mjs",
+        "bytes": 1412,
+        "readDeeply": true
+      },
+      {
+        "path": "server/plan-store.mjs",
+        "bytes": 10217,
+        "readDeeply": false
+      },
+      {
+        "path": "server/private-import-lease.mjs",
+        "bytes": 1976,
+        "readDeeply": false
+      },
+      {
+        "path": "server/private-import-store.mjs",
+        "bytes": 14475,
+        "readDeeply": false
+      },
+      {
+        "path": "server/private-original.mjs",
+        "bytes": 5029,
+        "readDeeply": false
+      },
+      {
+        "path": "server/private-placement.mjs",
+        "bytes": 2025,
+        "readDeeply": false
+      },
+      {
+        "path": "server/publication-contract.mjs",
+        "bytes": 3266,
+        "readDeeply": true
+      },
+      {
+        "path": "server/relations.mjs",
+        "bytes": 1287,
+        "readDeeply": false
+      },
+      {
+        "path": "server/roi-domain.mjs",
+        "bytes": 3681,
+        "readDeeply": true
+      },
+      {
+        "path": "server/roi-routes.mjs",
+        "bytes": 15722,
+        "readDeeply": true
+      },
+      {
+        "path": "server/runtime-profile.mjs",
+        "bytes": 4031,
+        "readDeeply": false
+      },
+      {
+        "path": "server/storage-profile.mjs",
+        "bytes": 6277,
+        "readDeeply": false
+      },
+      {
+        "path": "server/store.mjs",
+        "bytes": 10616,
+        "readDeeply": false
+      },
+      {
+        "path": "server/upload-files.mjs",
+        "bytes": 4903,
+        "readDeeply": false
+      },
+      {
+        "path": "server/upload-store.mjs",
+        "bytes": 3581,
+        "readDeeply": false
+      },
+      {
+        "path": "server/uploads.mjs",
+        "bytes": 17173,
+        "readDeeply": true
+      },
+      {
+        "path": "server/verified-model-input.mjs",
+        "bytes": 4372,
+        "readDeeply": false
+      },
+      {
+        "path": "src/app/globals.css",
+        "bytes": 39465,
+        "readDeeply": true
+      },
+      {
+        "path": "src/app/layout.tsx",
+        "bytes": 416,
+        "readDeeply": false
+      },
+      {
+        "path": "src/app/page.tsx",
+        "bytes": 102668,
+        "readDeeply": true
+      },
+      {
+        "path": "src/components/InspectionMap.module.css",
+        "bytes": 9880,
+        "readDeeply": false
+      },
+      {
+        "path": "src/components/InspectionMap.tsx",
+        "bytes": 16496,
+        "readDeeply": true
+      },
+      {
+        "path": "src/components/MaintenanceContext.tsx",
+        "bytes": 8877,
+        "readDeeply": true
+      },
+      {
+        "path": "src/components/MaintenancePanel.module.css",
+        "bytes": 8500,
+        "readDeeply": false
+      },
+      {
+        "path": "src/components/MaintenancePanel.tsx",
+        "bytes": 20800,
+        "readDeeply": true
+      },
+      {
+        "path": "src/components/RoiPanel.tsx",
+        "bytes": 18309,
+        "readDeeply": true
+      },
+      {
+        "path": "src/lib/api.ts",
+        "bytes": 1723,
+        "readDeeply": true
+      },
+      {
+        "path": "src/lib/concept-map.ts",
+        "bytes": 1237,
+        "readDeeply": true
+      },
+      {
+        "path": "src/lib/maintenance.ts",
+        "bytes": 2810,
+        "readDeeply": false
+      },
+      {
+        "path": "src/lib/photo-query.ts",
+        "bytes": 4589,
+        "readDeeply": true
+      },
+      {
+        "path": "src/lib/upload.ts",
+        "bytes": 6649,
+        "readDeeply": true
+      },
+      {
+        "path": "tests/api.test.mjs",
+        "bytes": 4125,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/client-api.test.mjs",
+        "bytes": 2286,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/concept-map.test.mjs",
+        "bytes": 1473,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/helpers/private-fixture.mjs",
+        "bytes": 3509,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/inference-policy.test.mjs",
+        "bytes": 10099,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/maintenance-domain.test.mjs",
+        "bytes": 12613,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/maintenance-query.test.mjs",
+        "bytes": 1937,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/photo-query.test.mjs",
+        "bytes": 1659,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/private-import.integration.test.mjs",
+        "bytes": 9017,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/private-runtime.integration.test.mjs",
+        "bytes": 10786,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/product-v3-recovery.integration.test.mjs",
+        "bytes": 5588,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/product-v3.integration.test.mjs",
+        "bytes": 8109,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/product-v3.test.mjs",
+        "bytes": 7799,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/publication.test.mjs",
+        "bytes": 4181,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/relations.test.mjs",
+        "bytes": 2439,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/roi.test.mjs",
+        "bytes": 7421,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/store.test.mjs",
+        "bytes": 6780,
+        "readDeeply": false
+      },
+      {
+        "path": "tests/uploads.test.mjs",
+        "bytes": 14386,
+        "readDeeply": false
+      }
+    ]
+  },
+  "flare": {
+    "backendWorkspace": "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main",
+    "codeFiles": [
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/query-service/app/main.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/orchestrator/tests/test_yolo_dataset_api.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/orchestrator/tests/test_yolo_dataset.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/orchestrator/tests/test_auto_extract.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/orchestrator/app/yolo_dataset.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/orchestrator/app/main.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/model-backend/app/main.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/ingest-worker/app/main.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/kafka-producer/app/main.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/auth-service/app/main.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/alarm-service/app/main.py",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/types/index.ts",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/store/useCctvStore.ts",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/store/useAuthStore.ts",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/lib/utils.ts",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/lib/api.ts",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/tabs.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/table.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/switch.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/slider.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/select.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/label.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/input.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/dialog.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/card.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/button.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/ui/badge.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/theme-provider.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/streaming/WebRTCPlayer.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/streaming/MjpegPlayer.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/streaming/HlsPlayer.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/streaming/HistoryChart.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/streaming/DetailedHistoryChart.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/streaming/AlarmHistoryPanel.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/management/CctvSettingsModal.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/management/CctvForm.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/layout/topbar.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/layout/sidebar.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/layout/profile-badge.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/layout/login-modal.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/dashboard/CctvCard.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/components/auth-provider.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/streaming/page.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/page.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/management/users/page.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/management/rbac/page.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/management/page.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/layout.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/globals.css",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/src/app/cctv/[id]/page.tsx",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/postcss.config.mjs",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/next.config.ts",
+      "flare-stack-ai-cctv-backend-main/flare-stack-ai-cctv-backend-main/frontend/eslint.config.mjs"
+    ],
+    "standaloneFrontend": "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main",
+    "standaloneFiles": [
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/types/index.ts",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/store/useCctvStore.ts",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/lib/utils.ts",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/lib/api.ts",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/tabs.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/table.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/switch.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/slider.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/select.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/label.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/input.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/dialog.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/card.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/button.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/ui/badge.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/theme-provider.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/streaming/MjpegPlayer.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/streaming/HistoryChart.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/streaming/DetailedHistoryChart.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/streaming/AlarmHistoryPanel.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/management/CctvForm.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/layout/topbar.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/layout/sidebar.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/components/dashboard/CctvCard.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/app/layout.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/app/globals.css",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/app/streaming/page.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/app/page.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/eslint.config.mjs",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/next.config.ts",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/postcss.config.mjs",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/app/management/page.tsx",
+      "flare-stack-ai-cctv-frontend-main/flare-stack-ai-cctv-frontend-main/src/app/cctv/[id]/page.tsx"
+    ]
+  }
+}
