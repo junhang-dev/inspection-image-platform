@@ -66,13 +66,22 @@ Worker·VPC Service·named Tunnel을 각각 하나 생성했다. 기존 Workers 
 
 ## 운영과 복구
 
-Mac 전원·네트워크·웹/API·사진 저장소·모델·named connector가 실행 중이어야 접속할 수 있다. 고정 주소는 Mac이 꺼진 동안 서비스가 계속된다는 뜻이 아니다. 전역 launchd나 부팅 후 자동 시작은 설정하지 않았다.
+Mac 전원·네트워크·웹/API·사진 저장소·모델·named connector가 실행 중이어야 접속할 수 있다. 고정 주소는 Mac이 꺼지거나 절전된 동안 서비스가 계속된다는 뜻이 아니다. 2026-10-01부터 공유 웹·API·터널은 사용자 `launchd` 작업(`com.droneinspection.shared.web`, `.api`, `.tunnel`)으로 관리한다. 로그인 후 실행과 프로세스 종료 시 재시작을 설정했고, 웹을 종료한 뒤 자동 재시작 및 외부 주소 200을 확인했다. MySQL·MinIO 컨테이너는 `unless-stopped`이며 OrbStack 자체가 실행되어야 한다. 모델·ROI 서비스의 자동 실행은 아직 구성하지 않았다.
 
 실제 credential·ID·실행 명령·PID·로그·BUILD·검증 결과와 이전 버전은 Git에서 제외한 로컬 운영 manifest에 보관한다. credential 디렉터리는 0700, 파일은 0600이다. 제한된 Tunnel token을 `--token-file`로 읽으며 token 값을 명령 인수에 직접 넣지 않는다. [cloudflared 실행 옵션](https://developers.cloudflare.com/tunnel/reference/run-parameters/)
 
 재시작할 때 같은 Tunnel ID/token·Worker명·account subdomain·Service target을 유지한다. 웹은 **빌드 시** API 4000 rewrite를 고정한 standalone/static/public 묶음을 사용한다. 같은 DB의 API 작성 프로세스를 중복 실행하지 않는다. 실제 전환 전 업로드 수신과 판독 중 작업을 확인하고, 이전 공유 저장소·아티팩트·실행 설정을 복구용으로 보존한다.
 
 문제가 생기면 보존한 이전 웹/API와 저장소 실행 설정으로 돌아간다. DB·볼륨 삭제나 credential 폐기를 원복 수단으로 사용하지 않는다. Worker rollback만으로 VPC 설정이나 Mac 서비스가 되돌아가지는 않는다. 기존 quick URL은 전송 경로의 복구용이며 같은 웹 origin이므로 제품 자체 오류의 독립 복제본은 아니다.
+
+## 로컬 개발에서 고정 주소 반영까지
+
+1. 로컬 개발은 운영 3000/4000과 분리된 웹 3100·API 4100 및 전용 DB·사진 저장소에서 진행한다. 작업 시작 전 Git 상태와 원격 `main`을 확인한다.
+2. 작은 단위로 수정하고 로컬 화면·업무 흐름과 해당 검사, 타입 검사, 빌드를 확인한다. 새 판독과 ROI는 모델 연결 상태를 별도로 확인한다.
+3. 검증한 소스를 커밋하고 그 커밋으로 운영 후보 아티팩트를 만든다. 운영 API 목적지(4000)는 빌드 시 고정되므로 빌드 산출물의 rewrite를 확인한다. 후보를 별도 포트에서 먼저 연다.
+4. 운영 전 진행 중인 업로드·판독과 DB/객체 보존 상태를 확인한다. 웹만 바꿀 때는 API·DB·사진 저장소·터널을 유지한다. API나 DB 구조를 바꾸는 경우에는 별도의 호환성·복구 절차를 준비한다.
+5. 이전 릴리스를 남긴 채 `launchd`가 가리키는 릴리스를 전환한다. 고정 주소에서 3D·계획·사진·판독 이력과 수정이 필요한 대표 업무를 실제 브라우저로 확인하고, 배포 전후 데이터 건수를 대조한다. 실패하면 이전 릴리스로 되돌린다.
+6. 검증된 커밋만 원격 `main`에 정상 반영하고 배포 커밋·BUILD_ID·검증 결과·남은 제약을 기록한다. 자동 pull·push나 운영 데이터 복사는 이 순서에 포함하지 않는다.
 
 ## 무료 범위와 남은 한계
 
