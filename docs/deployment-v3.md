@@ -14,6 +14,14 @@
 
 Worker·VPC Service·named Tunnel을 각각 하나 생성했다. 기존 Workers Free($0) 계정에서 진행했고, 추가 유료 지출·결제 등록·새 OAuth 또는 관리 API token 발급은 없었다. 기존 quick tunnel은 복구용으로 유지한다. DB·사진 저장소·모델 포트를 외부에 직접 연결하지 않는다.
 
+### 2026-10-01 3D 대시보드 웹 전환
+
+- 기존 고정 주소와 공유 API·DB·사진 저장소를 유지하고 웹 3000만 교체했다. 웹 BUILD_ID는 `fWBWBJQsMGqlHRGngbNPe`, 동결 소스 SHA-256은 `409fa19a6c5aafbdeee4949877eaccd487248007e9d11ee548c089065f2a09c6`이다. 이전 웹 릴리스는 로컬 복구용으로 보존했다.
+- 고정 주소와 로컬 3000에서 루트 HTML·3D 장면 파일·Three.js 모듈의 응답 바이트가 같고 모두 200임을 확인했다. 실제 외부 브라우저에서 3D 전경, 정유3팀→파이프랙 1, 검사계획, 사진 목록, 사진 상세의 기존 AI 등급과 이력을 열었다. 다른 업무 화면에서 대시보드로 돌아와 3D가 다시 표시되는 것도 확인했다.
+- 공유 API는 `ready=true`, `dataScope=shared`였고 사진 업무 기본 조회는 362건이었다. 전환 시 모델·ROI 서비스는 실행 중이지 않아 `model.ready=false`였다. 따라서 이번 전환은 새 AI 판독·ROI 요청의 성공을 검증하지 않는다. 이전에 저장된 판독 결과와 이력 조회만 확인했다.
+
+아래 표와 2026-09-22 검증 기록은 **당시 시점의 결과**이며, 현재 모델 가동 상태나 업무 건수를 뜻하지 않는다.
+
 | 항목 | 최종 확인 |
 | --- | --- |
 | 공유 제품 소스 | 제품 커밋 `efe33b5b9212b44c5a61c1459c2ec9a29ffb4a3c` ([PR #25](https://github.com/junhang-dev/inspection-image-platform/pull/25)), 동결 소스 SHA `4d68a1a0e5e69154334622d4ad1ac13891b7dbbbafe8ae2a8ff60af39e534e21` |

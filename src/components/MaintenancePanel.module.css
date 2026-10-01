@@ -2,15 +2,31 @@
   --maintenance-ink: var(--ink, #223536);
   --maintenance-muted: var(--muted, #5f7067);
   --maintenance-line: var(--line, #e5eae8);
-  --maintenance-green: var(--green, #21765e);
+  --maintenance-green: var(--green, #009688);
+  --maintenance-green-hover: var(--green-hover, #00796b);
+  --maintenance-green-soft: var(--green-soft, #e6f4f2);
+  --maintenance-green-border: var(--green-border, #b7dfd9);
+  --maintenance-surface: var(--surface, #fff);
+  --maintenance-input: var(--input-bg, #fff);
+  --maintenance-muted-bg: var(--badge-muted-bg, #f2f4f7);
+  --maintenance-muted-text: var(--badge-muted-text, #475467);
+  --maintenance-amber-bg: var(--badge-amber-bg, #fcf3df);
+  --maintenance-amber-text: var(--badge-amber-text, #805b1c);
+  --maintenance-blue-bg: var(--badge-blue-bg, #edf3f8);
+  --maintenance-blue-text: var(--badge-blue-text, #2e577b);
+  --maintenance-warning-bg: var(--warning-bg, #fcf5e6);
+  --maintenance-warning-text: var(--warning-text, #805b1c);
+  --maintenance-error-bg: var(--error-bg, #fff2ed);
+  --maintenance-error-text: var(--error-text, #99452f);
+  --maintenance-error-border: var(--error-border, #efd2c6);
   color: var(--maintenance-ink);
-  background: #fff;
+  background: var(--maintenance-surface);
   border: 1px solid var(--maintenance-line);
-  border-radius: 12px;
-  padding: 22px;
+  border-radius: var(--card-radius);
+  padding: var(--card-padding);
   min-width: 0;
   width: 100%;
-  font-size: 16px;
+  font-size: var(--type-small);
   line-height: 1.55;
   box-sizing: border-box;
 }
@@ -39,7 +55,7 @@
 }
 .root button {
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--type-body);
 }
 .root button:disabled {
   cursor: default;
@@ -49,7 +65,7 @@
 .root input:focus-visible,
 .root select:focus-visible,
 .root textarea:focus-visible {
-  outline: 3px solid #78bb9a;
+  outline: 3px solid var(--maintenance-green);
   outline-offset: 3px;
 }
 .heading {
@@ -62,11 +78,11 @@
 }
 .root .eyebrow {
   color: var(--maintenance-muted);
-  font-size: 14px;
+  font-size: var(--type-small);
   margin-bottom: 4px;
 }
 .heading h3 {
-  font-size: 22px;
+  font-size: var(--type-section);
   font-weight: 700;
   line-height: 1.35;
 }
@@ -75,31 +91,31 @@
   align-items: center;
   border-radius: 5px;
   padding: 4px 8px;
-  font-size: 14px;
+  font-size: var(--type-small);
   line-height: 1.5;
   font-weight: 600;
 }
 .muted {
-  color: #536653;
-  background: #f0f3ee;
+  color: var(--maintenance-muted-text);
+  background: var(--maintenance-muted-bg);
 }
 .amber {
-  color: #805b1c;
-  background: #fcf3df;
+  color: var(--maintenance-amber-text);
+  background: var(--maintenance-amber-bg);
 }
 .blue {
-  color: #2e577b;
-  background: #edf3f8;
+  color: var(--maintenance-blue-text);
+  background: var(--maintenance-blue-bg);
 }
 .green {
-  color: #2d664c;
-  background: #eaf4eb;
+  color: var(--maintenance-green-hover);
+  background: var(--maintenance-green-soft);
 }
 .context {
   display: grid;
   gap: 10px;
   padding: 15px 16px;
-  background: #f5f8f6;
+  background: var(--surface-muted, #f8fafc);
   border: 1px solid var(--maintenance-line);
   border-radius: 8px;
 }
@@ -112,7 +128,7 @@
 .context dt,
 .rowDetails dt {
   color: var(--maintenance-muted);
-  font-size: 14px;
+  font-size: var(--type-small);
   padding-top: 2px;
 }
 .context dd,
@@ -149,7 +165,7 @@
 .field > span > small {
   margin-left: 5px;
   color: var(--maintenance-muted);
-  font-size: 13px;
+  font-size: var(--type-caption);
   font-weight: 400;
 }
 .field input,
@@ -158,8 +174,8 @@
   min-height: 44px;
   width: 100%;
   min-width: 0;
-  border: 1px solid #ccd8cf;
-  background: #fff;
+  border: 1px solid var(--maintenance-line);
+  background: var(--maintenance-input);
   color: var(--maintenance-ink);
   border-radius: 7px;
   padding: 10px 11px;
@@ -176,7 +192,7 @@
   text-overflow: ellipsis;
 }
 .root .help {
-  font-size: 14px;
+  font-size: var(--type-small);
   color: var(--maintenance-muted);
   margin-top: 10px;
   line-height: 1.65;
@@ -199,11 +215,11 @@
   margin: 0;
 }
 .membership {
-  border: 1px solid #d4e2d9;
+  border: 1px solid var(--maintenance-line);
   border-radius: 9px;
   padding: 16px;
   margin-top: 16px;
-  background: #f8fbf9;
+  background: var(--surface-muted, #f8fafc);
 }
 .membershipHeading {
   display: flex;
@@ -230,19 +246,19 @@
   overflow-wrap: anywhere;
 }
 .primaryButton {
-  background: #28775a;
+  background: var(--maintenance-green);
   color: #fff;
 }
 .primaryButton:not(:disabled):hover {
-  background: #1c6248;
+  background: var(--maintenance-green-hover);
 }
 .secondaryButton {
-  background: #fff;
-  color: #46604e;
-  border-color: #d2dfd6;
+  background: var(--maintenance-surface);
+  color: var(--maintenance-ink);
+  border-color: var(--maintenance-line);
 }
 .secondaryButton:not(:disabled):hover {
-  background: #edf5ef;
+  background: var(--surface-muted, #f8fafc);
 }
 .evidence {
   border: 0;
@@ -257,7 +273,7 @@
 }
 .evidence legend span {
   margin-left: 8px;
-  font-size: 14px;
+  font-size: var(--type-small);
   color: var(--maintenance-muted);
   font-weight: 400;
 }
@@ -286,39 +302,39 @@
 }
 .photoChoice strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--type-small);
   font-weight: 600;
 }
 .photoChoice small {
   display: block;
-  font-size: 14px;
+  font-size: var(--type-small);
   color: var(--maintenance-muted);
   margin-top: 3px;
 }
 .selectedPhoto {
-  background: #eff7f1;
-  border-color: #82b09a;
+  background: var(--maintenance-green-soft);
+  border-color: var(--maintenance-green-border);
 }
 .root .emptyEvidence {
-  border: 1px dashed #cbd7ce;
+  border: 1px dashed var(--maintenance-line);
   border-radius: 7px;
   padding: 16px;
   color: var(--maintenance-muted);
-  font-size: 14px;
+  font-size: var(--type-small);
 }
 .root .warning {
-  color: #805b1c;
-  background: #fcf5e6;
+  color: var(--maintenance-warning-text);
+  background: var(--maintenance-warning-bg);
   border-radius: 7px;
   padding: 12px;
   margin-top: 10px;
-  font-size: 14px;
+  font-size: var(--type-small);
   overflow-wrap: anywhere;
 }
 .root .error {
-  color: #99452f;
-  background: #fff2ed;
-  border: 1px solid #efd2c6;
+  color: var(--maintenance-error-text);
+  background: var(--maintenance-error-bg);
+  border: 1px solid var(--maintenance-error-border);
   border-radius: 7px;
   padding: 13px;
   margin: 16px 0;
@@ -327,7 +343,7 @@
 .error > span {
   display: block;
   margin-top: 5px;
-  font-size: 14px;
+  font-size: var(--type-small);
 }
 .editorFooter {
   display: flex;
@@ -341,7 +357,7 @@
 }
 .editorFooter p {
   color: var(--maintenance-muted);
-  font-size: 14px;
+  font-size: var(--type-small);
 }
 .editorFooter .primaryButton {
   flex-shrink: 0;
@@ -349,7 +365,7 @@
 .total {
   color: var(--maintenance-muted);
   font-variant-numeric: tabular-nums;
-  font-size: 15px;
+  font-size: var(--type-small);
 }
 .root .intro {
   color: var(--maintenance-muted);
@@ -362,8 +378,8 @@
 }
 .workItem {
   border: 1px solid var(--maintenance-line);
-  border-radius: 10px;
-  padding: 18px;
+  border-radius: var(--card-radius);
+  padding: var(--card-padding);
   min-width: 0;
 }
 .itemHeading {
@@ -376,10 +392,10 @@
 .method {
   margin-left: auto;
   color: var(--maintenance-muted);
-  font-size: 15px;
+  font-size: var(--type-small);
 }
 .workItem h4 {
-  font-size: 18px;
+  font-size: var(--type-subhead);
   line-height: 1.45;
   overflow-wrap: anywhere;
   margin-bottom: 14px;
@@ -389,7 +405,7 @@
   gap: 8px;
 }
 .rowDetails dd {
-  font-size: 15px;
+  font-size: var(--type-small);
 }
 .rowActions {
   display: flex;
@@ -398,24 +414,24 @@
   margin-top: 18px;
 }
 .rowActions button {
-  font-size: 15px;
+  font-size: var(--type-small);
 }
 .empty {
   display: grid;
   gap: 10px;
   text-align: center;
   padding: 30px 18px;
-  border: 1px dashed #cbd7ce;
+  border: 1px dashed var(--maintenance-line);
   border-radius: 9px;
   color: var(--maintenance-muted);
   overflow-wrap: anywhere;
 }
 .empty strong {
-  font-size: 17px;
+  font-size: var(--type-body);
   color: var(--maintenance-ink);
 }
 .empty p {
-  font-size: 14px;
+  font-size: var(--type-small);
 }
 .pagination {
   display: flex;
@@ -427,7 +443,7 @@
   color: var(--maintenance-muted);
 }
 .pagination > span {
-  font-size: 15px;
+  font-size: var(--type-small);
   font-variant-numeric: tabular-nums;
 }
 .pagination > div {
@@ -450,7 +466,7 @@
     padding: 17px;
   }
   .heading h3 {
-    font-size: 21px;
+    font-size: var(--type-section);
   }
   .formGrid {
     grid-template-columns: minmax(0, 1fr);

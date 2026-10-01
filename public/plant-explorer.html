@@ -1,0 +1,1568 @@
+<div id="plant-asset-study">
+  <style>
+    #plant-asset-study {
+      --study-bg: #f7fbfa;
+      --study-surface: #ffffff;
+      --study-line: #d7e7e4;
+      --study-ink: #163532;
+      --study-muted: #52736f;
+      --study-teal: #087f78;
+      --study-teal-soft: #e5f4f1;
+      color: var(--study-ink);
+      background: var(--study-bg);
+      font:
+        14px/1.45 Inter,
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      width: 100%;
+    }
+    #plant-asset-study * {
+      box-sizing: border-box;
+    }
+    #plant-asset-study .study-shell {
+      background: var(--study-surface);
+      border: 1px solid var(--study-line);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 14px 36px rgba(16, 83, 76, 0.08);
+    }
+    #plant-asset-study .study-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 17px 20px 13px;
+      background: linear-gradient(115deg, #ffffff 20%, #eff9f7);
+    }
+    #plant-asset-study h2 {
+      margin: 0;
+      font-size: 19px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    #plant-asset-study .study-header p {
+      margin: 3px 0 0;
+      color: var(--study-muted);
+      font-size: 12px;
+    }
+    #plant-asset-study .study-badge {
+      color: var(--study-teal);
+      background: var(--study-teal-soft);
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    #plant-asset-study .study-nav {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 8px;
+      padding: 11px 20px 13px;
+      border-bottom: 1px solid var(--study-line);
+    }
+    #plant-asset-study button,
+    #plant-asset-study select {
+      color: var(--study-ink);
+      background: #ffffff;
+      border: 1px solid #bcd7d3;
+      border-radius: 9px;
+      padding: 8px 11px;
+      min-height: 38px;
+      font: inherit;
+    }
+    #plant-asset-study button {
+      cursor: pointer;
+    }
+    #plant-asset-study button[aria-pressed="true"] {
+      color: #ffffff;
+      background: var(--study-teal);
+      border-color: var(--study-teal);
+    }
+    #plant-asset-study button:focus-visible,
+    #plant-asset-study select:focus-visible {
+      outline: 3px solid #90d7ce;
+      outline-offset: 2px;
+    }
+    #plant-asset-study .study-nav label {
+      display: grid;
+      gap: 3px;
+      color: var(--study-muted);
+      font-size: 11px;
+    }
+    #plant-asset-study .study-nav label[hidden] {
+      display: none;
+    }
+    #plant-asset-study .study-nav select {
+      min-width: 104px;
+      font-size: 13px;
+    }
+    #plant-asset-study .study-spacer {
+      flex: 1 1 18px;
+    }
+    #plant-asset-study .study-canvas-wrap {
+      position: relative;
+      height: 560px;
+      background: radial-gradient(circle at 50% 8%, #fcffff, #e9f4f2 80%);
+    }
+    #plant-asset-study canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      cursor: grab;
+    }
+    #plant-asset-study canvas:active {
+      cursor: grabbing;
+    }
+    #plant-asset-study .study-view-label {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      padding: 7px 10px;
+      background: rgba(255, 255, 255, 0.93);
+      color: var(--study-ink);
+      border: 1px solid var(--study-line);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(14, 83, 73, 0.07);
+      pointer-events: none;
+      font-size: 12px;
+    }
+    #plant-asset-study .study-view-label b {
+      color: var(--study-teal);
+    }
+    #plant-asset-study .study-hint {
+      position: absolute;
+      right: 16px;
+      bottom: 15px;
+      color: #3c625d;
+      background: rgba(255, 255, 255, 0.88);
+      padding: 6px 9px;
+      border-radius: 7px;
+      pointer-events: none;
+      font-size: 11px;
+    }
+    #plant-asset-study .study-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 20px;
+      padding: 12px 17px;
+      border-top: 1px solid var(--study-line);
+      color: var(--study-muted);
+      font-size: 11px;
+    }
+    #plant-asset-study .study-footer span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #plant-asset-study .study-footer i {
+      display: inline-block;
+      width: 14px;
+      height: 8px;
+      border-radius: 4px;
+    }
+    #plant-asset-study .study-detail {
+      margin: 0;
+      padding: 9px 17px 13px;
+      color: var(--study-ink);
+      font-size: 12px;
+    }
+    #plant-asset-study .study-detail small {
+      color: var(--study-muted);
+      font-size: 11px;
+    }
+    @media (max-width: 680px) {
+      #plant-asset-study .study-header {
+        padding: 13px 14px 10px;
+      }
+      #plant-asset-study .study-nav {
+        padding: 10px 14px;
+      }
+      #plant-asset-study .study-spacer {
+        display: none;
+      }
+      #plant-asset-study .study-canvas-wrap {
+        height: 440px;
+      }
+      #plant-asset-study .study-hint {
+        left: 12px;
+        right: auto;
+        bottom: 10px;
+      }
+    }
+    @media (max-width: 430px) {
+      #plant-asset-study h2 {
+        font-size: 17px;
+      }
+      #plant-asset-study button {
+        padding: 7px 8px;
+        font-size: 12px;
+      }
+      #plant-asset-study .study-nav label {
+        flex: 1 1 110px;
+      }
+      #plant-asset-study .study-nav select {
+        width: 100%;
+      }
+      #plant-asset-study .study-canvas-wrap {
+        height: 385px;
+      }
+    }
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+    #plant-asset-study,
+    #plant-asset-study .study-shell,
+    #plant-asset-study .study-canvas-wrap {
+      width: 100%;
+      height: 100%;
+    }
+    #plant-asset-study .study-shell {
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    #plant-asset-study .study-header,
+    #plant-asset-study .study-nav,
+    #plant-asset-study .study-footer,
+    #plant-asset-study .study-detail,
+    #plant-asset-study .study-view-label {
+      display: none;
+    }
+    #plant-asset-study .study-hint {
+      left: 16px;
+      right: auto;
+    }
+    #plant-asset-study .selection-rectangle {
+      position: absolute;
+      display: none;
+      border: 2px solid #087f78;
+      background: rgba(8, 127, 120, 0.16);
+      pointer-events: none;
+    }
+    #plant-asset-study.plan-mode canvas {
+      cursor: crosshair;
+    }
+    #plant-asset-study.plan-mode[data-plan-tool="navigate"] canvas {
+      cursor: grab;
+    }
+  </style>
+  <section class="study-shell" aria-label="가상 정유공장 3D 에셋 디자인 시안">
+    <div class="study-header">
+      <div>
+        <h2>접근이 어려운 배관 접촉부를 찾는 3D 현장</h2>
+        <p>공정 랙 → 오프사이트 O-04 → 드론 촬영 예시</p>
+      </div>
+      <span class="study-badge">가상 구조 · 실제 배치 미반영</span>
+    </div>
+    <div class="study-nav" aria-label="3D 탐색 단계">
+      <button type="button" data-level="plant" aria-pressed="true">
+        공장 전경
+      </button>
+      <button type="button" data-level="team" aria-pressed="false">
+        생산팀 구역
+      </button>
+      <button type="button" data-level="offsite" aria-pressed="false">
+        오프사이트
+      </button>
+      <button type="button" data-level="rack" aria-pressed="false">
+        랙 근접
+      </button>
+      <button type="button" data-level="point" aria-pressed="false">
+        접촉부 예시
+      </button>
+      <span class="study-spacer"></span>
+      <label id="asset-team-label"
+        >생산팀<select id="asset-team">
+          <option>정유1팀</option>
+          <option selected>정유2팀</option>
+          <option>정유3팀</option>
+          <option>정유4팀</option>
+        </select></label
+      >
+      <label id="asset-rack-label"
+        >공정 랙<select id="asset-rack"></select
+      ></label>
+      <label id="asset-offsite-label" hidden
+        >오프사이트 랙<select id="asset-offsite-rack"></select
+      ></label>
+    </div>
+    <div class="study-canvas-wrap">
+      <canvas
+        id="asset-canvas"
+        aria-label="회전, 확대, 클릭으로 탐색하는 가상 정유공장 3D 모델"
+        >3D 모델을 표시할 수 없습니다.</canvas
+      >
+      <div class="selection-rectangle" aria-hidden="true"></div>
+      <div class="study-view-label">
+        <b id="asset-level-text">공장 전경</b
+        ><span id="asset-path-text"> · 4개 생산팀 구역</span>
+      </div>
+      <div class="study-hint">드래그: 시점 변경 · 휠: 확대 · 구역/랙 클릭</div>
+    </div>
+    <div class="study-footer" aria-hidden="true">
+      <span><i style="background: #d8ded8"></i>콘크리트 지지대</span>
+      <span><i style="background: #0d8f86"></i>주배관 · 오버헤드 연결</span>
+      <span><i style="background: #e7aa55"></i>선택 랙 · 접촉부 예시</span>
+      <span><i style="background: #a8c5c0"></i>주변 설비</span>
+    </div>
+    <p class="study-detail" id="asset-detail" aria-live="polite">
+      가상 공장 전경 · 공정 랙과 오프사이트 랙을 따라 접근이 어려운 점검 위치로
+      이동합니다. <small>실제 설비·사진·판독 기록은 연결하지 않았습니다.</small>
+    </p>
+  </section>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three/three.module.js",
+        "three/addons/": "/vendor/three/addons/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const root = document.getElementById("plant-asset-study");
+    const canvas = root.querySelector("#asset-canvas");
+    const teamSelect = root.querySelector("#asset-team");
+    const rackSelect = root.querySelector("#asset-rack");
+    const offsiteRackSelect = root.querySelector("#asset-offsite-rack");
+    const detail = root.querySelector("#asset-detail");
+    const selectionRectangle = root.querySelector(".selection-rectangle");
+    const sendToApp = (payload) =>
+      window.parent.postMessage(
+        { source: "plant-explorer", ...payload },
+        window.location.origin,
+      );
+    const teamNames = ["정유1팀", "정유2팀", "정유3팀", "정유4팀"];
+    const teamCenters = [
+      [-28, -20],
+      [28, -20],
+      [-28, 20],
+      [28, 20],
+    ];
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#eef8f7");
+    scene.fog = new THREE.Fog("#eef8f7", 205, 330);
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 320);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    let disposed = false;
+    canvas.addEventListener("webglcontextlost", (event) => {
+      event.preventDefault();
+      if (!disposed) sendToApp({ type: "error" });
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 7;
+    controls.maxDistance = 190;
+    const overviewPolarLimit = Math.PI * 0.47;
+    controls.maxPolarAngle = overviewPolarLimit;
+    const views = {
+      plant: { target: [0, 2, 11], eye: [79, 88, 117] },
+      team: { target: [0, 3, 0], eye: [25, 27, 33] },
+      rack: { target: [0, 3, 0], eye: [8, 8, 11] },
+    };
+    camera.position.set(...views.plant.eye);
+    controls.target.set(...views.plant.target);
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xcbdad6, 1.7));
+    const sun = new THREE.DirectionalLight(0xffffff, 2.0);
+    sun.position.set(-45, 90, 65);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = -70;
+    sun.shadow.camera.right = 70;
+    sun.shadow.camera.top = 70;
+    sun.shadow.camera.bottom = -70;
+    sun.shadow.bias = -0.0005;
+    scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xc7f4ed, 0.45);
+    fill.position.set(50, 20, -50);
+    scene.add(fill);
+
+    const mat = {
+      earth: new THREE.MeshStandardMaterial({ color: 0xdcebe5, roughness: 1 }),
+      zoneA: new THREE.MeshStandardMaterial({ color: 0xeaf0e9, roughness: 1 }),
+      zoneB: new THREE.MeshStandardMaterial({ color: 0xe6eeec, roughness: 1 }),
+      zoneC: new THREE.MeshStandardMaterial({ color: 0xecefe6, roughness: 1 }),
+      zoneD: new THREE.MeshStandardMaterial({ color: 0xe8f0eb, roughness: 1 }),
+      road: new THREE.MeshStandardMaterial({ color: 0x899b9a, roughness: 1 }),
+      roadMark: new THREE.MeshStandardMaterial({
+        color: 0xf8f9ee,
+        roughness: 1,
+      }),
+      foundation: new THREE.MeshStandardMaterial({
+        color: 0xc9d1ca,
+        roughness: 1,
+      }),
+      concrete: new THREE.MeshStandardMaterial({
+        color: 0xd6dcd5,
+        roughness: 0.96,
+      }),
+      concreteFace: new THREE.MeshStandardMaterial({
+        color: 0xbfcac5,
+        roughness: 0.96,
+      }),
+      steel: new THREE.MeshStandardMaterial({
+        color: 0x91a7a6,
+        metalness: 0.48,
+        roughness: 0.5,
+      }),
+      steelDark: new THREE.MeshStandardMaterial({
+        color: 0x54706d,
+        metalness: 0.5,
+        roughness: 0.48,
+      }),
+      vessel: new THREE.MeshStandardMaterial({
+        color: 0xe6efec,
+        metalness: 0.4,
+        roughness: 0.46,
+      }),
+      vesselShadow: new THREE.MeshStandardMaterial({
+        color: 0xa4b9b4,
+        metalness: 0.48,
+        roughness: 0.48,
+      }),
+      pipeWhite: new THREE.MeshStandardMaterial({
+        color: 0xf4f7f2,
+        metalness: 0.35,
+        roughness: 0.4,
+      }),
+      pipeTeal: new THREE.MeshStandardMaterial({
+        color: 0x0d8f86,
+        metalness: 0.38,
+        roughness: 0.4,
+      }),
+      pipeSteel: new THREE.MeshStandardMaterial({
+        color: 0x9caead,
+        metalness: 0.53,
+        roughness: 0.38,
+      }),
+      pipeSand: new THREE.MeshStandardMaterial({
+        color: 0xc2a773,
+        metalness: 0.38,
+        roughness: 0.46,
+      }),
+      flange: new THREE.MeshStandardMaterial({
+        color: 0x6a8985,
+        metalness: 0.55,
+        roughness: 0.36,
+      }),
+      corrosion: new THREE.MeshStandardMaterial({
+        color: 0xbb6435,
+        metalness: 0.12,
+        roughness: 0.94,
+      }),
+      inspection: new THREE.MeshStandardMaterial({
+        color: 0xf1ad4b,
+        emissive: 0xa76b22,
+        emissiveIntensity: 0.22,
+        roughness: 0.55,
+      }),
+      drone: new THREE.MeshStandardMaterial({
+        color: 0x183b3b,
+        metalness: 0.34,
+        roughness: 0.5,
+      }),
+    };
+    const pipeMats = [
+      mat.pipeWhite,
+      mat.pipeTeal,
+      mat.pipeSteel,
+      mat.pipeWhite,
+      mat.pipeSand,
+      mat.pipeSteel,
+    ];
+    const unitBox = new THREE.BoxGeometry(1, 1, 1);
+    const unitCylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
+    const spans = new Map();
+    const offsiteSpans = new Map();
+    const offsiteLabels = new Map();
+    const zoneHits = [];
+    const spanHits = [];
+    const offsiteHits = [];
+    const planHighlightGroup = new THREE.Group();
+    const planMarkGeometry = new THREE.BoxGeometry(1, 1, 1);
+    const planMarkMaterial = new THREE.MeshBasicMaterial({
+      color: 0x087f78,
+      transparent: true,
+      opacity: 0.34,
+      depthWrite: false,
+    });
+    scene.add(planHighlightGroup);
+    let level = "plant";
+    let selectedTeam = 1;
+    let selectedRack = 7;
+    let selectedOffsiteRack = 4;
+    let planMode = false;
+    let planTool = "select";
+    let planRackIds = [];
+    let cameraGoal = null;
+    controls.addEventListener("start", () => {
+      cameraGoal = null;
+    });
+
+    function syncOrbitRange(target = controls.target, eye = camera.position) {
+      if (level !== "rack" && level !== "point") {
+        controls.maxPolarAngle = overviewPolarLimit;
+        return;
+      }
+      const radius = Math.max(eye.distanceTo(target), 0.01);
+      const aboveGround = THREE.MathUtils.clamp(
+        (0.7 - target.y) / radius,
+        -1,
+        1,
+      );
+      controls.maxPolarAngle = Math.min(Math.PI * 0.76, Math.acos(aboveGround));
+    }
+
+    function box(parent, material, x, y, z, w, h, d, shadow = true) {
+      const mesh = new THREE.Mesh(unitBox, material);
+      mesh.position.set(x, y, z);
+      mesh.scale.set(w, h, d);
+      mesh.castShadow = shadow;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+    function cylinder(parent, material, x, y, z, radius, length, axis = "y") {
+      const mesh = new THREE.Mesh(unitCylinder, material);
+      mesh.position.set(x, y, z);
+      mesh.scale.set(radius, length, radius);
+      if (axis === "x") mesh.rotation.z = Math.PI / 2;
+      if (axis === "z") mesh.rotation.x = Math.PI / 2;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+    function pipeRoute(points, radius, material) {
+      const curve = new THREE.CatmullRomCurve3(
+        points.map((p) => new THREE.Vector3(...p)),
+        false,
+        "centripetal",
+      );
+      const mesh = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, 42, radius, 12, false),
+        material,
+      );
+      mesh.castShadow = true;
+      scene.add(mesh);
+    }
+    function label(text, x, y, z, scale = 1) {
+      const c = document.createElement("canvas");
+      c.width = 384;
+      c.height = 88;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.roundRect(3, 3, 378, 82, 18);
+      ctx.fill();
+      ctx.strokeStyle = "#b4d4ce";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = "#176f69";
+      ctx.font = "600 35px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, 192, 46);
+      const texture = new THREE.CanvasTexture(c);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true,
+          depthTest: false,
+        }),
+      );
+      sprite.position.set(x, y, z);
+      sprite.scale.set(4.25 * scale, 1.02 * scale, 1);
+      scene.add(sprite);
+      return sprite;
+    }
+    function road(x, z, w, d) {
+      box(scene, mat.road, x, 0.055, z, w, 0.11, d, false);
+      const alongX = w > d;
+      const len = alongX ? w : d;
+      for (let p = -len / 2 + 3; p < len / 2 - 2; p += 5) {
+        box(
+          scene,
+          mat.roadMark,
+          alongX ? x + p : x,
+          0.12,
+          alongX ? z : z + p,
+          alongX ? 1.6 : 0.1,
+          0.025,
+          alongX ? 0.1 : 1.6,
+          false,
+        );
+      }
+    }
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(128, 150), mat.earth);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -0.13, 12);
+    floor.receiveShadow = true;
+    scene.add(floor);
+    box(scene, mat.zoneB, 0, 0.04, 0, 111, 0.08, 77, false);
+    road(0, 0, 120, 5.3);
+    road(0, 10, 5.3, 108);
+    road(0, -40, 116, 3.2);
+    road(0, 40, 116, 3.2);
+    road(0, 70, 116, 3.2);
+    road(-56, 15, 3.2, 110);
+    road(56, 15, 3.2, 110);
+
+    function rackCorridor(teamIndex, start, cross, count, firstRack, axis) {
+      const center = teamCenters[teamIndex];
+      const x0 = center[0];
+      const z0 = center[1];
+      const bay = 2.75;
+      const acrossX = axis === "z";
+      const centerAlong = start + (count * bay) / 2;
+      const midX = x0 + (acrossX ? cross : centerAlong);
+      const midZ = z0 + (acrossX ? centerAlong : cross);
+      for (let b = 0; b <= count; b += 1) {
+        const along = start + b * bay;
+        const bx = x0 + (acrossX ? cross : along);
+        const bz = z0 + (acrossX ? along : cross);
+        if (b % 3 === 0 || b === count) {
+          for (const side of [-2.45, 2.45]) {
+            const px = bx + (acrossX ? side : 0);
+            const pz = bz + (acrossX ? 0 : side);
+            box(scene, mat.foundation, px, 0.16, pz, 1.15, 0.32, 1.15);
+            box(scene, mat.concrete, px, 2.58, pz, 0.62, 4.8, 0.62);
+          }
+          box(
+            scene,
+            mat.concreteFace,
+            bx,
+            2.48,
+            bz,
+            acrossX ? 5.55 : 0.48,
+            0.42,
+            acrossX ? 0.48 : 5.55,
+          );
+          box(
+            scene,
+            mat.concreteFace,
+            bx,
+            4.44,
+            bz,
+            acrossX ? 5.55 : 0.48,
+            0.42,
+            acrossX ? 0.48 : 5.55,
+          );
+        }
+        if (b === count) continue;
+        const alongMid = along + bay / 2;
+        const hx = x0 + (acrossX ? cross : alongMid);
+        const hz = z0 + (acrossX ? alongMid : cross);
+        const rackId = firstRack + b;
+        const hit = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            acrossX ? 5.9 : bay - 0.04,
+            5.3,
+            acrossX ? bay - 0.04 : 5.9,
+          ),
+          new THREE.MeshBasicMaterial({
+            transparent: true,
+            opacity: 0.001,
+            depthWrite: false,
+          }),
+        );
+        hit.position.set(hx, 2.7, hz);
+        hit.userData = { teamIndex, rackId, axis };
+        scene.add(hit);
+        spanHits.push(hit);
+        spans.set(teamIndex + ":" + rackId, hit);
+      }
+      const width = count * bay;
+      for (let pipeIndex = 0; pipeIndex < 6; pipeIndex += 1) {
+        const upper = pipeIndex >= 3;
+        const lane = [-1.6, 0, 1.55, -1.6, 0, 1.55][pipeIndex];
+        const radius = [0.31, 0.39, 0.25, 0.24, 0.33, 0.23][pipeIndex];
+        const height = upper ? 4.83 : 2.88;
+        const x = midX + (acrossX ? lane : 0);
+        const z = midZ + (acrossX ? 0 : lane);
+        cylinder(scene, pipeMats[pipeIndex], x, height, z, radius, width, axis);
+        for (let flangeBay = 3; flangeBay < count; flangeBay += 5) {
+          const fAlong = start + flangeBay * bay;
+          cylinder(
+            scene,
+            mat.flange,
+            x0 + (acrossX ? cross + lane : fAlong),
+            height,
+            z0 + (acrossX ? fAlong : cross + lane),
+            radius + 0.07,
+            0.18,
+            axis,
+          );
+        }
+      }
+      const side = 2.85;
+      box(
+        scene,
+        mat.steel,
+        midX + (acrossX ? side : 0),
+        3.62,
+        midZ + (acrossX ? 0 : side),
+        acrossX ? 0.7 : width,
+        0.12,
+        acrossX ? width : 0.7,
+      );
+      for (const railHeight of [4.05, 4.55]) {
+        box(
+          scene,
+          mat.steelDark,
+          midX + (acrossX ? side + 0.38 : 0),
+          railHeight,
+          midZ + (acrossX ? 0 : side + 0.38),
+          acrossX ? 0.06 : width,
+          0.07,
+          acrossX ? width : 0.06,
+        );
+      }
+    }
+    function slab(x, z, w, d) {
+      box(scene, mat.foundation, x, 0.18, z, w, 0.33, d);
+    }
+    function tower(x, z, height, name) {
+      slab(x, z, 4.7, 4.7);
+      cylinder(scene, mat.vessel, x, height / 2 + 0.3, z, 1.23, height);
+      const top = new THREE.Mesh(
+        new THREE.SphereGeometry(1.23, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+        mat.vessel,
+      );
+      top.position.set(x, height + 0.3, z);
+      scene.add(top);
+      for (const y of [2.3, 4.2, 6.1]) {
+        if (y >= height) break;
+        const platform = new THREE.Mesh(
+          new THREE.TorusGeometry(1.33, 0.09, 8, 28),
+          mat.steelDark,
+        );
+        platform.rotation.x = Math.PI / 2;
+        platform.position.set(x, y, z);
+        scene.add(platform);
+      }
+      label(name, x, height + 2.1, z, 0.6);
+    }
+    function heater(x, z, name) {
+      slab(x, z, 5.8, 5.2);
+      box(scene, mat.vesselShadow, x, 1.75, z, 4.5, 2.9, 4);
+      box(scene, mat.vessel, x, 3.3, z, 4.7, 0.35, 4.2);
+      cylinder(scene, mat.steel, x + 0.9, 5.55, z + 0.55, 0.52, 4.2);
+      for (const dx of [-1.3, 0, 1.3])
+        box(scene, mat.steelDark, x + dx, 0.95, z - 2.04, 0.36, 0.26, 0.12);
+      label(name, x, 5.9, z - 1.7, 0.59);
+    }
+    function exchanger(x, z, name) {
+      slab(x, z, 5.5, 3.2);
+      cylinder(scene, mat.vessel, x, 1.4, z, 0.84, 4.6, "x");
+      for (const dx of [-1.5, 1.5])
+        box(scene, mat.steelDark, x + dx, 0.72, z, 0.22, 0.96, 1.65);
+      label(name, x, 3.0, z, 0.56);
+    }
+    function tank(x, z, radius, name) {
+      slab(x, z, radius * 2.6, radius * 2.6);
+      cylinder(scene, mat.vesselShadow, x, 1.75, z, radius, 3.0);
+      const lid = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 0.92, radius, 0.2, 20),
+        mat.vessel,
+      );
+      lid.position.set(x, 3.35, z);
+      scene.add(lid);
+      label(name, x, 5.1, z, 0.59);
+    }
+    function pump(x, z, name) {
+      slab(x, z, 4.4, 3.3);
+      box(scene, mat.steelDark, x, 0.75, z, 3.3, 0.65, 2.0);
+      cylinder(scene, mat.vessel, x - 0.68, 1.35, z, 0.62, 0.9, "x");
+      box(scene, mat.vesselShadow, x + 0.85, 1.28, z, 1.0, 0.9, 1.1);
+      label(name, x, 2.75, z, 0.55);
+    }
+    function buildTeam(index) {
+      const [x, z] = teamCenters[index];
+      const zoneHit = new THREE.Mesh(
+        new THREE.BoxGeometry(48, 0.2, 31),
+        new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0.001,
+          depthWrite: false,
+        }),
+      );
+      zoneHit.position.set(x, 0.29, z);
+      zoneHit.userData.teamIndex = index;
+      scene.add(zoneHit);
+      zoneHits.push(zoneHit);
+      label(teamNames[index], x, 8.7, z - 14.0, 1.0);
+      if (index === 0) {
+        rackCorridor(index, -16.5, 0, 12, 1, "x");
+        rackCorridor(index, -12.375, -8.25, 9, 13, "z");
+        rackCorridor(index, -12.375, 8.25, 9, 22, "z");
+        tower(x - 18, z - 9, 7.8, "증류탑");
+        heater(x - 18, z + 9, "가열로");
+        exchanger(x + 18, z - 9, "열교환기");
+        pump(x + 18, z + 9, "펌프");
+        pipeRoute(
+          [
+            [x + 16.5, 4.83, z],
+            [x + 19, 4.83, z],
+            [x + 19, 3.4, z + 5],
+            [x + 18, 2.5, z + 8],
+          ],
+          0.29,
+          mat.pipeTeal,
+        );
+      } else if (index === 1) {
+        rackCorridor(index, -16.5, 0, 12, 1, "z");
+        rackCorridor(index, -12.375, -8.25, 9, 13, "x");
+        rackCorridor(index, -12.375, 8.25, 9, 22, "x");
+        tower(x - 18, z - 9, 8.7, "반응기 A");
+        tower(x - 18, z + 9, 6.9, "반응기 B");
+        tank(x + 18, z - 9, 2.3, "드럼");
+        exchanger(x + 18, z + 9, "냉각기");
+        pipeRoute(
+          [
+            [x, 4.83, z + 16.5],
+            [x + 5.5, 4.83, z + 16.5],
+            [x + 14, 3.9, z + 13],
+            [x + 18, 2.4, z + 9],
+          ],
+          0.32,
+          mat.pipeTeal,
+        );
+      } else if (index === 2) {
+        rackCorridor(index, -16.5, -5.7, 12, 1, "x");
+        rackCorridor(index, -12.375, 5.7, 9, 13, "x");
+        rackCorridor(index, -12.375, 0, 9, 22, "z");
+        tank(x - 18, z - 9, 2.5, "저장조 A");
+        tank(x - 18, z + 9, 2.0, "저장조 B");
+        tower(x + 18, z - 9, 7.2, "분리탑");
+        pump(x + 18, z + 9, "이송펌프");
+        pipeRoute(
+          [
+            [x + 16.5, 4.83, z - 5.7],
+            [x + 18.5, 4.83, z - 5.7],
+            [x + 18.5, 3.0, z - 8],
+          ],
+          0.31,
+          mat.pipeTeal,
+        );
+      } else {
+        rackCorridor(index, -16.5, 0, 12, 1, "x");
+        rackCorridor(index, -12.375, -11, 9, 13, "z");
+        rackCorridor(index, -12.375, 10.5, 9, 22, "z");
+        heater(x - 18, z - 9, "가열로 A");
+        heater(x - 18, z + 9, "가열로 B");
+        tower(x + 18, z - 7, 8.2, "정제탑");
+        exchanger(x + 18, z + 9, "열교환기");
+        pipeRoute(
+          [
+            [x + 16.5, 4.83, z],
+            [x + 19, 4.83, z],
+            [x + 19, 3.5, z - 4.5],
+            [x + 18, 2.3, z - 7],
+          ],
+          0.34,
+          mat.pipeTeal,
+        );
+      }
+    }
+    teamNames.forEach((_, index) => buildTeam(index));
+
+    // The process areas share overhead pipeways; the visible inspection bays remain separate.
+    function overheadRun(axis, from, to, cross, height, supports) {
+      const alongX = axis === "x";
+      const center = (from + to) / 2;
+      for (const station of supports) {
+        const x = alongX ? station : cross;
+        const z = alongX ? cross : station;
+        for (const side of [-2.2, 2.2]) {
+          const px = x + (alongX ? 0 : side);
+          const pz = z + (alongX ? side : 0);
+          box(scene, mat.foundation, px, 0.18, pz, 1.2, 0.36, 1.2);
+          box(scene, mat.steelDark, px, height / 2, pz, 0.36, height, 0.36);
+        }
+        box(
+          scene,
+          mat.steel,
+          x,
+          height - 0.18,
+          z,
+          alongX ? 0.48 : 5.1,
+          0.38,
+          alongX ? 5.1 : 0.48,
+        );
+      }
+      for (const [lane, radius, material] of [
+        [-1.4, 0.27, mat.pipeTeal],
+        [0, 0.34, mat.pipeWhite],
+        [1.4, 0.25, mat.pipeSteel],
+      ]) {
+        cylinder(
+          scene,
+          material,
+          alongX ? center : cross + lane,
+          height + 0.28,
+          alongX ? cross + lane : center,
+          radius,
+          to - from,
+          axis,
+        );
+      }
+      box(
+        scene,
+        mat.steel,
+        alongX ? center : cross + 2.7,
+        height - 0.55,
+        alongX ? cross + 2.7 : center,
+        alongX ? to - from : 0.64,
+        0.1,
+        alongX ? 0.64 : to - from,
+      );
+    }
+    overheadRun(
+      "z",
+      -33,
+      64,
+      7.5,
+      8.2,
+      [-33, -24, -15, -6, 6, 15, 24, 33, 42, 51, 58, 64],
+    );
+    overheadRun("x", -12, 28, -20, 7.1, [-12, -6, 13, 28]);
+    overheadRun("x", -12, 28, 20, 7.1, [-12, -6, 13, 28]);
+    for (const z of [-20, 20]) {
+      pipeRoute(
+        [
+          [7.5, 7.38, z - 1.4],
+          [7.5, 7.75, z - 1.4],
+          [7.5, 8.48, z - 1.4],
+        ],
+        0.26,
+        mat.pipeTeal,
+      );
+      pipeRoute(
+        [
+          [-12, 4.83, z],
+          [-12, 5.4, z],
+          [-12, 7.38, z],
+        ],
+        0.25,
+        mat.pipeTeal,
+      );
+      pipeRoute(
+        [
+          [28, 4.83, z],
+          [28, 5.4, z],
+          [28, 7.38, z],
+        ],
+        0.25,
+        mat.pipeTeal,
+      );
+    }
+
+    // Eight illustrative inspection bays on the elevated offsite transfer rack.
+    for (let rack = 1; rack <= 8; rack += 1) {
+      const z = 40 + (rack - 0.5) * 3;
+      const hit = new THREE.Mesh(
+        new THREE.BoxGeometry(5.9, 3.7, 2.95),
+        new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0.001,
+          depthWrite: false,
+        }),
+      );
+      hit.position.set(7.5, 8.2, z);
+      hit.userData.offsiteRack = rack;
+      scene.add(hit);
+      offsiteHits.push(hit);
+      offsiteSpans.set(rack, hit);
+      offsiteLabels.set(
+        rack,
+        label(
+          "O-" + String(rack).padStart(2, "0"),
+          rack % 2 ? 4.9 : 10.1,
+          10.7,
+          z,
+          0.62,
+        ),
+      );
+    }
+
+    // One visible, fictional pipe/support contact point: orange is a location cue, not a diagnosis.
+    box(scene, mat.steelDark, 7.5, 8.11, 51, 0.9, 0.2, 0.9);
+    box(scene, mat.corrosion, 7.5, 8.225, 51, 0.72, 0.04, 0.62);
+    const undersideRust = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.405, 0.405, 0.72, 24, 1, true, 0.15, 1.65),
+      mat.corrosion,
+    );
+    undersideRust.rotation.x = Math.PI / 2;
+    undersideRust.position.set(7.5, 8.48, 51);
+    scene.add(undersideRust);
+    for (const [dx, dz] of [
+      [-0.28, -0.24],
+      [0.24, 0.2],
+      [0.02, -0.34],
+    ]) {
+      const patch = new THREE.Mesh(
+        new THREE.SphereGeometry(0.15, 10, 8),
+        mat.corrosion,
+      );
+      patch.position.set(7.5 + dx, 8.25, 51 + dz);
+      scene.add(patch);
+    }
+    const contactRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.84, 0.075, 8, 32),
+      mat.inspection,
+    );
+    contactRing.rotation.x = Math.PI / 2;
+    contactRing.position.set(7.5, 8.49, 51);
+    scene.add(contactRing);
+    const inspectionGroup = new THREE.Group();
+    scene.add(inspectionGroup);
+    const contactLabel = label("접촉부 부식 예시", 7.8, 11.1, 51, 1.05);
+    const drone = new THREE.Group();
+    drone.position.set(11.9, 5.45, 47.8);
+    inspectionGroup.add(drone);
+    box(drone, mat.drone, 0, 0, 0, 0.7, 0.22, 0.47);
+    box(drone, mat.steelDark, 0, 0.02, 0, 1.9, 0.09, 0.1);
+    box(drone, mat.steelDark, 0, 0.02, 0, 0.1, 0.09, 1.9);
+    for (const [x, z] of [
+      [-0.95, 0],
+      [0.95, 0],
+      [0, -0.95],
+      [0, 0.95],
+    ]) {
+      cylinder(drone, mat.drone, x, 0.12, z, 0.16, 0.14);
+      const rotor = new THREE.Mesh(
+        new THREE.TorusGeometry(0.34, 0.035, 6, 18),
+        mat.steelDark,
+      );
+      rotor.rotation.x = Math.PI / 2;
+      rotor.position.set(x, 0.21, z);
+      drone.add(rotor);
+    }
+    const contactViewTarget = new THREE.Vector3(7.5, 8.12, 50.72);
+    const cameraPod = new THREE.Group();
+    cameraPod.position.set(11.65, 5.1, 47.65);
+    cameraPod.lookAt(contactViewTarget);
+    inspectionGroup.add(cameraPod);
+    box(cameraPod, mat.drone, 0, 0, 0, 0.34, 0.28, 0.35);
+    cylinder(cameraPod, mat.inspection, 0, 0, 0.24, 0.13, 0.14, "z");
+    const sightVector = contactViewTarget.clone().sub(cameraPod.position);
+    const sight = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, sightVector.length(), 8),
+      new THREE.MeshBasicMaterial({
+        color: 0xe49b35,
+        transparent: true,
+        opacity: 0.88,
+        depthTest: false,
+      }),
+    );
+    sight.position.copy(cameraPod.position).addScaledVector(sightVector, 0.5);
+    sight.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      sightVector.normalize(),
+    );
+    sight.renderOrder = 20;
+    inspectionGroup.add(sight);
+    const droneLabel = label("드론 · 하부 사선 촬영", 12.3, 7.15, 47.8, 0.7);
+    inspectionGroup.add(droneLabel);
+    const accessLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(10.7, 0.3, 51),
+        new THREE.Vector3(10.7, 8.15, 51),
+      ]),
+      new THREE.LineDashedMaterial({
+        color: 0xb98e54,
+        dashSize: 0.35,
+        gapSize: 0.22,
+      }),
+    );
+    accessLine.computeLineDistances();
+    inspectionGroup.add(accessLine);
+    inspectionGroup.add(label("기존 접근 · 비계 필요", 12.0, 3.1, 51, 0.6));
+
+    box(scene, mat.zoneB, 0, 0.06, 55, 106, 0.12, 25, false);
+    for (const [x, z, radius, name] of [
+      [-43, 50, 2.7, "원료 저장"],
+      [-31, 50, 2.7, "중간유 저장"],
+      [-43, 61, 2.7, "제품 저장"],
+      [-31, 61, 2.7, "제품 저장"],
+      [-18, 51, 2.2, "탱크"],
+      [-18, 61, 2.2, "탱크"],
+    ])
+      tank(x, z, radius, name);
+    slab(25, 52, 13, 8);
+    box(scene, mat.vesselShadow, 25, 2.3, 52, 11, 4.2, 6.5);
+    box(scene, mat.vessel, 25, 4.5, 52, 11.4, 0.25, 6.8);
+    label("유틸리티", 25, 6.1, 52, 0.78);
+    pump(22, 62, "오프사이트 펌프");
+    slab(43, 58, 5.2, 5.2);
+    cylinder(scene, mat.steelDark, 43, 6.6, 58, 0.52, 12.8);
+    cylinder(scene, mat.steel, 43, 13.1, 58, 0.7, 0.5);
+    label("플레어", 43, 15.0, 58, 0.68);
+    label("오프사이트 · 저장 / 유틸리티", 0, 11.5, 64, 1.55);
+    const offsiteHit = new THREE.Mesh(
+      new THREE.BoxGeometry(106, 0.3, 25),
+      new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.001,
+        depthWrite: false,
+      }),
+    );
+    offsiteHit.position.set(0, 0.3, 55);
+    scene.add(offsiteHit);
+
+    const highlight = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({
+        color: 0xe7aa55,
+        emissive: 0xb58338,
+        emissiveIntensity: 0.24,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+      }),
+    );
+    const outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({
+        color: 0xc3802c,
+        transparent: true,
+        opacity: 0.95,
+      }),
+    );
+    scene.add(highlight, outline);
+    for (let rack = 1; rack <= 30; rack += 1) {
+      const option = document.createElement("option");
+      option.value = String(rack);
+      option.textContent = "R-" + String(rack).padStart(2, "0");
+      rackSelect.append(option);
+    }
+    for (let rack = 1; rack <= 8; rack += 1) {
+      const option = document.createElement("option");
+      option.value = String(rack);
+      option.textContent = "O-" + String(rack).padStart(2, "0");
+      offsiteRackSelect.append(option);
+    }
+    function updateHighlight() {
+      const inOffsite = level === "offsite" || level === "point";
+      const hit = inOffsite
+        ? offsiteSpans.get(selectedOffsiteRack)
+        : spans.get(selectedTeam + ":" + selectedRack);
+      if (!hit) return;
+      const size = hit.geometry.parameters;
+      highlight.position.copy(hit.position);
+      highlight.scale.set(size.width, size.height, size.depth);
+      outline.position.copy(hit.position);
+      outline.scale.copy(highlight.scale);
+      highlight.visible = level !== "plant";
+      outline.visible = level !== "plant";
+    }
+    function moveToView() {
+      let target;
+      let eye;
+      if (level === "plant") {
+        target = new THREE.Vector3(...views.plant.target);
+        eye = new THREE.Vector3(...views.plant.eye);
+      } else if (level === "team") {
+        const [x, z] = teamCenters[selectedTeam];
+        target = new THREE.Vector3(x, 3, z);
+        eye = new THREE.Vector3(x + 25, 29, z + 31);
+      } else if (level === "offsite") {
+        target = new THREE.Vector3(2, 5, 53);
+        eye = new THREE.Vector3(36, 37, 86);
+      } else if (level === "point") {
+        target = offsiteSpans.get(selectedOffsiteRack).position.clone();
+        target.y = 8.3;
+        eye = target.clone().add(new THREE.Vector3(12.5, -1.15, 10.5));
+      } else {
+        const hit = spans.get(selectedTeam + ":" + selectedRack);
+        target = hit.position.clone();
+        target.y = 3.25;
+        eye = target.clone().add(new THREE.Vector3(8, 5.5, 10));
+      }
+      cameraGoal = { target, eye };
+      syncOrbitRange(target, eye);
+      updateHighlight();
+      updateText();
+    }
+    function updateText() {
+      const title =
+        level === "point" && selectedOffsiteRack !== 4
+          ? "오프사이트 랙 근접"
+          : {
+              plant: "공장 전경",
+              team: "생산팀 구역",
+              offsite: "오프사이트",
+              rack: "랙 근접",
+              point: "접촉부 예시",
+            }[level];
+      root.querySelector("#asset-level-text").textContent = title;
+      root.querySelector("#asset-path-text").textContent =
+        level === "plant"
+          ? " · 생산팀 4곳 + 오프사이트"
+          : level === "team"
+            ? " · " + teamNames[selectedTeam]
+            : level === "offsite" || level === "point"
+              ? " · O-" +
+                String(selectedOffsiteRack).padStart(2, "0") +
+                (selectedOffsiteRack === 4 ? " / 접촉부" : " / 이송 랙")
+              : " · " +
+                teamNames[selectedTeam] +
+                " / R-" +
+                String(selectedRack).padStart(2, "0");
+      root
+        .querySelectorAll("[data-level]")
+        .forEach((button) =>
+          button.setAttribute(
+            "aria-pressed",
+            String(
+              button.dataset.level === level &&
+                (level !== "point" || selectedOffsiteRack === 4),
+            ),
+          ),
+        );
+      teamSelect.value = teamNames[selectedTeam];
+      rackSelect.value = String(selectedRack);
+      offsiteRackSelect.value = String(selectedOffsiteRack);
+      const inOffsite = level === "offsite" || level === "point";
+      root.querySelector("#asset-team-label").hidden = inOffsite;
+      root.querySelector("#asset-rack-label").hidden = inOffsite;
+      root.querySelector("#asset-offsite-label").hidden = !inOffsite;
+      offsiteLabels.forEach((sprite) => {
+        sprite.visible = level === "offsite";
+      });
+      contactLabel.visible =
+        (level === "offsite" || level === "point") && selectedOffsiteRack === 4;
+      inspectionGroup.visible =
+        (level === "offsite" || level === "point") && selectedOffsiteRack === 4;
+      detail.innerHTML =
+        level === "plant"
+          ? "가상 공장 전경 · 공정 랙에서 오프사이트 O-01~O-08까지 이어지는 고소 배관축을 탐색합니다. <small>실제 좌표·검사 기록은 연결하지 않았습니다.</small>"
+          : level === "team"
+            ? teamNames[selectedTeam] +
+              " 구역 · 듬성한 지지대 사이 랙 구간과 주변 설비를 살펴봅니다. <small>랙을 클릭하면 해당 구간으로 이동합니다.</small>"
+            : level === "offsite"
+              ? "오프사이트 이송 랙 O-01~O-08 · O-04의 높은 배관 지지부를 선택해 보세요. <small>근접 접근에는 비계 등이 필요할 수 있는 가상 상황입니다.</small>"
+              : level === "point"
+                ? selectedOffsiteRack === 4
+                  ? "O-04 · 배관 지지부의 가상 CPC 예시. 드론은 랙 아래에서 접촉부를 사선으로 올려다봅니다. <small>확보한 사진의 확인 → AI 판독 → 이력 관리는 향후 서비스 연결 흐름입니다. 숨은 접촉면이나 두께는 사진만으로 확정하지 않습니다.</small>"
+                  : "O-" +
+                    String(selectedOffsiteRack).padStart(2, "0") +
+                    " · 오프사이트 고소 배관 구간. <small>O-04에는 접촉부 부식 예시가 표시됩니다.</small>"
+                : teamNames[selectedTeam] +
+                  " · R-" +
+                  String(selectedRack).padStart(2, "0") +
+                  " 구간 <small>굵은 배관, 상·하부 데크, 콘크리트 지지대, 점검용 보행로를 자세히 봅니다.</small>";
+    }
+    function setView(nextLevel, team = selectedTeam, rack = selectedRack) {
+      level = nextLevel;
+      selectedTeam = team;
+      selectedRack = rack;
+      moveToView();
+      updatePlanHighlight();
+      sendToApp({
+        type: "selection",
+        level,
+        teamIndex: selectedTeam,
+        rackNumber: selectedRack,
+        offsiteRackNumber: selectedOffsiteRack,
+      });
+    }
+    function updatePlanHighlight() {
+      planHighlightGroup.clear();
+      if (!planMode) return;
+      for (const rackNumber of planRackIds) {
+        const hit = spans.get(selectedTeam + ":" + rackNumber);
+        if (!hit) continue;
+        const mark = new THREE.Mesh(planMarkGeometry, planMarkMaterial);
+        mark.position.copy(hit.position);
+        const size = hit.geometry.parameters;
+        mark.scale.set(size.width, size.height, size.depth);
+        planHighlightGroup.add(mark);
+      }
+    }
+    function setPlanTool(tool) {
+      planTool = tool === "navigate" ? "navigate" : "select";
+      root.dataset.planTool = planTool;
+      controls.mouseButtons.LEFT =
+        planMode && planTool === "select" ? null : THREE.MOUSE.ROTATE;
+      selectionRectangle.style.display = "none";
+    }
+    function setPlanMode(enabled, racks = [], tool = "select") {
+      planMode = enabled;
+      planRackIds = racks.filter(
+        (rack) => Number.isInteger(rack) && rack >= 1 && rack <= 30,
+      );
+      root.classList.toggle("plan-mode", enabled);
+      setPlanTool(tool);
+      updatePlanHighlight();
+    }
+    window.addEventListener("message", (event) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin ||
+        event.data?.source !== "dashboard"
+      )
+        return;
+      const data = event.data;
+      if (data.type === "hello") {
+        sendToApp({ type: "ready" });
+        return;
+      }
+      if (data.type === "render-pause") {
+        renderer.setAnimationLoop(data.paused ? null : renderFrame);
+        return;
+      }
+      if (data.type === "view") {
+        if (data.level === "plant") setView("plant");
+        else if (data.level === "offsite") setView("offsite");
+        else if (
+          data.level === "point" &&
+          Number.isInteger(data.offsiteRackNumber) &&
+          data.offsiteRackNumber >= 1 &&
+          data.offsiteRackNumber <= 8
+        ) {
+          selectedOffsiteRack = data.offsiteRackNumber;
+          setView("point");
+        } else if (
+          data.level === "team" &&
+          Number.isInteger(data.teamIndex) &&
+          data.teamIndex >= 0 &&
+          data.teamIndex < 4
+        )
+          setView("team", data.teamIndex);
+        else if (
+          data.level === "rack" &&
+          Number.isInteger(data.teamIndex) &&
+          Number.isInteger(data.rackNumber)
+        )
+          setView("rack", data.teamIndex, data.rackNumber);
+      }
+      if (data.type === "plan-mode")
+        setPlanMode(
+          Boolean(data.enabled),
+          Array.isArray(data.racks) ? data.racks : [],
+          data.tool,
+        );
+      if (data.type === "plan-tool" && planMode) setPlanTool(data.tool);
+      if (data.type === "plan-racks") {
+        planRackIds = Array.isArray(data.racks) ? data.racks : [];
+        updatePlanHighlight();
+      }
+    });
+    root.querySelectorAll("[data-level]").forEach((button) =>
+      button.addEventListener("click", () => {
+        if (button.dataset.level === "point") selectedOffsiteRack = 4;
+        setView(button.dataset.level);
+      }),
+    );
+    teamSelect.addEventListener("change", () =>
+      setView("team", teamNames.indexOf(teamSelect.value)),
+    );
+    rackSelect.addEventListener("change", () =>
+      setView("rack", selectedTeam, Number(rackSelect.value)),
+    );
+    offsiteRackSelect.addEventListener("change", () => {
+      selectedOffsiteRack = Number(offsiteRackSelect.value);
+      setView("point");
+    });
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let pointerStart = null;
+    let dragged = false;
+    canvas.addEventListener("pointerdown", (event) => {
+      pointerStart =
+        !planMode || (planTool === "select" && event.button === 0)
+          ? [event.clientX, event.clientY]
+          : null;
+      dragged = false;
+      if (planMode && pointerStart) canvas.setPointerCapture(event.pointerId);
+    });
+    canvas.addEventListener("pointermove", (event) => {
+      if (!pointerStart) return;
+      if (
+        Math.hypot(
+          event.clientX - pointerStart[0],
+          event.clientY - pointerStart[1],
+        ) > 6
+      )
+        dragged = true;
+      if (planMode && planTool === "select") {
+        const bounds = canvas.getBoundingClientRect();
+        selectionRectangle.style.display = "block";
+        selectionRectangle.style.left =
+          Math.min(pointerStart[0], event.clientX) - bounds.left + "px";
+        selectionRectangle.style.top =
+          Math.min(pointerStart[1], event.clientY) - bounds.top + "px";
+        selectionRectangle.style.width =
+          Math.abs(event.clientX - pointerStart[0]) + "px";
+        selectionRectangle.style.height =
+          Math.abs(event.clientY - pointerStart[1]) + "px";
+      }
+    });
+    canvas.addEventListener("pointerup", (event) => {
+      if (
+        planMode &&
+        planTool === "select" &&
+        pointerStart &&
+        event.button === 0
+      ) {
+        const bounds = canvas.getBoundingClientRect();
+        const left = Math.min(pointerStart[0], event.clientX);
+        const right = Math.max(pointerStart[0], event.clientX);
+        const top = Math.min(pointerStart[1], event.clientY);
+        const bottom = Math.max(pointerStart[1], event.clientY);
+        let next = null;
+        if (right - left > 6 && bottom - top > 6) {
+          const selected = [];
+          for (let rackNumber = 1; rackNumber <= 30; rackNumber += 1) {
+            const hit = spans.get(selectedTeam + ":" + rackNumber);
+            const projected = hit.position.clone().project(camera);
+            const x = bounds.left + ((projected.x + 1) * bounds.width) / 2;
+            const y = bounds.top + ((1 - projected.y) * bounds.height) / 2;
+            if (
+              projected.z < 1 &&
+              x >= left &&
+              x <= right &&
+              y >= top &&
+              y <= bottom
+            )
+              selected.push(rackNumber);
+          }
+          if (selected.length)
+            next = [...new Set([...planRackIds, ...selected])];
+        } else {
+          const pointer = new THREE.Vector2(
+            ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+            -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+          );
+          raycaster.setFromCamera(pointer, camera);
+          const hit = raycaster.intersectObjects(
+            spanHits.filter((item) => item.userData.teamIndex === selectedTeam),
+            false,
+          )[0]?.object;
+          if (hit) {
+            const rackId = hit.userData.rackId;
+            next = planRackIds.includes(rackId)
+              ? planRackIds.filter((id) => id !== rackId)
+              : [...planRackIds, rackId];
+          }
+        }
+        if (next) {
+          planRackIds = next.sort((a, b) => a - b);
+          updatePlanHighlight();
+          sendToApp({
+            type: "plan-racks",
+            teamIndex: selectedTeam,
+            racks: planRackIds,
+          });
+        }
+        selectionRectangle.style.display = "none";
+      }
+      pointerStart = null;
+    });
+    canvas.addEventListener("pointercancel", () => {
+      pointerStart = null;
+      dragged = false;
+      selectionRectangle.style.display = "none";
+    });
+    canvas.addEventListener("click", (event) => {
+      if (planMode) return;
+      if (dragged) {
+        dragged = false;
+        return;
+      }
+      const bounds = canvas.getBoundingClientRect();
+      pointer.set(
+        ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+        -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointer, camera);
+      if (level === "plant") {
+        if (raycaster.intersectObject(offsiteHit, false).length) {
+          setView("offsite");
+          return;
+        }
+        const zone = raycaster.intersectObjects(zoneHits, false)[0]?.object;
+        if (zone) setView("team", zone.userData.teamIndex);
+      } else if (level === "offsite" || level === "point") {
+        const span = raycaster.intersectObjects(offsiteHits, false)[0]?.object;
+        if (span) {
+          selectedOffsiteRack = span.userData.offsiteRack;
+          setView("point");
+        }
+      } else {
+        const span = raycaster.intersectObjects(
+          spanHits.filter((hit) => hit.userData.teamIndex === selectedTeam),
+          false,
+        )[0]?.object;
+        if (span) setView("rack", selectedTeam, span.userData.rackId);
+      }
+    });
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      renderer.setSize(rect.width, rect.height, false);
+      camera.aspect = rect.width / rect.height;
+      camera.updateProjectionMatrix();
+    }
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(canvas);
+    window.addEventListener("pagehide", (event) => {
+      if (event.persisted || disposed) return;
+      disposed = true;
+      renderer.setAnimationLoop(null);
+      resizeObserver.disconnect();
+      controls.dispose();
+      renderer.dispose();
+      renderer.forceContextLoss();
+    });
+    resize();
+    updateText();
+    updateHighlight();
+    sendToApp({
+      type: "ready",
+      level,
+      teamIndex: selectedTeam,
+      rackNumber: selectedRack,
+    });
+    function renderFrame() {
+      if (cameraGoal) {
+        camera.position.lerp(cameraGoal.eye, 0.12);
+        controls.target.lerp(cameraGoal.target, 0.12);
+        if (
+          camera.position.distanceTo(cameraGoal.eye) < 0.06 &&
+          controls.target.distanceTo(cameraGoal.target) < 0.06
+        )
+          cameraGoal = null;
+      }
+      syncOrbitRange();
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    renderer.setAnimationLoop(renderFrame);
+  </script>
+</div>
