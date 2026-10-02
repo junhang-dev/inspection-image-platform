@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   REPAIR_STATUSES, REPAIR_METHODS, LEGACY_MIGRATION_VERSION,
-  maintenanceId, validateMaintenanceItem, createMaintenanceItem,
+  maintenanceId, photoMaintenanceId, validateMaintenanceItem, createMaintenanceItem,
   applyMaintenancePatch, migrateLegacyPoint,
 } from "../server/maintenance-domain.mjs";
 
@@ -83,6 +83,25 @@ test("missing photos, other plans, other points and null/assigned mismatches fai
   rejects(() => create({ planId: null, photoIds: [photoA] }, photos), "photo_relation_mismatch");
   assert.equal(create({ planId: null, photoIds: [photoA] }, [{ id: photoA, pointId }]).planId, null);
   assert.equal(create({ planId: null, photoIds: [photoA] }, [{ id: photoA, pointId, planId: null }]).planId, null);
+});
+
+test("사진별 보수 기록은 기존 포인트에 연결된 사진도 한 장 대상으로 저장한다", () => {
+  const linked = { id: photoA, planId, pointId };
+  const item = createMaintenanceItem({
+    planId,
+    pointId: null,
+    targetType: "photo",
+    targetId: photoA,
+    photoIds: [photoA],
+    repairStatus: "planned",
+    repairMethod: "paint",
+    ta: true,
+    inWorklist: true,
+    inclusionMode: "auto",
+  }, [linked]);
+  assert.equal(item.id, photoMaintenanceId(photoA));
+  assert.equal(item.targetId, photoA);
+  assert.equal(item.pointId, null);
 });
 
 test("duplicate evidence and ambiguous snapshots are rejected without mutation", () => {

@@ -18,9 +18,69 @@ export function legacyInclusionMode(item, history = []) {
 
 // One metadata snapshot supplies membership, totals, pagination and details.
 // Reading automatic candidates never overwrites saved decisions or history.
-export function deriveMaintenance({ photos, saved, points, plans, history = [] }) {
+export function deriveMaintenance({ photos, saved, points, plans, history = [] }, { photoBased = false } = {}) {
   const pointById = new Map(points.map((point) => [point.id, point]));
   const planById = new Map(plans.map((plan) => [plan.id, plan]));
+  if (photoBased) {
+    const savedById = new Map(saved.map((item) => [item.id, item]));
+    return photos.map((photo) => {
+      const id = photoMaintenanceId(photo.id);
+      const photoItem = savedById.get(id);
+      const legacyItem = photo.pointId
+        ? savedById.get(maintenanceId(photo.planId ?? null, photo.pointId))
+        : null;
+      const item = photoItem ?? legacyItem;
+      const point = pointById.get(photo.pointId);
+      const plan = planById.get(photo.planId);
+      const eligible = repairNeeded(photo);
+      const mode = item ? legacyInclusionMode(item, history) : "auto";
+      const visibility = photoItem?.visibility ?? legacyItem?.visibility ?? "visible";
+      const rackId = photo.rackId ?? point?.rackId ?? null;
+      const rack = locations.racks.find((candidate) => candidate.id === rackId);
+      const reviewed = item?.reviewedEvidence;
+      const newEvidenceCount = item?.repairStatus === "done" && eligible &&
+        (reviewed ? reviewed[photo.id] !== evidenceFingerprint(photo) :
+          Date.parse(photo.updatedAt ?? photo.createdAt) > Date.parse(item.updatedAt ?? item.createdAt)) ? 1 : 0;
+      return {
+        id,
+        planId: photo.planId ?? null,
+        pointId: null,
+        sourcePointId: photo.pointId ?? null,
+        targetType: "photo",
+        targetId: photo.id,
+        persisted: Boolean(photoItem),
+        planTitle: plan?.title ?? "계획 미지정",
+        pointLabel: point
+          ? [point.equipment, rack?.name ?? point.rack, point.name].filter(Boolean).join(" · ")
+          : rack
+            ? [locations.teams.find((team) => team.id === rack.teamId)?.name, rack.name].filter(Boolean).join(" · ")
+            : "위치 미확인",
+        photoName: photo.name,
+        photoVisibility: photo.visibility ?? "visible",
+        photoGrade: effectiveGrade(photo),
+        photoIds: [photo.id],
+        repairStatus: item?.repairStatus ?? (eligible ? "review" : "none"),
+        repairMethod: item?.repairMethod ?? "undecided",
+        ta: item?.ta ?? false,
+        editVersion: photoItem?.editVersion ?? 0,
+        recordPurpose: photo.recordPurpose ?? "inspection",
+        createdAt: photo.createdAt,
+        visibility,
+        inclusionMode: mode,
+        inWorklist: visibility === "visible" && (mode === "include" || (mode === "auto" && eligible)),
+        automaticEligible: eligible,
+        inclusionSource: mode === "include" ? "manual" : mode === "exclude" ? "excluded" : "automatic",
+        rackId,
+        teamId: photo.teamId ?? rack?.teamId ?? null,
+        candidatePhotoIds: [photo.id],
+        automaticPhotoIds: eligible ? [photo.id] : [],
+        evidenceVersions: eligible ? { [photo.id]: evidenceFingerprint(photo) } : {},
+        photoCount: 1,
+        effectiveGrade: effectiveGrade(photo),
+        newEvidenceCount,
+      };
+    });
+  }
   const groups = new Map();
   for (const photo of photos) {
     const target = photoTarget(photo);
@@ -72,25 +132,31 @@ export function deriveMaintenance({ photos, saved, points, plans, history = [] }
 }
 
 export function maintenancePage(items, query) {
-  const filtered = items.filter((item) =>
+  const targetType = query.targetType ?? "all";
+  const inScope = (item) =>
+    (targetType === "all" || item.targetType === targetType) &&
     (query.planId === "all" || item.planId === (query.planId === "unassigned" ? null : query.planId)) &&
-    (query.pointId === "all" || item.pointId === query.pointId) &&
+    (query.pointId === "all" || (item.sourcePointId ?? item.pointId) === query.pointId) &&
     (query.recordPurpose === "all" || item.recordPurpose === query.recordPurpose) &&
     (query.visibility === "all" || item.visibility === query.visibility) &&
     (query.inWorklist === "all" || item.inWorklist) &&
     (query.ta === "all" || item.ta === (query.ta === "true")) &&
-    (query.repairStatus === "all" || item.repairStatus === query.repairStatus) &&
     (query.repairMethod === "all" || item.repairMethod === query.repairMethod) &&
     (query.teamId === "all" || item.teamId === query.teamId) &&
     (query.rackId === "all" || item.rackId === query.rackId) &&
-    (!query.search || `${item.planTitle} ${item.pointLabel}`.toLocaleLowerCase().includes(query.search.toLocaleLowerCase()))
-  ).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id));
+    (!query.search || `${item.planTitle} ${item.pointLabel} ${item.photoName ?? ""}`.toLocaleLowerCase().includes(query.search.toLocaleLowerCase()));
+  const scoped = items.filter(inScope);
+  const statusCounts = { none: 0, review: 0, planned: 0, progress: 0, done: 0 };
+  for (const item of scoped) if (Object.hasOwn(statusCounts, item.repairStatus)) statusCounts[item.repairStatus]++;
+  const filtered = scoped.filter((item) => query.repairStatus === "all" || item.repairStatus === query.repairStatus)
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id));
   const total = filtered.length, pages = Math.max(1, Math.ceil(total / query.pageSize)), page = Math.min(query.page, pages);
   const pointSummaries = {};
   for (const item of filtered) {
     if (!item.pointId) continue;
-    const row = pointSummaries[item.pointId] ??= { total: 0, registered: 0, none: 0, review: 0, planned: 0, progress: 0, done: 0 };
+    const pointId = item.sourcePointId ?? item.pointId;
+    const row = pointSummaries[pointId] ??= { total: 0, registered: 0, none: 0, review: 0, planned: 0, progress: 0, done: 0 };
     row.total++; if (item.inWorklist) row.registered++; row[item.repairStatus]++;
   }
-  return { items: filtered.slice((page - 1) * query.pageSize, page * query.pageSize), total, pages, page, pageSize: query.pageSize, pointSummaries, summary: { automatic: filtered.filter((item) => item.automaticEligible).length, newEvidence: filtered.filter((item) => item.newEvidenceCount > 0).length }, scope: query };
+  return { items: filtered.slice((page - 1) * query.pageSize, page * query.pageSize), total, pages, page, pageSize: query.pageSize, pointSummaries, statusCounts, summary: { automatic: filtered.filter((item) => item.automaticEligible).length, newEvidence: filtered.filter((item) => item.newEvidenceCount > 0).length, worklist: filtered.filter((item) => item.inWorklist).length }, scope: query };
 }

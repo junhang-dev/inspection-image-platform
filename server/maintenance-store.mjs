@@ -117,7 +117,7 @@ export async function saveMaintenance(input) {
     if (target.targetType !== "photo") await parents(connection, planId, pointId);
     else {
       const photo = await locked(connection, "inspection", target.targetId);
-      if (!photo || photo.pointId || (photo.planId ?? null) !== planId) throw fail(422, "사진별 보수 대상의 계획·포인트 관계가 변경되었습니다.");
+      if (!photo || (photo.planId ?? null) !== planId) throw fail(422, "사진별 보수 대상의 계획 관계가 변경되었습니다.");
       patch.photoIds ??= current?.photoIds ?? [photo.id];
       if (patch.photoIds.length !== 1 || patch.photoIds[0] !== photo.id) throw fail(422, "사진별 보수 항목은 해당 원본 한 장에 연결됩니다.");
     }

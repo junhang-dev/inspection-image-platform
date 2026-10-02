@@ -68,6 +68,153 @@
   outline: 3px solid var(--maintenance-green);
   outline-offset: 3px;
 }
+.photoReview {
+  --maintenance-ink: var(--ink, #223536);
+  --maintenance-muted: var(--muted, #5f7067);
+  --maintenance-line: var(--line, #e5eae8);
+  --maintenance-green: var(--green, #009688);
+  --maintenance-green-hover: var(--green-hover, #00796b);
+  --maintenance-green-soft: var(--green-soft, #e6f4f2);
+  --maintenance-green-border: var(--green-border, #b7dfd9);
+  --maintenance-surface: var(--surface, #fff);
+  --maintenance-amber-bg: var(--badge-amber-bg, #fcf3df);
+  --maintenance-amber-text: var(--badge-amber-text, #805b1c);
+  --maintenance-blue-bg: var(--badge-blue-bg, #edf3f8);
+  --maintenance-blue-text: var(--badge-blue-text, #2e577b);
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(280px, 0.88fr);
+  align-items: start;
+  gap: 22px;
+  min-width: 0;
+}
+.photoReviewStage {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface-muted, #f2f4f7);
+}
+.photoReviewStage > img {
+  display: block;
+  width: 100%;
+  max-height: min(70vh, 740px);
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+}
+.photoReviewCaption {
+  padding: 10px 13px 12px;
+  color: var(--maintenance-muted);
+  overflow-wrap: anywhere;
+}
+.photoReviewNav {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
+}
+.photoReviewNav button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 56px;
+  border: 1px solid #ffffffb8;
+  border-radius: 12px;
+  color: var(--maintenance-ink);
+  background: #ffffffdf;
+  box-shadow: 0 2px 12px #102b2b2b;
+  pointer-events: auto;
+}
+.photoReviewNav button:disabled {
+  visibility: hidden;
+}
+.photoReviewHint {
+  padding: 0 13px 11px;
+  color: var(--maintenance-muted);
+  font-size: var(--type-caption);
+}
+.photoReviewForm {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.photoReviewContext {
+  color: var(--maintenance-muted);
+  font-size: var(--type-small);
+  overflow-wrap: anywhere;
+}
+.photoReviewGrade {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 5px 12px;
+  padding: 15px 17px;
+  border: 1px solid var(--maintenance-green-border);
+  border-radius: 9px;
+}
+.photoReviewGrade > span { color: var(--maintenance-muted); }
+.photoReviewGrade > strong { font-size: var(--type-section); }
+.photoReviewGrade > small { grid-column: 1 / -1; color: var(--maintenance-muted); }
+.photoReviewStages {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.photoReviewStages legend {
+  margin-bottom: 8px;
+  font-weight: 650;
+}
+.photoReviewStages button {
+  min-width: 0;
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 1px solid var(--maintenance-line);
+  border-radius: 7px;
+  color: var(--maintenance-ink);
+  background: var(--maintenance-surface);
+}
+.photoReviewStages .selectedStage {
+  border-color: var(--maintenance-green);
+  color: var(--maintenance-green-hover);
+  background: var(--maintenance-green-soft);
+  font-weight: 700;
+}
+.taToggle {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--maintenance-line);
+  border-radius: 8px;
+  color: var(--maintenance-ink);
+  background: var(--maintenance-surface);
+  text-align: left;
+}
+.taToggle.taSelected {
+  border-color: var(--maintenance-green-border);
+  color: var(--maintenance-green-hover);
+  background: var(--maintenance-green-soft);
+  font-weight: 650;
+}
+.taCheck {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+}
 .heading {
   display: flex;
   align-items: center;
@@ -86,6 +233,7 @@
   font-weight: 700;
   line-height: 1.35;
 }
+.worklistHeading { margin-bottom: 12px; }
 .badge {
   display: inline-flex;
   align-items: center;
@@ -374,47 +522,134 @@
 }
 .worklist {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 .workItem {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
   border: 1px solid var(--maintenance-line);
   border-radius: var(--card-radius);
-  padding: var(--card-padding);
+  padding: 12px 16px;
   min-width: 0;
+  color: inherit;
+  background: var(--maintenance-surface);
+  text-align: left;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.workItem:not(:disabled):hover {
+  border-color: var(--maintenance-green-border);
+  background: var(--surface-muted, #f8fafc);
+}
+.workThumb {
+  display: block;
+  width: 96px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--surface-muted, #f2f4f7);
+}
+.workThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.workContent {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+.workContent .itemHeading {
+  margin: 0;
+}
+.workPhotoName {
+  overflow: hidden;
+  color: var(--maintenance-ink);
+  font-size: var(--type-body);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workLocation,
+.workMeta {
+  min-width: 0;
+  color: var(--maintenance-muted);
+  font-size: var(--type-small);
+  line-height: 1.45;
+}
+.workLocation {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.workMeta i {
+  font-style: normal;
+  opacity: 0.65;
+}
+.workMeta em {
+  color: var(--maintenance-warning-text);
+  font-style: normal;
+  font-weight: 650;
+}
+.workOpenCue {
+  color: var(--maintenance-muted);
+  font-size: 28px;
+  line-height: 1;
+  text-align: center;
 }
 .itemHeading {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
+.unitBadge { color: var(--maintenance-green-hover); background: var(--maintenance-green-soft); }
 .method {
   margin-left: auto;
   color: var(--maintenance-muted);
   font-size: var(--type-small);
 }
 .workItem h4 {
-  font-size: var(--type-subhead);
-  line-height: 1.45;
+  font-size: var(--type-body);
+  line-height: 1.4;
   overflow-wrap: anywhere;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 .rowDetails {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+.rowDetails > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 .rowDetails dd {
   font-size: var(--type-small);
+  color: var(--maintenance-ink);
 }
 .rowActions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 10px;
 }
 .rowActions button {
   font-size: var(--type-small);
+  min-height: 36px;
+  padding: 7px 11px;
 }
 .empty {
   display: grid;
@@ -442,12 +677,37 @@
   margin-top: 20px;
   color: var(--maintenance-muted);
 }
-.pagination > span {
+.paginationSummary {
   font-size: var(--type-small);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.pagination > div {
+.paginationControls {
   display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pageSizeControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--maintenance-muted);
+  font-size: var(--type-caption);
+  white-space: nowrap;
+}
+.pageSizeControl select {
+  width: 88px;
+  min-height: 42px;
+  padding: 7px 30px 7px 10px;
+  font-size: var(--type-small);
+}
+.paginationButtons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .srOnly {
@@ -465,12 +725,29 @@
   .root {
     padding: 17px;
   }
+  .pagination {
+    align-items: flex-start;
+  }
+  .paginationControls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .paginationButtons {
+    justify-content: flex-end;
+  }
   .heading h3 {
     font-size: var(--type-section);
   }
   .formGrid {
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
+  }
+  .photoReview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 17px;
+  }
+  .photoReviewStage > img {
+    max-height: 48vh;
   }
   .context {
     padding: 13px;
@@ -492,6 +769,11 @@
   }
   .workItem {
     padding: 14px;
+    grid-template-columns: 76px minmax(0, 1fr) 14px;
+    gap: 11px;
+  }
+  .workThumb {
+    width: 76px;
   }
   .method {
     flex: 1 0 100%;

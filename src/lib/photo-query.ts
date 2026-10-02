@@ -54,6 +54,7 @@ export const defaultPhotoScope: PhotoScope = {
   search: "",
 };
 export type PhotoQuery = Partial<PhotoScope> & {
+  planIds?: string[];
   pointId?: string;
   photoId?: string;
   classification?: string;
@@ -71,11 +72,15 @@ export type PhotoPage = {
     total: number;
     repair: number;
     pending: number;
+    error: number;
+    unread: number;
+    done: number;
     retake: number;
     labeling: number;
   };
   pointCounts: Record<string, number>;
   rackCounts: Record<string, number>;
+  planCounts: Record<string, number>;
 };
 export function usePhotoQuery(query: PhotoQuery) {
   const key = new URLSearchParams(

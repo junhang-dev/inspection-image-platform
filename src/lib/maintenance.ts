@@ -8,6 +8,7 @@ import type {
 export type Purpose = "inspection" | "presentation" | "verification";
 export type SavedMaintenance = MaintenanceItem & { recordPurpose: Purpose };
 export type MaintenanceQuery = {
+  targetType?: "all" | "point" | "photo";
   planId?: string;
   pointId?: string;
   recordPurpose?: Purpose | "all";
@@ -27,6 +28,8 @@ export type MaintenancePage = {
   total: number;
   page: number;
   pages: number;
+  statusCounts: { none: number; review: number; planned: number; progress: number; done: number };
+  summary: { automatic: number; newEvidence: number; worklist: number };
   pointSummaries: Record<
     string,
     {

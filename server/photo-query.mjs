@@ -6,9 +6,18 @@ const id = z.union([
   z.literal("all"),
   z.literal("unassigned"),
 ]);
+const planIds = z.preprocess(
+  (value) => {
+    if (value === undefined) return undefined;
+    const values = Array.isArray(value) ? value : [value];
+    return values.flatMap((item) => String(item).split(",")).filter(Boolean);
+  },
+  z.array(z.string().uuid()).max(500).transform((ids) => [...new Set(ids)]).optional(),
+);
 export const photoQuerySchema = z
   .object({
     planId: id.default("all"),
+    planIds,
     photoId: z.union([z.string().uuid(), z.literal("all")]).default("all"),
     pointId: id.default("all"),
     recordPurpose: z
@@ -60,11 +69,19 @@ export function photoWhere(query, { classification = true } = {}) {
   const clauses = ["i.kind = 'inspection'"];
   const values = [];
   if (query.photoId && query.photoId !== "all") { clauses.push("i.id = ?"); values.push(query.photoId); }
-  for (const key of ["planId", "pointId"]) {
-    if (query[key] !== "all") {
-      clauses.push(`COALESCE(${text("i", key)}, '') = ?`);
-      values.push(query[key] === "unassigned" ? "" : query[key]);
+  if (query.planIds !== undefined) {
+    if (!query.planIds.length) clauses.push("1 = 0");
+    else {
+      clauses.push(`${text("i", "planId")} IN (${query.planIds.map(() => "?").join(",")})`);
+      values.push(...query.planIds);
     }
+  } else if (query.planId !== "all") {
+    clauses.push(`COALESCE(${text("i", "planId")}, '') = ?`);
+    values.push(query.planId === "unassigned" ? "" : query.planId);
+  }
+  if (query.pointId !== "all") {
+    clauses.push(`COALESCE(${text("i", "pointId")}, '') = ?`);
+    values.push(query.pointId === "unassigned" ? "" : query.pointId);
   }
   for (const [key, fallback] of [
     ["recordPurpose", "inspection"],
@@ -133,6 +150,10 @@ export async function queryPhotos(pool, decodeEntity, query) {
       `SELECT ${rackLocation} AS rackId, COUNT(*) AS total ${from} WHERE ${filtered.sql} GROUP BY ${rackLocation}`,
       filtered.values,
     );
+    const [planCounts] = await connection.execute(
+      `SELECT ${text("i", "planId")} AS planId, COUNT(*) AS total ${from} WHERE ${filtered.sql} GROUP BY ${text("i", "planId")}`,
+      filtered.values,
+    );
     await connection.commit();
     return {
       items: rows.map((row) => {
@@ -155,6 +176,7 @@ export async function queryPhotos(pool, decodeEntity, query) {
           .map((row) => [row.pointId, Number(row.total)]),
       ),
       rackCounts: Object.fromEntries(rackCounts.filter((row) => row.rackId).map((row) => [row.rackId, Number(row.total)])),
+      planCounts: Object.fromEntries(planCounts.filter((row) => row.planId).map((row) => [row.planId, Number(row.total)])),
       scope: query,
     };
   } catch (error) {

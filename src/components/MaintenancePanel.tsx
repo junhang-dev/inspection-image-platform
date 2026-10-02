@@ -11,6 +11,11 @@ export type MaintenanceItem = {
   pointId: string | null;
   targetType?: "point" | "photo";
   targetId?: string;
+  sourcePointId?: string | null;
+  photoName?: string;
+  photoGrade?: number | null;
+  planTitle?: string | null;
+  pointLabel?: string;
   persisted?: boolean;
   inclusionMode?: "auto" | "include" | "exclude";
   visibility?: "visible" | "hidden";
@@ -358,11 +363,15 @@ export function MaintenanceEditor({
 }
 
 export type MaintenanceWorklistRow = MaintenanceItem & {
+  recordPurpose?: "inspection" | "presentation" | "verification";
   planTitle: string | null;
   pointLabel: string;
+  photoName?: string;
+  photoGrade?: number | null;
   /** Pass the server's evidence count; null means unavailable. */
   photoCount: number | null;
 };
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 export type MaintenanceWorklistProps = {
   /** Parent supplies already-filtered worklist rows. No client-side re-filtering. */
   items: readonly MaintenanceWorklistRow[];
@@ -370,12 +379,14 @@ export type MaintenanceWorklistProps = {
   total: number | null;
   page?: number;
   pages?: number;
+  pageSize?: number;
+  onPageSizeChange?: (pageSize: number) => void;
+  title?: string;
+  emptyDescription?: string;
   onPageChange?: (page: number) => void;
   busy?: boolean;
   error?: string | null;
-  onOpen: (itemId: string) => void;
-  onOpenPlan: (planId: string) => void;
-  onOpenPoint: (pointId: string) => void;
+  onOpen: (item: MaintenanceWorklistRow) => void;
 };
 
 export function MaintenanceWorklist({
@@ -383,12 +394,14 @@ export function MaintenanceWorklist({
   total,
   page,
   pages,
+  pageSize = 10,
+  onPageSizeChange,
+  title = "대상 목록",
+  emptyDescription = "보수 필요 사진이 자동으로 모입니다. 목록에서 사진을 선택해 작업 방법과 TA 포함 여부를 관리하세요.",
   onPageChange,
   busy = false,
   error,
   onOpen,
-  onOpenPlan,
-  onOpenPoint,
 }: MaintenanceWorklistProps) {
   const titleId = useId();
   const validTotal =
@@ -400,18 +413,9 @@ export function MaintenanceWorklist({
     pages! >= 1;
   return (
     <section className={styles.root} aria-labelledby={titleId} aria-busy={busy}>
-      <header className={styles.heading}>
-        <div>
-          <p className={styles.eyebrow}>자동 판정과 수동 업무 기록</p>
-          <h3 id={titleId}>워크리스트</h3>
-        </div>
-        <span className={styles.total}>
-          {validTotal ? `전체 ${total}건` : "전체 건수 미조회"}
-        </span>
+      <header className={`${styles.heading} ${styles.worklistHeading}`}>
+        <h3 id={titleId}>{title}</h3>
       </header>
-      <p className={styles.intro}>
-        보수 기록을 열어 상태·방법과 근거 사진을 확인하세요.
-      </p>
       {error && (
         <p className={styles.error} role="alert">
           {error}
@@ -420,77 +424,43 @@ export function MaintenanceWorklist({
       )}
       {items.length > 0 ? (
         <ul className={styles.worklist}>
-          {items.map((item) => (
-            <li key={item.id}>
-              <article
-                className={styles.workItem}
-                aria-label={item.pointLabel || "포인트 이름 미조회"}
-              >
-                <div className={styles.itemHeading}>
-                  <span
-                    className={`${styles.badge} ${statusClass[item.repairStatus] || styles.muted}`}
-                  >
-                    {statusLabels[item.repairStatus] || "상태 미확인"}
+          {items.map((item) => {
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className={styles.workItem}
+                  aria-label={`${item.photoName || "검사 사진"} · ${statusLabels[item.repairStatus] || "상태 미확인"} · 보수 상세 열기`}
+                  disabled={busy}
+                  onClick={() => onOpen(item)}
+                >
+                  <span className={styles.workThumb} aria-hidden="true">
+                    {item.targetId && <img src={`${apiBase}/api/inspections/${item.targetId}/thumbnail`} alt="" loading="lazy" />}
                   </span>
-                  {item.ta && (
-                    <span className={`${styles.badge} ${styles.muted}`}>
-                      TA 포함
-                    </span>
-                  )}
-                  <span className={styles.method}>
-                    방법 · {methodLabels[item.repairMethod] || "방법 미확인"}
-                  </span>
-                </div>
-                {!!item.newEvidenceCount && <p className={styles.warning}>완료 후 새 근거 {item.newEvidenceCount}개</p>}
-                <h4>{item.pointLabel || "포인트 이름 미조회"}</h4>
-                <dl className={styles.rowDetails}>
-                  <div>
-                    <dt>검사 계획</dt>
-                    <dd>
-                      {item.planId === null
-                        ? "계획 미지정"
-                        : item.planTitle || "계획 이름 미조회"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>근거 사진</dt>
-                    <dd>
-                      {item.photoCount !== null &&
-                      Number.isSafeInteger(item.photoCount) &&
-                      item.photoCount >= 0
-                        ? `${item.photoCount}개`
-                        : "미조회"}
-                    </dd>
-                  </div>
-                </dl>
-                <div className={styles.rowActions}>
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    disabled={busy}
-                    onClick={() => {
-                      if (!busy) onOpen(item.id);
-                    }}
-                  >
-                    보수 기록·근거 사진
-                  </button>
-                  {item.planId !== null && (
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      disabled={busy}
-                      onClick={() => {
-                        if (!busy) onOpenPlan(item.planId!);
-                      }}
+                  <span className={styles.workContent}>
+                    <span className={styles.itemHeading}>
+                    <span
+                      className={`${styles.badge} ${statusClass[item.repairStatus] || styles.muted}`}
                     >
-                      원래 계획
-                    </button>
-                  )}
-                  {item.pointId && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => onOpenPoint(item.pointId!)}>기존 위치 보기</button>}
-                </div>
-              </article>
-            </li>
-          ))}
+                      {statusLabels[item.repairStatus] || "상태 미확인"}
+                    </span>
+                    </span>
+                    <strong className={styles.workPhotoName}>{item.photoName || "사진 이름 미조회"}</strong>
+                    <span className={styles.workLocation}>{item.planTitle || "계획 미지정"} · {item.pointLabel || "위치 미확인"}</span>
+                    <span className={styles.workMeta}>
+                      {Number.isInteger(item.photoGrade) && item.photoGrade! >= 1 && item.photoGrade! <= 5 ? `${item.photoGrade}등급` : "등급 미확인"}
+                      <i aria-hidden="true">·</i>
+                      {methodLabels[item.repairMethod] || "방법 미정"}
+                      <i aria-hidden="true">·</i>
+                      {item.ta ? "TA 포함" : "TA 미포함"}
+                      {!!item.newEvidenceCount && <em>새 근거 {item.newEvidenceCount}</em>}
+                    </span>
+                  </span>
+                  <span className={styles.workOpenCue} aria-hidden="true">›</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <div className={styles.empty} role="status">
@@ -500,45 +470,78 @@ export function MaintenanceWorklist({
               : error
                 ? "워크리스트를 조회하지 못했습니다."
                 : validTotal && total > 0
-                  ? "이 페이지에 표시할 항목이 없습니다."
-                  : "표시할 워크리스트 항목이 없습니다."}
+                ? "이 페이지에 표시할 항목이 없습니다."
+                : "표시할 워크리스트 항목이 없습니다."}
           </strong>
           {!busy && !error && (
-            <p>
-              보수 필요 등급의 사진이 자동 반영됩니다. 상세 조건에서 제외·삭제 항목도 확인할 수 있습니다.
-            </p>
+            <p>{emptyDescription}</p>
           )}
         </div>
       )}
       {pagination && (
         <nav className={styles.pagination} aria-label="워크리스트 페이지">
-          <span>
-            {page} / {pages}페이지
+          <span className={styles.paginationSummary}>
+            {validTotal ? `전체 ${total}건 · ` : ""}{page} / {pages}페이지
           </span>
-          {onPageChange && (
-            <div>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                disabled={busy || page! <= 1}
-                onClick={() => {
-                  if (!busy && page! > 1) onPageChange(page! - 1);
-                }}
+          <div className={styles.paginationControls}>
+            <label className={styles.pageSizeControl}>
+              한 화면에 보기
+              <select
+                aria-label="한 화면에 보기"
+                value={pageSize}
+                disabled={busy || !onPageSizeChange}
+                onChange={(event) => onPageSizeChange?.(Number(event.target.value))}
               >
-                이전
-              </button>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                disabled={busy || page! >= pages!}
-                onClick={() => {
-                  if (!busy && page! < pages!) onPageChange(page! + 1);
-                }}
-              >
-                다음
-              </button>
-            </div>
-          )}
+                <option value={10}>10장</option>
+                <option value={25}>25장</option>
+                <option value={50}>50장</option>
+              </select>
+            </label>
+            {onPageChange && (
+              <div className={styles.paginationButtons}>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={busy || page! <= 1}
+                  onClick={() => {
+                    if (!busy && page! > 1) onPageChange(1);
+                  }}
+                >
+                  처음
+                </button>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={busy || page! <= 1}
+                  onClick={() => {
+                    if (!busy && page! > 1) onPageChange(page! - 1);
+                  }}
+                >
+                  이전
+                </button>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={busy || page! >= pages!}
+                  onClick={() => {
+                    if (!busy && page! < pages!) onPageChange(page! + 1);
+                  }}
+                >
+                  다음
+                </button>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={busy || page! >= pages!}
+                  onClick={() => {
+                    if (!busy && page! < pages!) onPageChange(pages!);
+                  }}
+                >
+                  마지막
+                </button>
+              </div>
+            )}
+          </div>
         </nav>
       )}
     </section>

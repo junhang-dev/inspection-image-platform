@@ -42,6 +42,7 @@ import { publicPayload } from "./publication-contract.mjs";
 
 const profile = runtimeProfile();
 const dataset = await loadDatasetContract(profile);
+const backgroundWorkersEnabled = process.env.DISABLE_BACKGROUND_WORKERS !== "1";
 const app = express();
 if (profile.scope === "shared") app.use((_req, res, next) => {
   const json = res.json.bind(res);
@@ -742,7 +743,9 @@ async function processNext() {
 }
 for (let attempt = 0; attempt < 30; attempt++) {
   try {
-    await initializeStore(dataset.policy);
+    await initializeStore(dataset.policy, {
+      recover: backgroundWorkersEnabled,
+    });
     if (!(await objects.bucketExists(bucket))) {
       if (profile.scope === "local-private")
         throw new Error("전용 비공개 버킷을 먼저 준비하세요.");
@@ -776,10 +779,12 @@ for (let attempt = 0; attempt < 30; attempt++) {
       allowedHashes,
       inferencePolicy: dataset.policy,
     });
-    await uploads.cleanup();
-    await multipartFiles.cleanup(SESSION_TTL_MS);
-    await thumbnailFiles.cleanup(SESSION_TTL_MS);
-    await cleanupModelScratch(uploadRoot);
+    if (backgroundWorkersEnabled) {
+      await uploads.cleanup();
+      await multipartFiles.cleanup(SESSION_TTL_MS);
+      await thumbnailFiles.cleanup(SESSION_TTL_MS);
+      await cleanupModelScratch(uploadRoot);
+    }
     break;
   } catch (error) {
     if (attempt === 29) throw error;
@@ -790,18 +795,20 @@ for (let attempt = 0; attempt < 30; attempt++) {
 const host = process.env.API_HOST || "127.0.0.1";
 const port = Number(process.env.API_PORT || 4000);
 app.listen(port, host, () => console.log(`검사 API http://${host}:${port}`));
-await roiService.start();
-setInterval(processNext, 1500);
-setInterval(
-  async () => {
-    try {
-      await uploads.cleanup();
-      await multipartFiles.cleanup(SESSION_TTL_MS);
-      await thumbnailFiles.cleanup(SESSION_TTL_MS);
-      await cleanupModelScratch(uploadRoot);
-    } catch (error) {
-      console.error("Upload cleanup:", error.code || error.message);
-    }
-  },
-  60 * 60 * 1000,
-).unref();
+await roiService.start({ backgroundWorkersEnabled });
+if (backgroundWorkersEnabled) {
+  setInterval(processNext, 1500);
+  setInterval(
+    async () => {
+      try {
+        await uploads.cleanup();
+        await multipartFiles.cleanup(SESSION_TTL_MS);
+        await thumbnailFiles.cleanup(SESSION_TTL_MS);
+        await cleanupModelScratch(uploadRoot);
+      } catch (error) {
+        console.error("Upload cleanup:", error.code || error.message);
+      }
+    },
+    60 * 60 * 1000,
+  ).unref();
+}

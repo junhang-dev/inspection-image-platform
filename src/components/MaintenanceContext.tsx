@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { MaintenanceEditor, type MaintenanceDraft } from "./MaintenancePanel";
+import styles from "./MaintenancePanel.module.css";
 import {
   maintenanceApi,
   type Purpose,
@@ -73,6 +75,10 @@ export default function MaintenanceContext({
   pointLabel,
   recordPurpose,
   photoId,
+  onPrevious,
+  onNext,
+  canPrevious = false,
+  canNext = false,
   done,
 }: {
   planId: string | null;
@@ -83,6 +89,10 @@ export default function MaintenanceContext({
   pointLabel: string;
   recordPurpose: Purpose;
   photoId?: string;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  canPrevious?: boolean;
+  canNext?: boolean;
   done: (message: string) => Promise<void>;
 }) {
   const [basis, setBasis] = useState<{ item: SavedMaintenance | null } | null>(
@@ -100,8 +110,8 @@ export default function MaintenanceContext({
     Record<string, string>
   >({});
   const photos = usePhotoQuery({
-    planId: planId ?? "unassigned",
-    pointId: pointId ?? "unassigned",
+    planId: targetType === "photo" ? "all" : planId ?? "unassigned",
+    pointId: targetType === "photo" ? "all" : pointId ?? "unassigned",
     ...(targetType === "photo" || !pointId ? { photoId: photoId ?? targetId } : {}),
     recordPurpose,
     visibility: "all",
@@ -133,7 +143,7 @@ export default function MaintenanceContext({
       .then((item) => {
         if (current && active.current) {
           setBasis({ item });
-          setDraft(initialDraft(item, photoId));
+          setDraft(initialDraft(item, photoId ?? targetId));
         }
       })
       .catch((e) => {
@@ -168,6 +178,11 @@ export default function MaintenanceContext({
     try {
       const payload = {
         ...draft,
+        ...(targetType === "photo" ? {
+          actor: "현업 엔지니어",
+          reason: "보수 단계·작업 방법·TA 설정 변경",
+          photoIds: [photoId ?? targetId!],
+        } : {}),
         expectedVersion: basis.item?.persisted ? basis.item.editVersion : null,
         ...(basis.item?.persisted ? {} : { planId, pointId, targetType: basis.item?.targetType ?? targetType, targetId: basis.item?.targetId ?? targetId }),
       };
@@ -182,7 +197,7 @@ export default function MaintenanceContext({
         const latest = await maintenanceApi<SavedMaintenance>("/" + saved.id);
         setBasis({ item: latest });
         setDraft({ ...initialDraft(latest), actor: draft.actor });
-        await done("보수 기록과 변경 이력을 저장했습니다.");
+        await done(targetType === "photo" ? "보수 정보를 저장했습니다." : "보수 기록과 변경 이력을 저장했습니다.");
       }
     } catch (e) {
       if (active.current) setError((e as Error).message);
@@ -200,6 +215,73 @@ export default function MaintenanceContext({
         {error || "보수 기록을 불러오는 중…"}
       </p>
     );
+  const photoTargetMode = targetType === "photo" && Boolean(photoId ?? targetId);
+  if (photoTargetMode) {
+    const photo = photos.data?.items[0];
+    const statusValues: MaintenanceDraft["repairStatus"][] = ["review", "planned", "progress", "done"];
+    const statusLabels: Record<MaintenanceDraft["repairStatus"], string> = {
+      none: "미지정",
+      review: "검토 필요",
+      planned: "작업 예정",
+      progress: "작업 중",
+      done: "완료",
+    };
+    const dirty = Boolean(basis.item && (
+      basis.item.repairStatus !== draft.repairStatus ||
+      basis.item.repairMethod !== draft.repairMethod ||
+      basis.item.ta !== draft.ta
+    ));
+    return (
+      <div className={styles.photoReview}>
+        <section className={styles.photoReviewStage} aria-label="보수 대상 사진">
+          {photo ? (
+            <>
+              <img src={`${process.env.NEXT_PUBLIC_API_BASE_URL || ""}/api/inspections/${photo.id}/image`} alt={photo.name} />
+              <p className={styles.photoReviewCaption}>{photo.name}</p>
+              <div className={styles.photoReviewNav}>
+                <button type="button" onClick={onPrevious} disabled={!canPrevious} aria-label="이전 사진"><ChevronLeft size={27} /></button>
+                <button type="button" onClick={onNext} disabled={!canNext} aria-label="다음 사진"><ChevronRight size={27} /></button>
+              </div>
+              <p className={styles.photoReviewHint}>키보드 ← → 로 이전·다음 사진 이동</p>
+            </>
+          ) : (
+            <p className={photos.error ? "form-error" : "form-intro"} role={photos.error ? "alert" : "status"}>
+              {photos.error || "사진을 불러오는 중…"}
+            </p>
+          )}
+        </section>
+        <form className={styles.photoReviewForm} onSubmit={(event) => { event.preventDefault(); if (dirty && !busy) void save(); }}>
+          <p className={styles.photoReviewContext}>{planTitle || "계획 미지정"} · {pointLabel || "위치 미확인"}</p>
+          <div className={`${styles.photoReviewGrade} ${draft.repairStatus === "done" ? styles.green : draft.repairStatus === "progress" ? styles.blue : styles.amber}`}>
+            <span>진행 상태</span><strong>{statusLabels[draft.repairStatus]}</strong>
+            {Number.isInteger(photo?.humanGrade ?? photo?.ai?.grade) && <small>사진 등급 {photo?.humanGrade ?? photo?.ai?.grade}등급</small>}
+          </div>
+          <fieldset className={styles.photoReviewStages} disabled={busy}>
+            <legend>업무 단계</legend>
+            {statusValues.map((status) => (
+              <button key={status} type="button" className={draft.repairStatus === status ? styles.selectedStage : ""} aria-pressed={draft.repairStatus === status} onClick={() => setDraft((current) => ({ ...current, repairStatus: status }))}>{statusLabels[status]}</button>
+            ))}
+          </fieldset>
+          <label className={styles.field}>
+            작업 방법
+            <select value={draft.repairMethod} disabled={busy} onChange={(event) => setDraft((current) => ({ ...current, repairMethod: event.target.value as MaintenanceDraft["repairMethod"] }))}>
+              <option value="undecided">방법 미정</option>
+              <option value="paint">도장</option>
+              <option value="replace">교체</option>
+            </select>
+          </label>
+          <button type="button" className={`${styles.taToggle} ${draft.ta ? styles.taSelected : ""}`} aria-pressed={draft.ta} disabled={busy} onClick={() => setDraft((current) => ({ ...current, ta: !current.ta }))}>
+            <span className={styles.taCheck} aria-hidden="true">{draft.ta ? "✓" : ""}</span>
+            TA 작업에 포함
+          </button>
+          {error && <p className={styles.error} role="alert">{error}<span>입력 내용은 유지됩니다.</span></p>}
+          <button type="submit" className={styles.primaryButton} disabled={!dirty || busy || !photo}>
+            {busy ? "저장 중…" : dirty ? "변경 사항 저장" : "저장할 변경 사항 없음"}
+          </button>
+        </form>
+      </div>
+    );
+  }
   return (
     <>
       {photos.error && (

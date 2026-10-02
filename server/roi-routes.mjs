@@ -188,7 +188,8 @@ export function registerRoiRoutes(app, { objects, bucket, directory, dataset, mo
   }
   return {
     runOnce: processNext,
-    async start() {
+    async start({ backgroundWorkersEnabled = true } = {}) {
+      if (!backgroundWorkersEnabled) return;
       // A terminated computation is recoverable by an explicit new request.
       await recoverInterrupted();
       setInterval(processNext, 1500).unref();

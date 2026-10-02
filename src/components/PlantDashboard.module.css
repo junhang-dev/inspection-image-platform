@@ -3,7 +3,7 @@
   position: relative;
   width: 100%;
   height: 100dvh;
-  min-height: 560px;
+  min-height: 0;
   overflow: hidden;
   background: #eaf5f2;
   color: #173b37;
@@ -59,7 +59,6 @@
 }
 .breadcrumb,
 .startHint,
-.bottom,
 .card,
 .error {
   box-shadow: 0 12px 30px #173b371a;
@@ -94,22 +93,29 @@
 }
 .breadcrumb select {
   appearance: none;
-  width: 82px;
+  width: 106px;
   min-width: 0;
-  border-radius: 0;
+  min-height: 30px;
+  padding: 5px 27px 5px 8px;
+  border-radius: 7px;
+  background-color: transparent;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 14px;
   cursor: pointer;
 }
 .breadcrumb .emptySelect {
-  width: 108px;
+  width: 126px;
 }
 .breadcrumb .offsiteSelect {
-  width: 130px;
+  width: 158px;
 }
 .breadcrumb .rackSelect {
-  width: 103px;
+  width: 118px;
 }
 .breadcrumb .rackSelect:disabled {
-  width: 50px;
+  width: 58px;
 }
 .breadcrumb select:disabled {
   color: #849d99;
@@ -215,6 +221,15 @@
   justify-content: space-between;
   gap: 12px;
 }
+.cardTitle > div:first-child {
+  min-width: 0;
+}
+.cardTitleActions {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  flex: none;
+}
 .cardTitle small {
   display: block;
   margin-bottom: 5px;
@@ -226,7 +241,50 @@
   color: #173b37;
   font-size: 22px;
 }
-.cardTitle > button {
+.helpTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.helpTip {
+  display: inline-flex;
+  position: relative;
+  flex-shrink: 0;
+}
+.helpTip button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #528a82;
+  cursor: help;
+}
+.helpTip button:hover,
+.helpTip button:focus-visible { background: #eaf5f2; }
+.helpTip > span {
+  display: none;
+  position: absolute;
+  z-index: 5;
+  top: 28px;
+  left: -60px;
+  width: 235px;
+  padding: 10px 12px;
+  border: 1px solid #bdd9d3;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 8px 22px #173b3726;
+  color: #355f59;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.helpTip:hover > span,
+.helpTip[data-open="true"] > span,
+.helpTip button:focus-visible + span { display: block; }
+.cardTitleActions > button {
   display: grid;
   place-items: center;
   width: 30px;
@@ -260,43 +318,104 @@
   border-top: 1px solid #dce9e6;
   padding: 12px 0 2px;
 }
-.card .workflow {
+.card .rackNext {
   margin: 10px 0 14px;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid #cfe4df;
   border-radius: 11px;
   background: #f4faf8;
 }
-.workflow ol {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.rackNext > small {
+  color: #397d74;
+  font-size: 11px;
+  font-weight: 700;
 }
-.workflow li {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 12px;
+.rackNext p {
+  margin: 6px 0 0;
+  line-height: 1.5;
 }
-.workflow li span { color: #52716d; }
-.workflow li strong { text-align: right; color: #173b37; }
-.workflowAction {
+.rackNext .primary { margin-top: 12px; }
+.card .rackCalm {
+  background: #f8fbfa;
+}
+.rackSecondaryAction {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  margin-top: 11px;
-  padding: 9px 10px;
+  margin-top: 9px;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  color: #087f78;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.rackQuietActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.rackQuietActions button,
+.rackNewPlan {
+  flex-shrink: 0;
+  padding: 6px 9px;
   border: 1px solid #87c4b9;
   border-radius: 8px;
   background: #fff;
   color: #087f78;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
+}
+.rackGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rackGroupHeader > button:first-child,
+.rackRecordToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: #1f4943;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.rackGroupHeader b {
+  margin-left: 3px;
+  color: #087f78;
+  font-size: 12px;
+}
+.rackPlanList {
+  max-height: min(350px, 48vh);
+  overflow: auto;
+  margin-top: 8px;
+  padding-right: 3px;
+}
+.rackRecordContent {
+  margin-top: 9px;
+}
+.rackRecordContent > div + div {
+  margin-top: 13px;
+  border-top: 1px solid #e6eeeb;
+  padding-top: 12px;
+}
+.rackRecordContent h4 {
+  margin: 0 0 4px;
+  color: #52716d;
+  font-size: 12px;
 }
 .card h3 {
   margin: 0 0 8px;
@@ -322,6 +441,62 @@
   margin-top: 4px;
   color: #126e64;
   font-size: 18px;
+}
+.summaryActions button {
+  padding: 10px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: #eaf5f2;
+  color: #51736e;
+  text-align: center;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.summaryActions button:hover,
+.summaryActions button:focus-visible {
+  background: #d6eee9;
+  outline-color: #0b8074;
+}
+.summaryActions button[aria-expanded="true"] {
+  background: #d6eee9;
+  outline: 2px solid #0b8074;
+}
+.card .teamPreview {
+  margin: 0 0 13px;
+  padding: 16px;
+  border: 1px solid #cfe4df;
+  border-radius: 10px;
+  background: #f7fbfa;
+}
+.teamPreviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.teamPreviewHeader h3 { margin: 0; }
+.teamPreviewHeader button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #52716d;
+  cursor: pointer;
+}
+.previewRow {
+  padding: 11px 0;
+  border-bottom: 1px solid #dce9e6;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.previewRow strong,
+.previewRow small {
+  display: block;
+}
+.previewRow small {
+  margin-top: 3px;
+  color: #66817c;
 }
 .row {
   display: flex;
@@ -487,18 +662,7 @@
   z-index: 2;
   right: 22px;
   bottom: 15px;
-  left: 22px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 39px;
-  padding: 5px 10px;
-  border: 1px solid #c7ddda;
-  border-radius: 9px;
-  background: #fffffff2;
-  color: #52716d;
-  font-size: 11px;
 }
 .bottom button {
   display: inline-flex;
@@ -545,7 +709,7 @@
     bottom: 58px;
     left: 12px;
     width: auto;
-    max-height: min(50%, 450px);
+    max-height: min(55dvh, 450px);
     padding: 16px;
     border: 1px solid #c7ddda;
     border-radius: 15px;
@@ -584,15 +748,8 @@
     bottom: 62px;
   }
   .bottom {
-    left: 10px;
     right: 10px;
     bottom: 9px;
-  }
-  .bottom span {
-    display: none;
-  }
-  .bottom button {
-    margin-left: auto;
   }
   .error {
     top: 60px;

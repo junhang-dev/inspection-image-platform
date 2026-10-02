@@ -43,6 +43,50 @@ test("포인트 없는 사진은 같은 계획·랙·바이트라도 서로 다�
   const saved = createMaintenanceItem({ planId, pointId: null, targetType: "photo", targetId: a.id, photoIds: [a.id], inclusionMode: "auto" }, [a]);
   assert.equal(saved.id, items[0].id);
 });
+test("보수 관리 사진 단위는 계획·포인트 사진을 나누고 기존 수동 포함 결정을 승계한다", () => {
+  const linkedRepair = photo({ pointId, rackId: "team-1-rack-1", humanGrade: 4 });
+  const linkedException = photo({ pointId, rackId: "team-1-rack-1", humanGrade: 1 });
+  const legacy = {
+    id: maintenanceId(planId, pointId), planId, pointId,
+    photoIds: [], repairStatus: "planned", repairMethod: "replace",
+    inWorklist: true, ta: true, inclusionMode: "include", editVersion: 3,
+  };
+  const rows = deriveMaintenance({
+    photos: [linkedRepair, linkedException], saved: [legacy],
+    points: [{ id: pointId, equipment: "배관", name: "지지대", rackId: "team-1-rack-1" }],
+    plans: [plan],
+  }, { photoBased: true });
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((row) => row.id), [photoMaintenanceId(linkedRepair.id), photoMaintenanceId(linkedException.id)]);
+  assert.deepEqual(rows.map((row) => row.inWorklist), [true, true]);
+  assert.deepEqual(rows.map((row) => row.repairStatus), ["planned", "planned"]);
+  assert.deepEqual(rows.map((row) => row.repairMethod), ["replace", "replace"]);
+  assert.deepEqual(rows.map((row) => row.ta), [true, true]);
+  assert.equal(rows[0].pointLabel, "배관 · 파이프랙 1 · 지지대");
+  assert.equal(rows[0].sourcePointId, pointId);
+  const page = query(rows, { targetType: "photo", pointId, inWorklist: "true" });
+  assert.equal(page.total, 2);
+  assert.equal(query(rows, { targetType: "point", inWorklist: "all" }).total, 0);
+});
+test("사진별 저장은 같은 포인트의 과거 설정보다 해당 사진의 최신 설정을 우선한다", () => {
+  const a = photo({ pointId, rackId: "team-1-rack-1", humanGrade: 5 });
+  const legacy = {
+    id: maintenanceId(planId, pointId), planId, pointId,
+    photoIds: [], repairStatus: "planned", repairMethod: "replace",
+    inWorklist: true, ta: true, inclusionMode: "include", editVersion: 1,
+  };
+  const photoItem = {
+    id: photoMaintenanceId(a.id), planId, pointId: null, targetType: "photo", targetId: a.id,
+    photoIds: [a.id], repairStatus: "review", repairMethod: "paint",
+    inWorklist: true, ta: false, inclusionMode: "auto", editVersion: 2,
+  };
+  const [row] = deriveMaintenance({ photos: [a], saved: [legacy, photoItem], points: [{ id: pointId, rackId: "team-1-rack-1" }], plans: [plan] }, { photoBased: true });
+  assert.equal(row.id, photoItem.id);
+  assert.equal(row.persisted, true);
+  assert.equal(row.repairStatus, "review");
+  assert.equal(row.repairMethod, "paint");
+  assert.equal(row.ta, false);
+});
 test("사람 등급이 우선이고 하향/재상향·수동 제외에도 업무 상태와 ID가 유지된다", () => {
   const a = photo(); const saved = { id: photoMaintenanceId(a.id), planId, pointId: null, targetType: "photo", targetId: a.id, photoIds: [a.id], repairStatus: "done", repairMethod: "paint", ta: true, editVersion: 2, inWorklist: false, inclusionMode: "auto", recordPurpose: "inspection", reviewedEvidence: { [a.id]: evidenceFingerprint(a) } };
   const original = structuredClone(saved);

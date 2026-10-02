@@ -259,7 +259,7 @@ export async function update(
       updatedAt: new Date().toISOString(),
     };
     if (validate) await validate(connection, before, after, patch);
-    if (relationWrite && !before.pointId && ["planId", "pointId", "rackId"].some((key) => (before[key] ?? null) !== (after[key] ?? null))) {
+    if (relationWrite && ["planId", "pointId", "rackId"].some((key) => (before[key] ?? null) !== (after[key] ?? null))) {
       const target = await get("maintenance", photoMaintenanceId(before.id), connection);
       if (target) throw fail(409, "이 사진의 보수 기록이 저장되어 있습니다. 보수 대상 관계를 보존하기 위해 계획·랙·포인트를 이동할 수 없습니다.");
     }

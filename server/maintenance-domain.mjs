@@ -194,7 +194,7 @@ function validatePhotos(relation, photos) {
       );
     const photoPlanId = Object.hasOwn(photo, "planId") ? photo.planId : null;
     if (relation.targetType === "photo") {
-      if (photo.id !== relation.targetId || photo.pointId || photoPlanId !== relation.planId) throw invalid("photo_relation_mismatch", "사진별 보수 항목의 원본 사진과 계획이 다릅니다.");
+      if (photo.id !== relation.targetId || photoPlanId !== relation.planId) throw invalid("photo_relation_mismatch", "사진별 보수 항목의 원본 사진과 계획이 다릅니다.");
       continue;
     }
     const actual = pair(photoPlanId, photo.pointId);

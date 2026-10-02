@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { pool, get, decodeEntity, events } from "./store.mjs";
-import { maintenanceId } from "./maintenance-domain.mjs";
-import { photoTarget } from "./maintenance-view.mjs";
+import { maintenanceId, photoMaintenanceId } from "./maintenance-domain.mjs";
 import { saveMaintenance } from "./maintenance-store.mjs";
 import {
   maintenanceQuerySchema,
@@ -73,14 +72,15 @@ export function registerMaintenanceRoutes(app) {
   app.get("/api/maintenance/target", async (req, res) => {
     const photo = await get("inspection", uuid.parse(req.query.photoId));
     if (!photo) throw fail(404, "사진을 찾을 수 없습니다.");
-    res.json((await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === photoTarget(photo).id) ?? null);
+    res.json((await allMaintenanceViews(pool, decodeEntity, { photoBased: true })).find((item) => item.id === photoMaintenanceId(photo.id)) ?? null);
   });
   app.get("/api/maintenance/:id/history", async (req, res) =>
     res.json(await events(uuid.parse(req.params.id))),
   );
   app.get("/api/maintenance/:id", async (req, res) => {
     const id = uuid.parse(req.params.id);
-    const item = (await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === id);
+    const item = (await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === id)
+      ?? (await allMaintenanceViews(pool, decodeEntity, { photoBased: true })).find((item) => item.id === id);
     if (!item) throw fail(404, "보수 기록을 찾을 수 없습니다.");
     res.json(item);
   });

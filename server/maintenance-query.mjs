@@ -11,6 +11,7 @@ const id = z.union([
 ]);
 export const maintenanceQuerySchema = z
   .object({
+    targetType: z.enum(["all", "point", "photo"]).default("all"),
     planId: id.default("all"),
     pointId: z
       .union([
@@ -63,12 +64,12 @@ export async function readMaintenanceSnapshot(connection, decodeEntity) {
   }
   return data;
 }
-export async function allMaintenanceViews(pool, decodeEntity) {
+export async function allMaintenanceViews(pool, decodeEntity, { photoBased = false } = {}) {
   const connection = await pool.getConnection();
   try {
     await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
     await connection.beginTransaction();
-    const items = deriveMaintenance(await readMaintenanceSnapshot(connection, decodeEntity));
+    const items = deriveMaintenance(await readMaintenanceSnapshot(connection, decodeEntity), { photoBased });
     await connection.commit();
     return items;
   } catch (error) {
@@ -77,5 +78,5 @@ export async function allMaintenanceViews(pool, decodeEntity) {
   } finally { connection.release(); }
 }
 export async function queryMaintenance(pool, decodeEntity, query) {
-  return maintenancePage(await allMaintenanceViews(pool, decodeEntity), query);
+  return maintenancePage(await allMaintenanceViews(pool, decodeEntity, { photoBased: query.targetType === "photo" }), query);
 }

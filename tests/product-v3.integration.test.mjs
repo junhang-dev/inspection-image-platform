@@ -75,7 +75,7 @@ test("v3 isolated HTTP: point-free multi-batch uploads, lifecycle recovery, auto
   await changePlan({ visibility: "visible" }); assert.equal(plan.status, "done");
   await changePlan({ status: "planned" });
   const query = await request(`/inspections/query?planId=${plan.id}&teamId=team-1&rackId=team-1-rack-1&pageSize=1`);
-  assert.equal(query.total, 2); assert.equal(query.rackCounts["team-1-rack-1"], 2); assert.equal(query.pages, 2);
+  assert.equal(query.total, 2); assert.equal(query.rackCounts["team-1-rack-1"], 2); assert.equal(query.planCounts[plan.id], 2); assert.equal(query.pages, 2);
   const image = await fetch(`${base}/inspections/${a.id}/image`); assert.equal(image.status, 200);
   assert.equal(createHash("sha256").update(Buffer.from(await image.arrayBuffer())).digest("hex"), sha256);
   const photoHistory = await request(`/inspections/${a.id}/history`), planHistory = await request(`/plans/${plan.id}/history`), maintenanceHistory = await request(`/maintenance/${saved.id}/history`);

@@ -1,9 +1,12 @@
 {
   "name": "inspection-image-platform",
   "version": "0.1.0",
-  "description": "검사 사진 업로드 → 대상·포인트 연결 → AI의 부식 형상 1~5등급 판독 → 필요한 엔지니어 확인·수정과 후속 판단 → 결과·이력 조회를 만드는 랄프톤 프로젝트입니다. AI 결과를 바로 사용할 수 있으며 사람 검수는 필수 관문이 아닙니다.",
+  "description": "검사 사진의 AI 판독과 보수 후속 업무를 관리하는 검사 플랫폼입니다.",
   "scripts": {
     "dev": "concurrently --kill-others \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:private": "concurrently --kill-others \"npm:dev:web:private\" \"npm:dev:api:private\"",
+    "dev:web:private": "WATCHPACK_POLLING=true NEXT_TELEMETRY_DISABLED=1 API_INTERNAL_BASE_URL=http://127.0.0.1:4100 next dev --webpack --hostname 127.0.0.1 --port 3100",
+    "dev:api:private": "DOTENV_CONFIG_PATH=local/private-runtime/api.env DISABLE_BACKGROUND_WORKERS=1 node server/index.mjs",
     "dev:web": "NEXT_TELEMETRY_DISABLED=1 next dev --hostname 127.0.0.1",
     "dev:api": "node --watch server/index.mjs",
     "build": "NEXT_TELEMETRY_DISABLED=1 next build",

@@ -330,6 +330,25 @@
       }
     }
   </script>
+  <script>
+    (() => {
+      const notify = (type) => window.parent.postMessage(
+        { source: "plant-explorer", type },
+        window.location.origin,
+      );
+      let reported = false;
+      const reportError = () => {
+        if (reported) return;
+        reported = true;
+        notify("error");
+      };
+      window.addEventListener("error", (event) => {
+        if (event.error || event.target instanceof HTMLScriptElement) reportError();
+      }, true);
+      window.addEventListener("unhandledrejection", reportError);
+      notify("boot");
+    })();
+  </script>
   <script type="module">
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -498,6 +517,7 @@
     const offsiteSpans = new Map();
     const offsiteLabels = new Map();
     const zoneHits = [];
+    const zoneBorderMaterials = [];
     const spanHits = [];
     const offsiteHits = [];
     const planHighlightGroup = new THREE.Group();
@@ -802,6 +822,17 @@
     }
     function buildTeam(index) {
       const [x, z] = teamCenters[index];
+      const boundary = new THREE.MeshBasicMaterial({
+        color: index % 2 === 0 ? 0x198f83 : 0x338f9a,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false,
+      });
+      zoneBorderMaterials.push(boundary);
+      for (const side of [-1, 1]) {
+        box(scene, boundary, x, 0.29, z + side * 15.5, 48, 0.06, 0.28, false);
+        box(scene, boundary, x + side * 24, 0.29, z, 0.28, 0.06, 31, false);
+      }
       const zoneHit = new THREE.Mesh(
         new THREE.BoxGeometry(48, 0.2, 31),
         new THREE.MeshBasicMaterial({
@@ -814,7 +845,7 @@
       zoneHit.userData.teamIndex = index;
       scene.add(zoneHit);
       zoneHits.push(zoneHit);
-      label(teamNames[index], x, 8.7, z - 14.0, 1.0);
+      label(teamNames[index], x, 8.7, z - 14.0, 2.1);
       if (index === 0) {
         rackCorridor(index, -16.5, 0, 12, 1, "x");
         rackCorridor(index, -12.375, -8.25, 9, 13, "z");
@@ -1177,19 +1208,40 @@
       highlight.scale.set(size.width, size.height, size.depth);
       outline.position.copy(hit.position);
       outline.scale.copy(highlight.scale);
-      highlight.visible = level !== "plant";
-      outline.visible = level !== "plant";
+      highlight.visible = level === "rack" || level === "point";
+      outline.visible = level === "rack" || level === "point";
     }
     function moveToView() {
       let target;
       let eye;
+      zoneBorderMaterials.forEach((material, index) => {
+        material.opacity = level === "plant" ? 0.7 : index === selectedTeam ? 0.95 : 0.18;
+      });
       if (level === "plant") {
         target = new THREE.Vector3(...views.plant.target);
         eye = new THREE.Vector3(...views.plant.eye);
       } else if (level === "team") {
         const [x, z] = teamCenters[selectedTeam];
         target = new THREE.Vector3(x, 3, z);
-        eye = new THREE.Vector3(x + 25, 29, z + 31);
+        const direction = new THREE.Vector3(25, 26, 31).normalize();
+        const fitCamera = camera.clone();
+        let distance = 70;
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          fitCamera.position.copy(target).addScaledVector(direction, distance);
+          fitCamera.lookAt(target);
+          fitCamera.updateMatrixWorld();
+          const cornersFit = [-24, 24].every((dx) =>
+            [-15.5, 15.5].every((dz) =>
+              [0, 12].every((height) => {
+                const corner = new THREE.Vector3(x + dx, height, z + dz).project(fitCamera);
+                return Math.abs(corner.x) < 0.78 && Math.abs(corner.y) < 0.78;
+              }),
+            ),
+          );
+          if (cornersFit) break;
+          distance *= 1.12;
+        }
+        eye = target.clone().addScaledVector(direction, distance);
       } else if (level === "offsite") {
         target = new THREE.Vector3(2, 5, 53);
         eye = new THREE.Vector3(36, 37, 86);
@@ -1201,7 +1253,7 @@
         const hit = spans.get(selectedTeam + ":" + selectedRack);
         target = hit.position.clone();
         target.y = 3.25;
-        eye = target.clone().add(new THREE.Vector3(8, 5.5, 10));
+        eye = target.clone().add(new THREE.Vector3(11.5, 7.5, 14));
       }
       cameraGoal = { target, eye };
       syncOrbitRange(target, eye);
@@ -1320,6 +1372,7 @@
       setPlanTool(tool);
       updatePlanHighlight();
     }
+    let sceneReady = false;
     window.addEventListener("message", (event) => {
       if (
         event.source !== window.parent ||
@@ -1329,7 +1382,7 @@
         return;
       const data = event.data;
       if (data.type === "hello") {
-        sendToApp({ type: "ready" });
+        if (sceneReady) sendToApp({ type: "ready" });
         return;
       }
       if (data.type === "render-pause") {
@@ -1528,6 +1581,7 @@
       renderer.setSize(rect.width, rect.height, false);
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
+      if (level === "team") moveToView();
     }
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(canvas);
@@ -1538,17 +1592,10 @@
       resizeObserver.disconnect();
       controls.dispose();
       renderer.dispose();
-      renderer.forceContextLoss();
     });
     resize();
     updateText();
     updateHighlight();
-    sendToApp({
-      type: "ready",
-      level,
-      teamIndex: selectedTeam,
-      rackNumber: selectedRack,
-    });
     function renderFrame() {
       if (cameraGoal) {
         camera.position.lerp(cameraGoal.eye, 0.12);
@@ -1563,6 +1610,14 @@
       controls.update();
       renderer.render(scene, camera);
     }
+    renderFrame();
     renderer.setAnimationLoop(renderFrame);
+    sceneReady = true;
+    sendToApp({
+      type: "ready",
+      level,
+      teamIndex: selectedTeam,
+      rackNumber: selectedRack,
+    });
   </script>
 </div>
