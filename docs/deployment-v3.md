@@ -14,6 +14,15 @@
 
 Worker·VPC Service·named Tunnel을 각각 하나 생성했다. 기존 Workers Free($0) 계정에서 진행했고, 추가 유료 지출·결제 등록·새 OAuth 또는 관리 API token 발급은 없었다. 기존 quick tunnel은 복구용으로 유지한다. DB·사진 저장소·모델 포트를 외부에 직접 연결하지 않는다.
 
+### 2026-10-02 main 웹/API 반영
+
+- `main` 커밋 `660e72ad23da255cf4e7cc2453c2d443fa277403`을 반영했다. 웹 BUILD_ID는 `H-f_Di23nXYBOUqmfVqo2`이다. 새 릴리스는 `local/shared-v3-final/releases/main-660e72a-20261002`에 두고 이전 웹/API 릴리스와 기존 설정 백업을 보존했다.
+- 고정 주소의 웹·API 실행 경로만 바꿨다. Worker, Tunnel, MySQL, MinIO와 모델 프로세스는 전환하지 않았다. 전환 전후 비교한 사진 389건, 업로드 완료 25건·만료 7건, 분석 작업 완료 3건·실패 4건은 같았다.
+- 로컬 3000/4000과 고정 HTTPS 주소에서 웹과 health가 200이고 API는 `ready=true`, `dataScope=shared`다. 사진 조회 362건과 사진 기준 보수 조회 150건의 읽기 요청도 200이었다. 운영 브라우저에서 3D 장면, 사진 상세의 좌우 버튼과 `←` 키 이동, 라벨링 후보의 필터 없는 목록, 간결해진 TA 작업 화면을 확인했다.
+- 운영 브라우저에서 AI 모델 연결은 대기 상태다. 모델 API `8002`는 `ready=true`로 계속 실행 중이지만 공유 API 설정은 별도 포트 `8001`을 바라보고 있고 그 주소는 준비되지 않았다. 따라서 이번 배포는 새 AI 판독 성공을 확인하지 않았다. 기존 사진·저장 판독 결과는 조회된다.
+- 검증은 `npm run typecheck`, 자동 검사 97개(통과 87개, 선택 인프라가 필요한 검사 10개 건너뜀), 격리 임시 경로에서의 Next 프로덕션 빌드로 완료했다. `routes-manifest.json`의 API rewrite가 4000을 가리키는 것도 확인했다.
+- 첫 LaunchAgent 재등록은 unload 직후 실패해 이전 웹 설정으로 서비스를 복구했다. 재등록 사이에 대기 시간을 둔 뒤 웹과 API를 다시 전환했고 health를 확인했다. 이 과정에서 업무 데이터나 객체 저장소를 수정하지 않았다.
+
 ### 2026-10-01 3D 대시보드 웹 전환
 
 - 기존 고정 주소와 공유 API·DB·사진 저장소를 유지하고 웹 3000만 교체했다. 웹 BUILD_ID는 `fWBWBJQsMGqlHRGngbNPe`, 동결 소스 SHA-256은 `409fa19a6c5aafbdeee4949877eaccd487248007e9d11ee548c089065f2a09c6`이다. 이전 웹 릴리스는 로컬 복구용으로 보존했다.
