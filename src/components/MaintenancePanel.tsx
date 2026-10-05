@@ -31,7 +31,13 @@ export type MaintenanceItem = {
 export type MaintenanceDraft = Pick<
   MaintenanceItem,
   "repairStatus" | "repairMethod" | "inWorklist" | "ta" | "photoIds"
-> & { actor: string; reason: string; inclusionMode: "auto" | "include" | "exclude"; visibility: "visible" | "hidden"; acknowledgedEvidence?: Record<string, string> };
+> & {
+  actor: string;
+  reason: string;
+  inclusionMode: "auto" | "include" | "exclude";
+  visibility: "visible" | "hidden";
+  acknowledgedEvidence?: Record<string, string>;
+};
 export type MaintenancePhoto = {
   id: string;
   name: string;
@@ -57,6 +63,11 @@ const statusClass: Record<RepairStatus, string> = {
   progress: styles.blue,
   done: styles.green,
 };
+function pageNumberWindow(page: number, pages: number) {
+  const count = Math.min(5, pages);
+  const start = Math.max(1, Math.min(page - 2, pages - count + 1));
+  return Array.from({ length: count }, (_, index) => start + index);
+}
 
 export type MaintenanceEditorProps = {
   /** Opening-basis item, not a poll-refreshed replacement for the parent's CAS version. */
@@ -216,10 +227,75 @@ export function MaintenanceEditor({
             />
             <span>TA에 포함</span>
           </label>
-          <div className={styles.formGrid}><label className={styles.field}>워크리스트 반영<select value={draft.inclusionMode} onChange={(event) => update({ inclusionMode: event.target.value as MaintenanceDraft["inclusionMode"] })}><option value="auto">등급에 따라 자동 반영</option><option value="include">수동으로 포함 유지</option><option value="exclude">수동 제외 유지</option></select></label><label className={styles.field}>항목 표시<select value={draft.visibility} onChange={(event) => update({ visibility: event.target.value as MaintenanceDraft["visibility"] })}><option value="visible">표시·복원</option><option value="hidden">삭제 (복원 가능)</option></select></label></div>
-          <p className={styles.help}>유효 3~5등급은 자동 반영됩니다. 수동 제외·삭제는 재판독 뒤에도 유지되고, 상태와 이력은 보존됩니다.</p>
-          {!!saved?.newEvidenceCount && <p className={styles.warning}>완료 후 새로 확인할 근거 {saved.newEvidenceCount}개가 있습니다.</p>}
-          {draft.repairStatus === "done" && <div className={styles.membership}><button type="button" className={styles.secondaryButton} onClick={() => update({ acknowledgedEvidence: Object.fromEntries(uniquePhotos.filter((photo) => saved?.evidenceVersions?.[photo.id]).map((photo) => [photo.id, saved!.evidenceVersions![photo.id]])) })}>현재 페이지의 판독 근거 확인</button><p className={styles.help}>{draft.acknowledgedEvidence ? `${Object.keys(draft.acknowledgedEvidence).length}개 근거 확인을 저장합니다.` : "완료 상태만 저장해도 새 근거가 확인 처리되지는 않습니다."}</p></div>}
+          <div className={styles.formGrid}>
+            <label className={styles.field}>
+              워크리스트 반영
+              <select
+                value={draft.inclusionMode}
+                onChange={(event) =>
+                  update({
+                    inclusionMode: event.target
+                      .value as MaintenanceDraft["inclusionMode"],
+                  })
+                }
+              >
+                <option value="auto">등급에 따라 자동 반영</option>
+                <option value="include">수동으로 포함 유지</option>
+                <option value="exclude">수동 제외 유지</option>
+              </select>
+            </label>
+            <label className={styles.field}>
+              항목 표시
+              <select
+                value={draft.visibility}
+                onChange={(event) =>
+                  update({
+                    visibility: event.target
+                      .value as MaintenanceDraft["visibility"],
+                  })
+                }
+              >
+                <option value="visible">표시·복원</option>
+                <option value="hidden">삭제 (복원 가능)</option>
+              </select>
+            </label>
+          </div>
+          <p className={styles.help}>
+            유효 3~5등급은 자동 반영됩니다. 수동 제외·삭제는 재판독 뒤에도
+            유지되고, 상태와 이력은 보존됩니다.
+          </p>
+          {!!saved?.newEvidenceCount && (
+            <p className={styles.warning}>
+              완료 후 새로 확인할 근거 {saved.newEvidenceCount}개가 있습니다.
+            </p>
+          )}
+          {draft.repairStatus === "done" && (
+            <div className={styles.membership}>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() =>
+                  update({
+                    acknowledgedEvidence: Object.fromEntries(
+                      uniquePhotos
+                        .filter((photo) => saved?.evidenceVersions?.[photo.id])
+                        .map((photo) => [
+                          photo.id,
+                          saved!.evidenceVersions![photo.id],
+                        ]),
+                    ),
+                  })
+                }
+              >
+                현재 페이지의 판독 근거 확인
+              </button>
+              <p className={styles.help}>
+                {draft.acknowledgedEvidence
+                  ? `${Object.keys(draft.acknowledgedEvidence).length}개 근거 확인을 저장합니다.`
+                  : "완료 상태만 저장해도 새 근거가 확인 처리되지는 않습니다."}
+              </p>
+            </div>
+          )}
           <fieldset className={styles.evidence}>
             <legend>
               근거 사진 <span>{draft.photoIds.length}개 선택</span>
@@ -368,6 +444,10 @@ export type MaintenanceWorklistRow = MaintenanceItem & {
   pointLabel: string;
   photoName?: string;
   photoGrade?: number | null;
+  teamId?: string | null;
+  rackId?: string | null;
+  photoVisibility?: "visible" | "hidden";
+  missing?: boolean;
   /** Pass the server's evidence count; null means unavailable. */
   photoCount: number | null;
 };
@@ -382,11 +462,16 @@ export type MaintenanceWorklistProps = {
   pageSize?: number;
   onPageSizeChange?: (pageSize: number) => void;
   title?: string;
+  selectionActionLabel?: string;
+  selectionActionExpanded?: boolean;
+  onSelectionAction?: () => void;
   emptyDescription?: string;
   onPageChange?: (page: number) => void;
   busy?: boolean;
   error?: string | null;
   onOpen: (item: MaintenanceWorklistRow) => void;
+  selectedIds?: ReadonlySet<string>;
+  onSelectionChange?: (item: MaintenanceWorklistRow, selected: boolean) => void;
 };
 
 export function MaintenanceWorklist({
@@ -397,11 +482,16 @@ export function MaintenanceWorklist({
   pageSize = 10,
   onPageSizeChange,
   title = "대상 목록",
+  selectionActionLabel,
+  selectionActionExpanded = false,
+  onSelectionAction,
   emptyDescription = "보수 필요 사진이 자동으로 모입니다. 목록에서 사진을 선택해 작업 방법과 TA 포함 여부를 관리하세요.",
   onPageChange,
   busy = false,
   error,
   onOpen,
+  selectedIds,
+  onSelectionChange,
 }: MaintenanceWorklistProps) {
   const titleId = useId();
   const validTotal =
@@ -415,6 +505,16 @@ export function MaintenanceWorklist({
     <section className={styles.root} aria-labelledby={titleId} aria-busy={busy}>
       <header className={`${styles.heading} ${styles.worklistHeading}`}>
         <h3 id={titleId}>{title}</h3>
+        {onSelectionChange && onSelectionAction && (
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            aria-expanded={selectionActionExpanded}
+            onClick={onSelectionAction}
+          >
+            {selectionActionLabel || "작업 묶음 만들기"}
+          </button>
+        )}
       </header>
       {error && (
         <p className={styles.error} role="alert">
@@ -423,45 +523,87 @@ export function MaintenanceWorklist({
         </p>
       )}
       {items.length > 0 ? (
-        <ul className={styles.worklist}>
-          {items.map((item) => {
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className={styles.workItem}
-                  aria-label={`${item.photoName || "검사 사진"} · ${statusLabels[item.repairStatus] || "상태 미확인"} · 보수 상세 열기`}
-                  disabled={busy}
-                  onClick={() => onOpen(item)}
-                >
-                  <span className={styles.workThumb} aria-hidden="true">
-                    {item.targetId && <img src={`${apiBase}/api/inspections/${item.targetId}/thumbnail`} alt="" loading="lazy" />}
-                  </span>
-                  <span className={styles.workContent}>
-                    <span className={styles.itemHeading}>
+        <div className={styles.workTableWrap}>
+          <table className={styles.workTable}>
+            <thead>
+              <tr>
+                {onSelectionChange && (
+                  <th scope="col">
+                    <span className={styles.srOnly}>묶음 선택</span>
+                  </th>
+                )}
+                <th scope="col">검사 사진</th>
+                <th scope="col">검사계획 · 위치</th>
+                <th scope="col">등급</th>
+                <th scope="col">진행 상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id}>
+                  {onSelectionChange && (
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`${item.photoName || "검사 사진"} 작업 묶음에 선택`}
+                        checked={selectedIds?.has(item.id) ?? false}
+                        disabled={busy || !item.persisted || item.missing}
+                        onChange={(event) =>
+                          onSelectionChange(item, event.currentTarget.checked)
+                        }
+                      />
+                    </td>
+                  )}
+                  <td>
+                    <button
+                      type="button"
+                      className={styles.workPhotoButton}
+                      aria-label={`보수 기록 열기: ${item.photoName || "검사 사진"}`}
+                      disabled={busy}
+                      onClick={() => onOpen(item)}
+                    >
+                      <span className={styles.workThumb} aria-hidden="true">
+                        {item.targetId && (
+                          <img
+                            src={`${apiBase}/api/inspections/${item.targetId}/thumbnail`}
+                            alt=""
+                            loading="lazy"
+                          />
+                        )}
+                      </span>
+                      <span>
+                        <strong>{item.photoName || "사진 이름 미조회"}</strong>
+                        {!!item.newEvidenceCount && (
+                          <small>새 근거 {item.newEvidenceCount}</small>
+                        )}
+                      </span>
+                    </button>
+                  </td>
+                  <td>
+                    <span className={styles.workContext}>
+                      <strong>{item.planTitle || "계획 미지정"}</strong>
+                      <small>{item.pointLabel || "위치 미확인"}</small>
+                    </span>
+                  </td>
+                  <td>
+                    {Number.isInteger(item.photoGrade) &&
+                    item.photoGrade! >= 1 &&
+                    item.photoGrade! <= 5
+                      ? `${item.photoGrade}등급`
+                      : "등급 미확인"}
+                  </td>
+                  <td>
                     <span
                       className={`${styles.badge} ${statusClass[item.repairStatus] || styles.muted}`}
                     >
                       {statusLabels[item.repairStatus] || "상태 미확인"}
                     </span>
-                    </span>
-                    <strong className={styles.workPhotoName}>{item.photoName || "사진 이름 미조회"}</strong>
-                    <span className={styles.workLocation}>{item.planTitle || "계획 미지정"} · {item.pointLabel || "위치 미확인"}</span>
-                    <span className={styles.workMeta}>
-                      {Number.isInteger(item.photoGrade) && item.photoGrade! >= 1 && item.photoGrade! <= 5 ? `${item.photoGrade}등급` : "등급 미확인"}
-                      <i aria-hidden="true">·</i>
-                      {methodLabels[item.repairMethod] || "방법 미정"}
-                      <i aria-hidden="true">·</i>
-                      {item.ta ? "TA 포함" : "TA 미포함"}
-                      {!!item.newEvidenceCount && <em>새 근거 {item.newEvidenceCount}</em>}
-                    </span>
-                  </span>
-                  <span className={styles.workOpenCue} aria-hidden="true">›</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className={styles.empty} role="status">
           <strong>
@@ -470,18 +612,17 @@ export function MaintenanceWorklist({
               : error
                 ? "워크리스트를 조회하지 못했습니다."
                 : validTotal && total > 0
-                ? "이 페이지에 표시할 항목이 없습니다."
-                : "표시할 워크리스트 항목이 없습니다."}
+                  ? "이 페이지에 표시할 항목이 없습니다."
+                  : "표시할 워크리스트 항목이 없습니다."}
           </strong>
-          {!busy && !error && (
-            <p>{emptyDescription}</p>
-          )}
+          {!busy && !error && <p>{emptyDescription}</p>}
         </div>
       )}
       {pagination && (
         <nav className={styles.pagination} aria-label="워크리스트 페이지">
           <span className={styles.paginationSummary}>
-            {validTotal ? `전체 ${total}건 · ` : ""}{page} / {pages}페이지
+            {validTotal ? `전체 ${total}건 · ` : ""}
+            {page} / {pages}페이지
           </span>
           <div className={styles.paginationControls}>
             <label className={styles.pageSizeControl}>
@@ -490,7 +631,9 @@ export function MaintenanceWorklist({
                 aria-label="한 화면에 보기"
                 value={pageSize}
                 disabled={busy || !onPageSizeChange}
-                onChange={(event) => onPageSizeChange?.(Number(event.target.value))}
+                onChange={(event) =>
+                  onPageSizeChange?.(Number(event.target.value))
+                }
               >
                 <option value={10}>10장</option>
                 <option value={25}>25장</option>
@@ -519,6 +662,28 @@ export function MaintenanceWorklist({
                 >
                   이전
                 </button>
+                {page! > 3 && pages! > 5 && (
+                  <span className={styles.pageEllipsis} aria-hidden="true">
+                    …
+                  </span>
+                )}
+                {pageNumberWindow(page!, pages!).map((pageNumber) => (
+                  <button
+                    key={pageNumber}
+                    type="button"
+                    className={`${styles.secondaryButton} ${styles.pageNumber}${pageNumber === page ? ` ${styles.pageNumberSelected}` : ""}`}
+                    aria-current={pageNumber === page ? "page" : undefined}
+                    disabled={busy || pageNumber === page}
+                    onClick={() => onPageChange(pageNumber)}
+                  >
+                    {pageNumber}
+                  </button>
+                ))}
+                {page! < pages! - 2 && pages! > 5 && (
+                  <span className={styles.pageEllipsis} aria-hidden="true">
+                    …
+                  </span>
+                )}
                 <button
                   type="button"
                   className={styles.secondaryButton}

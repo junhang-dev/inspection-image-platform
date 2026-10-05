@@ -14,6 +14,7 @@ export type MaintenanceQuery = {
   recordPurpose?: Purpose | "all";
   visibility?: "visible" | "hidden" | "all";
   inWorklist?: "true" | "all";
+  unbundledOnly?: "true" | "false";
   ta?: string;
   repairStatus?: string;
   repairMethod?: string;
@@ -43,11 +44,64 @@ export type MaintenancePage = {
     }
   >;
 };
+export type MaintenanceBundle = {
+  id: string;
+  name: string;
+  maintenanceIds: string[];
+  members: MaintenancePage["items"];
+  activeCount: number;
+  inactiveCount: number;
+  createdAt: string;
+  statusCounts: { review: number; planned: number; progress: number; done: number; none: number };
+};
+export type MaintenanceBundleInput = {
+  name: string;
+  maintenanceIds: string[];
+  expectedVersions: Record<string, number>;
+  actor: string;
+  reason: string;
+};
 export const maintenanceApi = <T>(path: string, options: RequestInit = {}) =>
   requestJson<T>(
     `${process.env.NEXT_PUBLIC_API_BASE_URL || ""}/api/maintenance${path}`,
     options,
   );
+
+export function useMaintenanceBundles(enabled = true) {
+  const [revision, setRevision] = useState(0);
+  const [state, setState] = useState<{
+    data: MaintenanceBundle[] | null;
+    error: string;
+  }>({ data: null, error: "" });
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const response = await maintenanceApi<{ items: MaintenanceBundle[] }>("/bundles", {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+        });
+        if (active) setState({ data: response.items, error: "" });
+      } catch (error) {
+        if (active) setState((current) => ({
+          data: current.data,
+          error: (error as Error).message,
+        }));
+      }
+    };
+    void load();
+    const timer = setInterval(load, 5000);
+    return () => {
+      active = false;
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [enabled, revision]);
+  return { ...state, refresh };
+}
+
 export function useMaintenanceQuery(query: MaintenanceQuery, enabled = true) {
   const key = new URLSearchParams(
     Object.entries(query)

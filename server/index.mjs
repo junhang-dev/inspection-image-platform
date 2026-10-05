@@ -26,6 +26,7 @@ import {
 } from "./store.mjs";
 import { photoQuerySchema, queryPhotos } from "./photo-query.mjs";
 import { registerMaintenanceRoutes } from "./maintenance-routes.mjs";
+import { registerMaintenanceBundleRoutes } from "./maintenance-bundle-routes.mjs";
 import { registerPlanRoutes } from "./plan-routes.mjs";
 import { registerRoiRoutes } from "./roi-routes.mjs";
 import { validateNewPhotoRelation, validatePhotoEdit, validatePointEdit } from "./plan-store.mjs";
@@ -641,6 +642,7 @@ for (const [path, kind] of [
     res.json(result);
   });
 }
+registerMaintenanceBundleRoutes(app);
 registerMaintenanceRoutes(app);
 const roiService = registerRoiRoutes(app, { objects, bucket, directory: uploadRoot, dataset, modelUrl: process.env.ROI_API_URL });
 app.use((error, req, res, next) => {

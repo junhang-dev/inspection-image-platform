@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { photoQuerySchema, photoWhere } from "../server/photo-query.mjs";
+import { photoQuerySchema, photoWhere, summarizePlanStatusRows } from "../server/photo-query.mjs";
 import { allPhotoRecords } from "../scripts/photo-records.mjs";
 
 test("조회는 잘못된 범위·팀랙 조합·과도한 페이지를 거절한다", () => {
@@ -40,6 +40,47 @@ test("사진 조회는 여러 검사계획을 선택하고 명시적 전체 해�
   assert.match(noneWhere.sql, /1 = 0/);
   assert.match(selectedWhere.sql, /\.planId.* IN \(\?,\?\)/);
   assert.deepEqual(selectedWhere.values.slice(0, 2), [first, second]);
+});
+
+test("AI 판독 상태와 업무 분류 필터를 독립적으로 적용한다", () => {
+  const query = photoQuerySchema.parse({ aiStatus: "processing", workClassification: "repair" });
+  const where = photoWhere(query);
+  const summary = photoWhere(query, { classification: false, aiStatus: false, workClassification: false });
+
+  assert.match(where.sql, /status.*processing/);
+  assert.match(where.sql, /humanGrade.*BETWEEN 3 AND 5/);
+  assert.match(where.sql, /retake.*<> 'true'/);
+  assert.doesNotMatch(summary.sql, /status.*processing|humanGrade.*>= 3/);
+  assert.equal(photoQuerySchema.safeParse({ aiStatus: "repair" }).success, false);
+});
+
+test("계획별 판독 집계는 페이지와 무관한 상태별 건수를 보존한다", () => {
+  const { planCounts, planStatusCounts } = summarizePlanStatusRows([
+    { planId: "plan-a", status: "done", total: "8" },
+    { planId: "plan-a", status: "pending", total: "2" },
+    { planId: "plan-a", status: "processing", total: "1" },
+    { planId: "plan-a", status: "error", total: "1" },
+    { planId: null, status: "done", total: "4" },
+    { planId: "plan-b", status: "unknown", total: "3" },
+  ]);
+
+  assert.deepEqual(planCounts, { "plan-a": 12, "plan-b": 3 });
+  assert.deepEqual(planStatusCounts["plan-a"], {
+    total: 12,
+    pending: 2,
+    processing: 1,
+    done: 8,
+    error: 1,
+    unread: 0,
+  });
+  assert.deepEqual(planStatusCounts["plan-b"], {
+    total: 3,
+    pending: 0,
+    processing: 0,
+    done: 0,
+    error: 0,
+    unread: 3,
+  });
 });
 
 test("전체 검증 조회는 페이지 중복·수량변동·잘림을 성공으로 표시하지 않는다", async () => {

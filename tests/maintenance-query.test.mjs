@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { maintenanceQuerySchema } from "../server/maintenance-query.mjs";
+import { queryMaintenance } from "../server/maintenance-query.mjs";
 import { deriveMaintenance, maintenancePage } from "../server/maintenance-view.mjs";
+import { photoMaintenanceId } from "../server/maintenance-domain.mjs";
 import { allMaintenanceRecords } from "../scripts/maintenance-records.mjs";
 test("판독 대기 사진의 내부 후보 행은 보수 대상 수에 포함하지 않는다", () => {
   const rows = deriveMaintenance({
@@ -82,6 +84,9 @@ test("보수 범위는 UUID 대소문자를 정규화하고 잘못된 상태·�
   ])
     assert.equal(maintenanceQuerySchema.safeParse(input).success, false);
   assert.equal(maintenanceQuerySchema.parse({ visibility: "all" }).visibility, "all");
+  assert.equal(maintenanceQuerySchema.parse({ unbundledOnly: "true" }).unbundledOnly, "true");
+  assert.equal(maintenanceQuerySchema.parse({}).unbundledOnly, "false");
+  assert.equal(maintenanceQuerySchema.safeParse({ unbundledOnly: true }).success, false);
 });
 test("보수 보존 검사는 해제된 항목까지 읽고 중복·누락·범위 변화·잘못된 페이지를 실패 처리한다", async () => {
   for (const pages of [
@@ -111,4 +116,63 @@ test("보수 보존 검사는 해제된 항목까지 읽고 중복·누락·범�
     records.map((row) => row.id),
     ["a", "b"],
   );
+});
+test("TA 미배정 후보에서는 수동 포함된 숨김 사진을 제외한다", async () => {
+  const visibleId = "11111111-1111-4111-8111-111111111111";
+  const hiddenId = "22222222-2222-4222-8222-222222222222";
+  const photos = [
+    { id: visibleId, visibility: "visible", grade: 3 },
+    { id: hiddenId, visibility: "hidden", grade: 2 },
+  ].map((photo) => ({
+    kind: "inspection",
+    data: {
+      ...photo,
+      teamId: "team-1",
+      rackId: "team-1-rack-1",
+      planId: null,
+      pointId: null,
+      recordPurpose: "inspection",
+      status: "done",
+      ai: { grade: photo.grade },
+      createdAt: "2026-10-01T00:00:00.000Z",
+    },
+  }));
+  const saved = [visibleId, hiddenId].map((targetId) => ({
+    kind: "maintenance",
+    data: {
+      id: photoMaintenanceId(targetId),
+      planId: null,
+      targetType: "photo",
+      targetId,
+      sourceInspectionId: targetId,
+      recordPurpose: "inspection",
+      inWorklist: true,
+      inclusionMode: "include",
+      visibility: "visible",
+      ta: true,
+      repairStatus: "review",
+      repairMethod: "undecided",
+      editVersion: 0,
+    },
+  }));
+  const entities = [...photos, ...saved];
+  const connection = {
+    query: async () => [[], []],
+    execute: async () => [entities, []],
+    beginTransaction: async () => {},
+    commit: async () => {},
+    rollback: async () => {},
+    release: () => {},
+  };
+  const pool = {
+    getConnection: async () => connection,
+    execute: async () => [[{ maintenance_id: "unbundled" }], []],
+  };
+  const result = await queryMaintenance(pool, (data) => data, {
+    ...maintenanceQuerySchema.parse({
+      targetType: "photo",
+      unbundledOnly: "true",
+    }),
+  });
+  assert.deepEqual(result.items.map((item) => item.targetId), [visibleId]);
 });

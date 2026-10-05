@@ -27,6 +27,7 @@ export const maintenanceQuerySchema = z
       .default("inspection"),
     visibility: z.enum(["visible", "hidden", "all"]).default("visible"),
     inWorklist: z.enum(["true", "all"]).default("true"),
+    unbundledOnly: z.enum(["true", "false"]).default("false"),
     ta: z.enum(["all", "true", "false"]).default("all"),
     repairStatus: z
       .enum(["all", "none", "review", "planned", "progress", "done"])
@@ -78,5 +79,15 @@ export async function allMaintenanceViews(pool, decodeEntity, { photoBased = fal
   } finally { connection.release(); }
 }
 export async function queryMaintenance(pool, decodeEntity, query) {
-  return maintenancePage(await allMaintenanceViews(pool, decodeEntity, { photoBased: query.targetType === "photo" }), query);
+  let items = await allMaintenanceViews(pool, decodeEntity, { photoBased: query.targetType === "photo" });
+  if (query.unbundledOnly === "true") {
+    const [rows] = await pool.execute("SELECT maintenance_id FROM maintenance_bundle_members");
+    const bundledIds = new Set(rows.map((row) => row.maintenance_id));
+    items = items.filter(
+      (item) =>
+        !bundledIds.has(item.id) &&
+        item.photoVisibility !== "hidden",
+    );
+  }
+  return maintenancePage(items, query);
 }

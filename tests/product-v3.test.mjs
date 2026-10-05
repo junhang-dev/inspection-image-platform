@@ -108,6 +108,22 @@ test("검증 목적의 5등급은 업무 2등급의 자동 보수 판정에 섞�
     const result = views(photos); assert.equal(query(result).total, 0); assert.equal(result[0].recordPurpose, "inspection"); assert.equal(result[0].candidatePhotoIds.length, 1);
   }
 });
+test("재촬영이 필요한 사진은 자동 보수 후보에서 빠지고 수동 포함은 보존한다", () => {
+  const a = photo({ retake: true, humanGrade: 4 });
+  const automatic = views([a])[0];
+  assert.equal(automatic.automaticEligible, false);
+  assert.equal(automatic.inWorklist, false);
+  assert.equal(automatic.repairStatus, "none");
+
+  const manuallyIncluded = views([a], [{
+    id: photoMaintenanceId(a.id), planId, pointId: null, targetType: "photo", targetId: a.id,
+    photoIds: [a.id], repairStatus: "planned", repairMethod: "paint",
+    ta: true, inWorklist: true, inclusionMode: "include", editVersion: 1,
+  }])[0];
+  assert.equal(manuallyIncluded.automaticEligible, false);
+  assert.equal(manuallyIncluded.inWorklist, true);
+  assert.equal(manuallyIncluded.repairStatus, "planned");
+});
 test("필터와 전체 건수는 페이지 전에 적용하고 기본 전체는 TA 여부와 무관하다", () => {
   const items = views([photo(), photo(), photo({ rackId: "team-1-rack-1" }), photo({ humanGrade: 1 })]);
   assert.equal(query(items, { rackId: "team-1-rack-30", pageSize: 1 }).total, 2);

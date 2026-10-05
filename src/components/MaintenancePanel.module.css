@@ -154,9 +154,16 @@
   border: 1px solid var(--maintenance-green-border);
   border-radius: 9px;
 }
-.photoReviewGrade > span { color: var(--maintenance-muted); }
-.photoReviewGrade > strong { font-size: var(--type-section); }
-.photoReviewGrade > small { grid-column: 1 / -1; color: var(--maintenance-muted); }
+.photoReviewGrade > span {
+  color: var(--maintenance-muted);
+}
+.photoReviewGrade > strong {
+  font-size: var(--type-section);
+}
+.photoReviewGrade > small {
+  grid-column: 1 / -1;
+  color: var(--maintenance-muted);
+}
 .photoReviewStages {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -233,7 +240,9 @@
   font-weight: 700;
   line-height: 1.35;
 }
-.worklistHeading { margin-bottom: 12px; }
+.worklistHeading {
+  margin-bottom: 12px;
+}
 .badge {
   display: inline-flex;
   align-items: center;
@@ -537,7 +546,9 @@
   color: inherit;
   background: var(--maintenance-surface);
   text-align: left;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
 }
 .workItem:not(:disabled):hover {
   border-color: var(--maintenance-green-border);
@@ -613,7 +624,10 @@
   flex-wrap: wrap;
   margin-bottom: 6px;
 }
-.unitBadge { color: var(--maintenance-green-hover); background: var(--maintenance-green-soft); }
+.unitBadge {
+  color: var(--maintenance-green-hover);
+  background: var(--maintenance-green-soft);
+}
 .method {
   margin-left: auto;
   color: var(--maintenance-muted);
@@ -709,6 +723,100 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+.workTableWrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--maintenance-line);
+  border-radius: 10px;
+}
+.workTable {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  text-align: left;
+}
+.workTable th {
+  padding: 11px 12px;
+  color: var(--maintenance-muted);
+  background: var(--surface-muted, #f8fafc);
+  font-size: var(--type-caption);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.workTable td {
+  padding: 10px 12px;
+  border-top: 1px solid var(--maintenance-line);
+  color: var(--maintenance-ink);
+  font-size: var(--type-small);
+  vertical-align: middle;
+}
+.workTable tr:hover td {
+  background: var(--table-hover, #f8fafc);
+}
+.workPhotoButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 190px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.workPhotoButton > span:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.workPhotoButton strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workPhotoButton small {
+  color: var(--maintenance-warning-text);
+  font-size: var(--type-caption);
+}
+.workTable .workThumb {
+  width: 58px;
+  flex: 0 0 58px;
+  aspect-ratio: 4 / 3;
+}
+.workContext {
+  display: grid;
+  gap: 3px;
+  min-width: 180px;
+  max-width: 330px;
+}
+.workContext strong {
+  overflow: hidden;
+  color: var(--maintenance-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.workContext small {
+  overflow: hidden;
+  color: var(--maintenance-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pageEllipsis {
+  padding: 0 2px;
+  color: var(--maintenance-muted);
+}
+.pageNumber {
+  min-width: 40px;
+  justify-content: center;
+}
+.pageNumberSelected {
+  border-color: var(--maintenance-green-border) !important;
+  background: var(--maintenance-green-soft) !important;
+  color: var(--maintenance-green-hover) !important;
+  font-weight: 700;
 }
 .srOnly {
   position: absolute;

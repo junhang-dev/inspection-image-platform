@@ -25,6 +25,14 @@ export async function initializeStore(
     id CHAR(36) PRIMARY KEY, entity_id CHAR(36) NOT NULL, data JSON NOT NULL,
     created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3), INDEX history_entity(entity_id, created_at)
   )`);
+  await connection.query(`CREATE TABLE IF NOT EXISTS maintenance_bundle_members (
+    maintenance_id CHAR(36) NOT NULL PRIMARY KEY,
+    bundle_id CHAR(36) NOT NULL,
+    position INT UNSIGNED NOT NULL,
+    created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX bundle_members_order(bundle_id, position),
+    UNIQUE INDEX bundle_members_position(bundle_id, position)
+  ) ENGINE=InnoDB`);
   if (!recover) return;
   // A process restart must not leave a job permanently in progress.
   const [recovering] =

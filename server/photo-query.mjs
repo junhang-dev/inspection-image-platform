@@ -34,6 +34,8 @@ export const photoQuerySchema = z
     classification: z
       .enum(["all", "repair", "pending", "retake", "done", "error", "unread"])
       .default("all"),
+    aiStatus: z.enum(["all", "pending", "processing", "done", "error", "unread"]).default("all"),
+    workClassification: z.enum(["all", "repair", "retake"]).default("all"),
     labeling: z.enum(["all", "true"]).default("all"),
     page: z.coerce.number().int().min(1).max(1000000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(50),
@@ -53,8 +55,9 @@ const text = (alias, field) =>
   `NULLIF(JSON_UNQUOTE(JSON_EXTRACT(${alias}.data, '$.${field}')), 'null')`;
 const rackLocation = `COALESCE(${text("i", "rackId")}, ${text("p", "rackId")})`;
 export const photoConditions = {
-  repair: `COALESCE(${text("i", "humanGrade")}, ${text("i", "ai.grade")}, 0) + 0 >= 3`,
-  pending: `${text("i", "status")} IN ('pending', 'processing')`,
+  repair: `(COALESCE(${text("i", "humanGrade")}, ${text("i", "ai.grade")}, 0) + 0 BETWEEN 3 AND 5) AND COALESCE(${text("i", "retake")}, 'false') <> 'true'`,
+  pending: `${text("i", "status")} = 'pending'`,
+  processing: `${text("i", "status")} = 'processing'`,
   retake: `${text("i", "retake")} = 'true'`,
   done: `${text("i", "status")} = 'done'`,
   error: `${text("i", "status")} = 'error'`,
@@ -64,8 +67,35 @@ export const photoConditions = {
 const literalLike = (value) =>
   `%${value.replace(/[=%_]/g, (part) => `=${part}`)}%`;
 
+const planPhotoStatuses = ["pending", "processing", "done", "error", "unread"];
+
+export function summarizePlanStatusRows(rows) {
+  const planStatusCounts = {};
+  for (const row of rows) {
+    if (!row.planId) continue;
+    const status = planPhotoStatuses.includes(row.status) ? row.status : "unread";
+    const counts = planStatusCounts[row.planId] ??= {
+      total: 0,
+      pending: 0,
+      processing: 0,
+      done: 0,
+      error: 0,
+      unread: 0,
+    };
+    const total = Number(row.total);
+    counts.total += total;
+    counts[status] += total;
+  }
+  return {
+    planCounts: Object.fromEntries(
+      Object.entries(planStatusCounts).map(([planId, counts]) => [planId, counts.total]),
+    ),
+    planStatusCounts,
+  };
+}
+
 // All counts and rows use these predicates before applying any page limit.
-export function photoWhere(query, { classification = true } = {}) {
+export function photoWhere(query, { classification = true, aiStatus = true, workClassification = true } = {}) {
   const clauses = ["i.kind = 'inspection'"];
   const values = [];
   if (query.photoId && query.photoId !== "all") { clauses.push("i.id = ?"); values.push(query.photoId); }
@@ -113,12 +143,16 @@ export function photoWhere(query, { classification = true } = {}) {
   if (query.labeling === "true") clauses.push(photoConditions.labeling);
   if (classification && query.classification !== "all")
     clauses.push(photoConditions[query.classification]);
+  if (aiStatus && query.aiStatus && query.aiStatus !== "all")
+    clauses.push(photoConditions[query.aiStatus]);
+  if (workClassification && query.workClassification && query.workClassification !== "all")
+    clauses.push(photoConditions[query.workClassification]);
   return { sql: clauses.map((clause) => `(${clause})`).join(" AND "), values };
 }
 
 export async function queryPhotos(pool, decodeEntity, query) {
   const connection = await pool.getConnection();
-  const base = photoWhere(query, { classification: false });
+  const base = photoWhere(query, { classification: false, aiStatus: false, workClassification: false });
   const filtered = photoWhere(query);
   const from = `FROM entities i LEFT JOIN entities p ON p.kind = 'point' AND p.id = ${text("i", "pointId")}`;
   try {
@@ -150,10 +184,12 @@ export async function queryPhotos(pool, decodeEntity, query) {
       `SELECT ${rackLocation} AS rackId, COUNT(*) AS total ${from} WHERE ${filtered.sql} GROUP BY ${rackLocation}`,
       filtered.values,
     );
-    const [planCounts] = await connection.execute(
-      `SELECT ${text("i", "planId")} AS planId, COUNT(*) AS total ${from} WHERE ${filtered.sql} GROUP BY ${text("i", "planId")}`,
+    const planStatus = `COALESCE(${text("i", "status")}, 'unread')`;
+    const [planStatusRows] = await connection.execute(
+      `SELECT ${text("i", "planId")} AS planId, ${planStatus} AS status, COUNT(*) AS total ${from} WHERE ${filtered.sql} GROUP BY ${text("i", "planId")}, ${planStatus}`,
       filtered.values,
     );
+    const { planCounts, planStatusCounts } = summarizePlanStatusRows(planStatusRows);
     await connection.commit();
     return {
       items: rows.map((row) => {
@@ -176,7 +212,8 @@ export async function queryPhotos(pool, decodeEntity, query) {
           .map((row) => [row.pointId, Number(row.total)]),
       ),
       rackCounts: Object.fromEntries(rackCounts.filter((row) => row.rackId).map((row) => [row.rackId, Number(row.total)])),
-      planCounts: Object.fromEntries(planCounts.filter((row) => row.planId).map((row) => [row.planId, Number(row.total)])),
+      planCounts,
+      planStatusCounts,
       scope: query,
     };
   } catch (error) {

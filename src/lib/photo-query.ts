@@ -58,9 +58,19 @@ export type PhotoQuery = Partial<PhotoScope> & {
   pointId?: string;
   photoId?: string;
   classification?: string;
+  aiStatus?: "all" | "pending" | "processing" | "done" | "error" | "unread";
+  workClassification?: "all" | "repair" | "retake";
   labeling?: "all" | "true";
   page?: number;
   pageSize?: number;
+};
+export type PlanPhotoStatusCounts = {
+  total: number;
+  pending: number;
+  processing: number;
+  done: number;
+  error: number;
+  unread: number;
 };
 export type PhotoPage = {
   items: Photo[];
@@ -81,6 +91,7 @@ export type PhotoPage = {
   pointCounts: Record<string, number>;
   rackCounts: Record<string, number>;
   planCounts: Record<string, number>;
+  planStatusCounts: Record<string, PlanPhotoStatusCounts>;
 };
 export function usePhotoQuery(query: PhotoQuery) {
   const key = new URLSearchParams(

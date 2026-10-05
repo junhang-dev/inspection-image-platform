@@ -3,7 +3,9 @@ import { locations } from "./relations.mjs";
 import { maintenanceId, photoMaintenanceId } from "./maintenance-domain.mjs";
 
 export const effectiveGrade = (photo) => photo.humanGrade ?? photo.ai?.grade ?? null;
-export const repairNeeded = (photo) => effectiveGrade(photo) >= 3 && effectiveGrade(photo) <= 5 && photo.visibility !== "hidden";
+export const repairNeeded = (photo) =>
+  effectiveGrade(photo) >= 3 && effectiveGrade(photo) <= 5 &&
+  photo.visibility !== "hidden" && !photo.retake;
 export const evidenceFingerprint = (photo) => createHash("sha256").update(JSON.stringify([photo.id, photo.humanGrade ?? null, photo.ai?.grade ?? null, photo.ai?.model_version ?? null, photo.ai?.preprocessing_version ?? null, photo.ai?.checkpoint_sha256 ?? null])).digest("hex");
 export const photoTarget = (photo) => photo.pointId
   ? { id: maintenanceId(photo.planId ?? null, photo.pointId), planId: photo.planId ?? null, pointId: photo.pointId, targetType: "point", targetId: photo.pointId }

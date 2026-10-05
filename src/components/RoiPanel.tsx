@@ -131,7 +131,7 @@ export default function RoiPanel({ photo }: { photo: Photo }) {
     } catch (cause) { setError((cause as Error).message); } finally { lock.current = false; setBusy(false); }
   };
   if (hidden) return null;
-  return <details className="roi-panel" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}><summary>ROI · SHAP 분석</summary>
+  return <details className="roi-panel" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}><summary>AI 판독 근거</summary>
     {open && <>
       <p>사진에서 확인할 부분을 드래그해 영역을 지정하세요. 영역 판독과 전체 사진 판독은 별도로 보존됩니다.</p>
       {!allowed ? <p className="form-intro">이 보존 자료는 새 영역 판독·설명의 대상이 아닙니다.</p> : <>
