@@ -2562,9 +2562,9 @@ button.stat-card:hover {
 .plan-panel .panel-title { min-height: 0; padding-bottom: 10px; }
 .plan-panel .panel-title h2 { font-size: var(--type-subhead); }
 .plan-result-count { color: var(--muted); font-weight: 500; }
-.plan-query-area { padding: var(--card-padding) var(--card-padding) 0; }
+.plan-query-area { padding: var(--card-padding) var(--card-padding) 0; border-bottom: 1px solid var(--line); background: var(--surface-muted); }
 .plan-query-area .common-scope { margin: 0 0 10px; padding: 0; }
-.plan-list-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 8px 0 14px; }
+.plan-list-toolbar { display: grid; gap: 14px; padding: 8px 0 16px; }
 .plan-status-section { display: grid; gap: 5px; }
 .plan-filter-label { color: var(--muted); font-size: var(--type-caption); font-weight: 600; }
 .plan-list-controls { display: flex; align-items: end; gap: 9px; flex: 0 0 auto; }
