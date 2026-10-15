@@ -212,7 +212,6 @@ export default function HomeDashboard({
               3D 지도로 이동
               <ArrowRight size={18} />
             </button>
-            <small>AI 보강 참고 이미지 · 팀 구역·랙·좌표는 가상입니다.</small>
           </div>
         </section>
         <section className={styles.panel} aria-labelledby="home-team-title">
