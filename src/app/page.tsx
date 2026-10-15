@@ -9,6 +9,7 @@ import {
   type UploadSession,
 } from "@/lib/upload";
 import locations from "@/lib/virtual-locations.json";
+import HomeDashboard from "@/components/HomeDashboard";
 import PlantDashboard from "@/components/PlantDashboard";
 import RoiPanel from "@/components/RoiPanel";
 import MaintenanceContext from "@/components/MaintenanceContext";
@@ -157,6 +158,7 @@ type Health = {
   };
 };
 type Tab =
+  | "home"
   | "dashboard"
   | "plans"
   | "photos"
@@ -179,6 +181,7 @@ const navGroups: {
   label: string;
   items: { id: Tab; label: string; icon: typeof Compass }[];
 }[] = [
+  { label: "현황", items: [{ id: "home", label: "홈", icon: Layers3 }] },
   {
     label: "검사 대상",
     items: [
@@ -326,7 +329,7 @@ function useDialogCompletion(
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>("home");
   const isMaintenanceTab = tab === "worklist" || tab === "taWorklist";
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [points, setPoints] = useState<Point[]>([]);
@@ -1099,12 +1102,12 @@ export default function Home() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
+        <button className="brand" style={{ border: 0, background: "transparent", textAlign: "left", cursor: "pointer", width: "100%" }} aria-label="홈으로 이동" onClick={() => go("home")}>
           <span className="brand-mark">
             <img src="/flare-stack-mark.png" alt="" />
           </span>
           <span>Drone Inspection Platform</span>
-        </div>
+        </button>
         <nav aria-label="업무 메뉴">
           {navGroups.map((group) => (
             <section
@@ -1160,7 +1163,7 @@ export default function Home() {
           </header>
         )}
         <main className={tab === "dashboard" ? "dashboard-main" : undefined}>
-          {tab !== "dashboard" && (
+          {tab !== "dashboard" && tab !== "home" && (
             <div className="page-heading">
               <div>
                 <h1>{pageTitle}</h1>
@@ -1246,6 +1249,7 @@ export default function Home() {
             </div>
           )}
           {tab !== "dashboard" &&
+            tab !== "home" &&
             tab !== "plans" &&
             tab !== "labels" &&
             tab !== "models" && (
@@ -1305,6 +1309,15 @@ export default function Home() {
               <button onClick={photoList.refresh}>다시 조회</button>
             </div>
           )}
+          {tab === "home" && <HomeDashboard
+            onNavigate={(target, status) => {
+              go(target);
+              if (target !== "dashboard") changeScope(defaultPhotoScope);
+              if (target === "photos" && status) setFilter(status);
+              if (target === "worklist" && status) setWorkStatus(status);
+            }}
+            onTeamPhotos={(teamId) => { go("photos"); changeScope({ ...defaultPhotoScope, teamId }); }}
+          />}
           <div hidden={tab !== "dashboard"}>
             <PlantDashboard
               paused={
