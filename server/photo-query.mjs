@@ -68,6 +68,8 @@ const literalLike = (value) =>
   `%${value.replace(/[=%_]/g, (part) => `=${part}`)}%`;
 
 const planPhotoStatuses = ["pending", "processing", "done", "error", "unread"];
+const gradeCondition = (grade) =>
+  `(COALESCE(${text("i", "humanGrade")}, ${text("i", "ai.grade")}, 0) + 0) = ${grade}`;
 
 export function summarizePlanStatusRows(rows) {
   const planStatusCounts = {};
@@ -162,8 +164,30 @@ export async function queryPhotos(pool, decodeEntity, query) {
     const [summaries] = await connection.execute(
       `SELECT COUNT(*) AS total, ${Object.entries(photoConditions)
         .map(([key, condition]) => `COALESCE(SUM(${condition}), 0) AS ${key}`)
+        .concat(Array.from({ length: 5 }, (_, index) => {
+          const grade = index + 1;
+          return `COALESCE(SUM(${gradeCondition(grade)}), 0) AS grade_${grade}`;
+        }))
         .join(", ")} ${from} WHERE ${base.sql}`,
       base.values,
+    );
+    const gradeCounts = Object.fromEntries([
+      ...Array.from({ length: 5 }, (_, index) => {
+        const grade = index + 1;
+        return [grade, Number(summaries[0][`grade_${grade}`])];
+      }),
+      [
+        "ungraded",
+        Number(summaries[0].total) -
+          Array.from({ length: 5 }, (_, index) =>
+            Number(summaries[0][`grade_${index + 1}`]),
+          ).reduce((sum, value) => sum + value, 0),
+      ],
+    ]);
+    const summary = Object.fromEntries(
+      Object.entries(summaries[0])
+        .filter(([key]) => !key.startsWith("grade_"))
+        .map(([key, value]) => [key, Number(value)]),
     );
     const [totals] = await connection.execute(
       `SELECT COUNT(*) AS total ${from} WHERE ${filtered.sql}`,
@@ -200,12 +224,8 @@ export async function queryPhotos(pool, decodeEntity, query) {
       page,
       pageSize: query.pageSize,
       pages,
-      summary: Object.fromEntries(
-        Object.entries(summaries[0]).map(([key, value]) => [
-          key,
-          Number(value),
-        ]),
-      ),
+      summary,
+      gradeCounts,
       pointCounts: Object.fromEntries(
         counts
           .filter((row) => row.pointId)

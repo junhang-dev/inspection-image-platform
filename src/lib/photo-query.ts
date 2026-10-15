@@ -88,6 +88,7 @@ export type PhotoPage = {
     retake: number;
     labeling: number;
   };
+  gradeCounts: Record<1 | 2 | 3 | 4 | 5 | "ungraded", number>;
   pointCounts: Record<string, number>;
   rackCounts: Record<string, number>;
   planCounts: Record<string, number>;

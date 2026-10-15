@@ -42,6 +42,80 @@
   gap: 16px;
   margin-bottom: 22px;
 }
+.gradePanel {
+  padding: 19px 22px 17px;
+  margin: 0 0 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.gradeHeading,
+.gradeCounts,
+.gradeCounts > div > span,
+.gradeCounts strong {
+  display: flex;
+  align-items: center;
+}
+.gradeHeading {
+  justify-content: space-between;
+  gap: 12px;
+}
+.gradeHeading h2 {
+  font-size: 16px;
+  letter-spacing: -0.025em;
+}
+.gradeHeading > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.gradeBar {
+  display: flex;
+  height: 8px;
+  gap: 3px;
+  overflow: hidden;
+  margin: 15px 0 14px;
+  border-radius: 5px;
+  background: var(--surface-muted);
+}
+.gradeBar span {
+  min-width: 0;
+  border-radius: inherit;
+}
+.gradeCounts {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+.gradeCounts > div > span {
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.gradeCounts i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+.gradeCounts strong {
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.gradeCounts small,
+.gradeCounts em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 400;
+}
+.gradeCounts em {
+  margin-left: auto;
+}
 .metric {
   border: 1px solid var(--line);
   background: var(--surface);
@@ -400,6 +474,9 @@
   .bottom {
     grid-template-columns: 1fr;
   }
+  .gradeCounts {
+    gap: 8px;
+  }
   .metric > strong {
     font-size: 34px;
   }
@@ -436,6 +513,13 @@
   }
   .statuses {
     gap: 6px;
+  }
+  .gradePanel {
+    padding: 16px;
+  }
+  .gradeCounts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 13px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

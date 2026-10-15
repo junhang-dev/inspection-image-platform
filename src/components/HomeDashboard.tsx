@@ -108,6 +108,18 @@ export default function HomeDashboard({
   );
   const p = photos.data;
   const m = maintenance.data;
+  const grades = [
+    { key: 1, label: "1등급", color: "#4d947a" },
+    { key: 2, label: "2등급", color: "#84a878" },
+    { key: 3, label: "3등급", color: "#c4a45e" },
+    { key: 4, label: "4등급", color: "#c87951" },
+    { key: 5, label: "5등급", color: "#a94f4d" },
+    { key: "ungraded", label: "등급 없음", color: "#c6ceca" },
+  ] as const;
+  const gradeTotal = grades.reduce(
+    (sum, grade) => sum + (p?.gradeCounts?.[grade.key] ?? 0),
+    0,
+  );
   const statuses = [
     { key: "review", label: "검토 필요", color: "#dbad62" },
     { key: "planned", label: "작업 예정", color: "#7aacc8" },
@@ -188,6 +200,57 @@ export default function HomeDashboard({
             </strong>
           </button>
         ))}
+      </section>
+      <section className={styles.gradePanel} aria-labelledby="home-grade-title">
+        <div className={styles.gradeHeading}>
+          <h2 id="home-grade-title">등급 현황</h2>
+          <span>{count(p?.total)}장</span>
+        </div>
+        <div
+          className={styles.gradeBar}
+          role="img"
+          aria-label={grades
+            .map(
+              (grade) =>
+                `${grade.label} ${count(p?.gradeCounts?.[grade.key])}장`,
+            )
+            .join(", ")}
+        >
+          {gradeTotal > 0 &&
+            grades.map((grade) => {
+              const value = p?.gradeCounts?.[grade.key] ?? 0;
+              return (
+                <span
+                  key={grade.key}
+                  style={{
+                    background: grade.color,
+                    flex: value,
+                  }}
+                />
+              );
+            })}
+        </div>
+        <div className={styles.gradeCounts}>
+          {grades.map((grade) => (
+            <div key={grade.key}>
+              <span>
+                <i style={{ background: grade.color }} />
+                {grade.label}
+              </span>
+              <strong>
+                {count(p?.gradeCounts?.[grade.key])}
+                <small>장</small>
+                <em>
+                  {gradeTotal > 0
+                    ? `${Math.round(
+                        ((p?.gradeCounts?.[grade.key] ?? 0) / gradeTotal) * 100,
+                      )}%`
+                    : "—"}
+                </em>
+              </strong>
+            </div>
+          ))}
+        </div>
       </section>
       <div className={styles.overview}>
         <section className={styles.map} aria-labelledby="home-map-title">
