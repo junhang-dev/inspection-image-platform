@@ -45,6 +45,14 @@ export type PhotoScope = {
   rackId: string;
   search: string;
 };
+export type PhotoGradeFilter =
+  | "all"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "ungraded";
 export const defaultPhotoScope: PhotoScope = {
   planId: "all",
   recordPurpose: "inspection",
@@ -57,6 +65,7 @@ export type PhotoQuery = Partial<PhotoScope> & {
   planIds?: string[];
   pointId?: string;
   photoId?: string;
+  grade?: PhotoGradeFilter;
   classification?: string;
   aiStatus?: "all" | "pending" | "processing" | "done" | "error" | "unread";
   workClassification?: "all" | "repair" | "retake";

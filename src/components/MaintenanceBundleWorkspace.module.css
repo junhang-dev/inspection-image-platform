@@ -10,11 +10,7 @@
   min-width: 0;
 }
 .root {
-  margin: 0 0 14px;
-  padding: 14px;
-  border: 1px solid var(--bundle-line);
-  border-radius: var(--card-radius, 12px);
-  background: var(--bundle-surface);
+  margin: 2px 0 14px;
 }
 .root h2,
 .root h3,
@@ -31,7 +27,7 @@
   gap: 14px;
 }
 .heading {
-  margin-bottom: 8px;
+  margin-bottom: 11px;
 }
 .heading h2 {
   font-size: var(--type-section);
@@ -176,12 +172,10 @@
   font-weight: 600;
 }
 .memberContext small {
-  min-width: 0;
+  overflow: hidden;
   color: var(--bundle-muted);
-  line-height: 1.4;
-  white-space: normal;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .photoCell {
   display: flex;
@@ -204,15 +198,6 @@
 }
 .photoCell .attention {
   color: var(--warning, #805b1c);
-  font-weight: 650;
-}
-.photoCell .scopeMatch {
-  width: fit-content;
-  padding: 2px 5px;
-  border-radius: 4px;
-  color: var(--bundle-green);
-  background: var(--bundle-green-soft);
-  font-size: var(--type-caption);
   font-weight: 650;
 }
 .thumb {

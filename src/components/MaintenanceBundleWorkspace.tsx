@@ -64,7 +64,7 @@ export function MaintenanceBundleWorkspace({
     <section className={styles.root} aria-labelledby={headingId}>
       <header className={styles.heading}>
         <h2 id={headingId} ref={headingRef} tabIndex={-1}>
-          작업 묶음
+          만든 작업 묶음
         </h2>
         <strong className={styles.total}>
           {loading ? "조회 중" : error ? "미조회" : `${bundles.length}개`}
@@ -117,8 +117,8 @@ export function MaintenanceBundleWorkspace({
                     </small>
                     {matchingMemberCount < bundle.members.length && (
                       <small>
-                        조건 일치 {matchingMemberCount}/{bundle.members.length}
-                        장{" · 전체 구성 표시"}
+                        현재 범위 {matchingMemberCount}/{bundle.members.length}
+                        장
                       </small>
                     )}
                   </span>
@@ -170,9 +170,6 @@ export function MaintenanceBundleWorkspace({
                       </thead>
                       <tbody>
                         {bundle.members.map((member) => {
-                          const matchesCurrentScope = matchingMemberIds.has(
-                            member.id,
-                          );
                           return (
                             <tr
                               key={member.id}
@@ -212,13 +209,6 @@ export function MaintenanceBundleWorkspace({
                                     <strong>
                                       {member.photoName || "사진 이름 미조회"}
                                     </strong>
-                                    {matchingMemberCount <
-                                      bundle.members.length &&
-                                      matchesCurrentScope && (
-                                        <small className={styles.scopeMatch}>
-                                          조건 일치
-                                        </small>
-                                      )}
                                     {!!member.newEvidenceCount && (
                                       <small className={styles.attention}>
                                         새 근거 {member.newEvidenceCount}
