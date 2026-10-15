@@ -17,6 +17,8 @@ import { getRackGuidance, type RackActionKind } from "@/lib/rack-guidance";
 import { useRackPlanPhotos } from "@/lib/rack-plan-photos";
 import type { MaintenanceWorklistRow } from "./MaintenancePanel";
 import styles from "./PlantDashboard.module.css";
+import { useAuth } from "./AuthProvider";
+import { AuthAccountButton } from "./AuthPanel";
 
 type Level = "plant" | "team" | "rack" | "offsite" | "point";
 type Plan = {
@@ -65,6 +67,7 @@ type Props = {
   onRetryMaintenance: () => void;
   onScopeChange: (teamId: string | null, rackId: string | null) => void;
   onCreatePlan: (teamId: string, rackIds: string[]) => void;
+  onStartPlan: () => void;
   onOpenPlan: (id: string) => void;
   onOpenPlans: () => void;
   onUploadPlan: (id: string, rackId: string) => void;
@@ -139,6 +142,7 @@ export default function PlantDashboard({
   onRetryMaintenance,
   onScopeChange,
   onCreatePlan,
+  onStartPlan,
   onOpenPlan,
   onOpenPlans,
   onUploadPlan,
@@ -149,6 +153,10 @@ export default function PlantDashboard({
   onOpenWorklist,
   onOpenReviewWorklist,
 }: Props) {
+  const { can } = useAuth();
+  const canWrite = can("work.write");
+  const canWriteRef = useRef(canWrite);
+  canWriteRef.current = canWrite;
   const frame = useRef<HTMLIFrameElement>(null);
   const onScopeChangeRef = useRef(onScopeChange);
   onScopeChangeRef.current = onScopeChange;
@@ -295,7 +303,7 @@ export default function PlantDashboard({
             : null;
         onScopeChangeRef.current(team?.id ?? null, rack?.id ?? null);
       }
-      if (message.type === "plan-racks" && Array.isArray(message.racks)) {
+      if (canWriteRef.current && message.type === "plan-racks" && Array.isArray(message.racks)) {
         setSelectedNumbers(
           message.racks.filter(
             (number) => Number.isInteger(number) && number >= 1 && number <= 30,
@@ -374,7 +382,7 @@ export default function PlantDashboard({
     setFrameVersion((version) => version + 1);
   };
   const togglePlanMode = () => {
-    if (!teamId) return;
+    if (!teamId || (!canWrite && !planMode)) return;
     setPanelCollapsed(false);
     setTeamPreview(null);
     const next = !planMode;
@@ -394,11 +402,19 @@ export default function PlantDashboard({
       tool: "select",
     });
   };
+  useEffect(() => {
+    if (canWrite || !planMode) return;
+    setPlanMode(false);
+    setSelectedNumbers([]);
+    post({ type: "plan-mode", enabled: false });
+  }, [canWrite, planMode]);
   const changePlanTool = (tool: "select" | "navigate") => {
+    if (!canWrite) return;
     setPlanTool(tool);
     post({ type: "plan-tool", tool });
   };
   const changeSelected = (number: number) => {
+    if (!canWrite) return;
     const next = selectedNumbers.includes(number)
       ? selectedNumbers.filter((item) => item !== number)
       : [...selectedNumbers, number].sort((a, b) => a - b);
@@ -406,7 +422,7 @@ export default function PlantDashboard({
     post({ type: "plan-racks", racks: next });
   };
   const createPlan = () => {
-    if (!teamId || !selectedNumbers.length) return;
+    if (!canWrite || !teamId || !selectedNumbers.length) return;
     const rackIds = selectedNumbers
       .map((number) => rackByNumber(teamId, number)?.id)
       .filter((id): id is string => Boolean(id));
@@ -417,7 +433,7 @@ export default function PlantDashboard({
   };
   const openRackPlans = () => setExpandedRackPlansFor(rackId);
   const uploadToActivePlan = () => {
-    if (!selectedRack) return;
+    if (!canWrite || !selectedRack) return;
     if (activeRackPlans.length === 1) onUploadPlan(activeRackPlans[0].id, selectedRack.id);
     else openRackPlans();
   };
@@ -435,7 +451,10 @@ export default function PlantDashboard({
     maintenanceError: Boolean(maintenanceError),
     hasPointHistory: rackPoints.length > 0,
   });
+  const canRunRackAction = (kind: RackActionKind) =>
+    canWrite || !["create-plan", "add-photo", "choose-photo-plan"].includes(kind);
   const runRackAction = (kind: RackActionKind) => {
+    if (!canRunRackAction(kind)) return;
     switch (kind) {
       case "create-plan": togglePlanMode(); break;
       case "add-photo":
@@ -568,6 +587,9 @@ export default function PlantDashboard({
                   ))}
           </select>
         </div>
+        <div style={{ pointerEvents: "auto" }}>
+          <AuthAccountButton />
+        </div>
       </div>
       {planMode && selectedTeam && (
         <div
@@ -582,12 +604,14 @@ export default function PlantDashboard({
           <div className={styles.planToolButtons}>
             <button
               aria-pressed={planTool === "select"}
+              disabled={!canWrite}
               onClick={() => changePlanTool("select")}
             >
               랙 선택
             </button>
             <button
               aria-pressed={planTool === "navigate"}
+              disabled={!canWrite}
               onClick={() => changePlanTool("navigate")}
             >
               시점 이동
@@ -634,7 +658,11 @@ export default function PlantDashboard({
             </div>
           </div>
           <strong>선택한 랙 {selectedNumbers.length}개</strong>
-          <div className={styles.rackChecks} aria-label="선택된 검사 랙 확인">
+          <div
+            className={styles.rackChecks}
+            role="group"
+            aria-label={`${selectedTeam.name} 검사할 랙 선택`}
+          >
             {Array.from({ length: 30 }, (_, index) => index + 1).map(
               (number) => (
                 <label
@@ -646,6 +674,7 @@ export default function PlantDashboard({
                   <input
                     type="checkbox"
                     checked={selectedNumbers.includes(number)}
+                    disabled={!canWrite}
                     onChange={() => changeSelected(number)}
                   />
                   {number}
@@ -655,7 +684,7 @@ export default function PlantDashboard({
           </div>
           <button
             className={styles.primary}
-            disabled={!selectedNumbers.length}
+            disabled={!canWrite || !selectedNumbers.length}
             onClick={createPlan}
           >
             선택한 {selectedNumbers.length}개 랙으로 계획 만들기{" "}
@@ -714,18 +743,18 @@ export default function PlantDashboard({
                 <p>{rackGuidance.message}</p>
                 {rackGuidance.tone === "attention" ? (
                   <>
-                    <button className={styles.primary} onClick={() => runRackAction(rackGuidance.actions[0].kind)}>
+                    <button className={styles.primary} disabled={!canRunRackAction(rackGuidance.actions[0].kind)} onClick={() => runRackAction(rackGuidance.actions[0].kind)}>
                       <ArrowRight size={16} /> {rackGuidance.actions[0].label}
                     </button>
                     {rackGuidance.actions.slice(1).map((action) => (
-                      <button className={styles.rackSecondaryAction} key={action.kind} onClick={() => runRackAction(action.kind)}>
+                      <button className={styles.rackSecondaryAction} key={action.kind} disabled={!canRunRackAction(action.kind)} onClick={() => runRackAction(action.kind)}>
                         {action.label} <ArrowRight size={15} />
                       </button>
                     ))}
                   </>
                 ) : rackGuidance.tone === "calm" && (
                   <div className={styles.rackQuietActions}>
-                    {rackGuidance.actions.map((action) => <button key={action.kind} onClick={() => runRackAction(action.kind)}>{action.label}</button>)}
+                    {rackGuidance.actions.map((action) => <button key={action.kind} disabled={!canRunRackAction(action.kind)} onClick={() => runRackAction(action.kind)}>{action.label}</button>)}
                   </div>
                 )}
               </section>
@@ -736,7 +765,7 @@ export default function PlantDashboard({
                       <span>이 랙의 검사계획 <b>{rackPlans.length}개</b></span>
                       {rackPlansExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </button>
-                    {activeRackPlans.length > 0 && <button className={styles.rackNewPlan} onClick={togglePlanMode}>새 계획</button>}
+                    {activeRackPlans.length > 0 && <button className={styles.rackNewPlan} disabled={!canWrite} onClick={togglePlanMode}>새 계획</button>}
                   </div>
                   {rackPlansExpanded && (
                     <div className={styles.rackPlanList}>
@@ -751,7 +780,7 @@ export default function PlantDashboard({
                               </small>
                             </button>
                             {plan.status === "planned" && selectedRack && (
-                              <button className={styles.smallAction} onClick={() => onUploadPlan(plan.id, selectedRack.id)}>
+                              <button className={styles.smallAction} disabled={!canWrite} onClick={() => { if (canWrite) onUploadPlan(plan.id, selectedRack.id); }}>
                                 사진 추가
                               </button>
                             )}
@@ -847,7 +876,7 @@ export default function PlantDashboard({
                   </button>
                 </section>
               )}
-              <button className={styles.primary} onClick={togglePlanMode}>
+              <button className={styles.primary} disabled={!canWrite} onClick={togglePlanMode}>
                 <CalendarDays size={16} /> 검사계획 범위 지정
               </button>
             </>
@@ -901,13 +930,26 @@ export default function PlantDashboard({
         </div>
       ) : (
         <div className={styles.startHint}>
-          생산팀을 클릭해 검사할 랙과 기록을 찾으세요.{" "}
-          <span>드래그: 시점 변경 · 휠: 확대</span>
+          새 검사계획을 만들거나, 기존 계획에서 사진을 추가하세요.
         </div>
       )}
       <div className={styles.bottom}>
-        <button onClick={onOpenPhotos}>
-          <Camera size={15} /> 사진 일괄 등록·조회
+        {level === "plant" && (
+          <button className={styles.planStart} disabled={!canWrite} onClick={() => { if (canWrite) onStartPlan(); }}>
+            <CalendarDays size={15} /> 검사계획 만들기
+          </button>
+        )}
+        <button
+          onClick={level === "plant" ? onOpenPlans : onOpenPhotos}
+        >
+          {level === "plant" ? (
+            <ArrowRight size={15} />
+          ) : (
+            <Camera size={15} />
+          )}
+          {level === "plant"
+            ? canWrite ? "기존 계획에서 사진 추가" : "검사계획 목록"
+            : "사진 · 판독 목록"}
         </button>
       </div>
     </section>

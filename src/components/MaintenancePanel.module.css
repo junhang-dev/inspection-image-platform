@@ -68,6 +68,10 @@
   outline: 3px solid var(--maintenance-green);
   outline-offset: 3px;
 }
+.worklistHeading h3[tabindex="-1"]:focus-visible {
+  outline: 3px solid var(--maintenance-green);
+  outline-offset: 3px;
+}
 .photoReview {
   --maintenance-ink: var(--ink, #223536);
   --maintenance-muted: var(--muted, #5f7067);
@@ -140,10 +144,32 @@
   gap: 16px;
   min-width: 0;
 }
+.photoReview > .photoReviewHistory {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--maintenance-line);
+}
 .photoReviewContext {
   color: var(--maintenance-muted);
   font-size: var(--type-small);
   overflow-wrap: anywhere;
+}
+.photoReviewWorklist {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--maintenance-line);
+  border-radius: 8px;
+  color: var(--maintenance-muted);
+  font-size: var(--type-small);
+}
+.photoReviewWorklist > strong {
+  color: var(--maintenance-ink);
+}
+.photoReviewWorklist > small {
+  grid-column: 1 / -1;
 }
 .photoReviewGrade {
   display: grid;
@@ -251,6 +277,25 @@
   font-size: var(--type-small);
   line-height: 1.5;
   font-weight: 600;
+}
+.workStatusGroup {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.workTaBadge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--maintenance-green-border);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--maintenance-green-hover);
+  background: var(--maintenance-green-soft);
+  font-size: var(--type-caption);
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 .muted {
   color: var(--maintenance-muted-text);
@@ -732,7 +777,7 @@
 }
 .workTable {
   width: 100%;
-  min-width: 720px;
+  min-width: min(640px, 100%);
   border-collapse: collapse;
   text-align: left;
 }
@@ -751,7 +796,10 @@
   font-size: var(--type-small);
   vertical-align: middle;
 }
-.workTable tr:hover td {
+.clickableRow {
+  cursor: pointer;
+}
+.clickableRow:hover td {
   background: var(--table-hover, #f8fafc);
 }
 .workPhotoButton {
@@ -768,13 +816,24 @@
 }
 .workPhotoButton > span:last-child {
   display: grid;
+  flex: 1 1 auto;
   gap: 4px;
   min-width: 0;
 }
+.workPhotoButton::after {
+  content: "›";
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--maintenance-green-hover);
+  font-size: 22px;
+  line-height: 1;
+}
+.workPhotoButton:hover strong {
+  color: var(--maintenance-green-hover);
+}
 .workPhotoButton strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .workPhotoButton small {
   color: var(--maintenance-warning-text);
@@ -799,10 +858,12 @@
   font-weight: 600;
 }
 .workContext small {
-  overflow: hidden;
+  min-width: 0;
   color: var(--maintenance-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .pageEllipsis {
   padding: 0 2px;
@@ -829,9 +890,223 @@
   white-space: nowrap;
   border: 0;
 }
+@media (min-width: 601px) and (max-width: 800px) {
+  .workTableWrap {
+    overflow: visible;
+    border: 0;
+  }
+  .workTable {
+    display: block;
+    min-width: 0;
+    border-collapse: separate;
+  }
+  .workTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .workTable tbody {
+    display: grid;
+    gap: 8px;
+  }
+  .workTable tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 10px;
+    padding: 8px 12px;
+    border: 1px solid var(--maintenance-line);
+    border-radius: 10px;
+    background: var(--maintenance-surface);
+  }
+  .workTableSelectable tr {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .workTable td {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    min-width: 0;
+    padding: 7px 0;
+    border: 0;
+  }
+  .workTable td::before {
+    content: attr(data-label);
+    color: var(--maintenance-muted);
+    font-size: var(--type-caption);
+    line-height: 1.4;
+  }
+  .workTable td[data-column="photo"],
+  .workTable td[data-column="context"] {
+    grid-column: 1 / -1;
+  }
+  .workTable td[data-column="photo"] {
+    grid-row: 1;
+  }
+  .workTable td[data-column="context"] {
+    grid-row: 2;
+  }
+  .workTable td[data-column="grade"] {
+    grid-column: 1;
+    grid-row: 3;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .workTable td[data-column="status"] {
+    grid-column: 2;
+    grid-row: 3;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .workTableSelectable td[data-column="selection"] {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    gap: 6px;
+    grid-column: 3;
+    grid-row: 3;
+    align-self: center;
+    padding: 7px 0;
+  }
+  .workTableSelectable td[data-column="selection"]::before {
+    content: attr(data-label);
+  }
+  .workTable .workPhotoButton {
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+  .workTable .workContext {
+    max-width: none;
+    min-width: 0;
+  }
+  .workTable .clickableRow:hover td {
+    background: transparent;
+  }
+}
 @media (max-width: 600px) {
   .root {
     padding: 17px;
+  }
+  .workTableWrap {
+    overflow: visible;
+    border: 0;
+  }
+  .workTable {
+    display: block;
+    min-width: 0;
+    border-collapse: separate;
+  }
+  .workTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .workTable tbody {
+    display: grid;
+    gap: 8px;
+  }
+  .workTable tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 10px;
+    padding: 8px 12px;
+    border: 1px solid var(--maintenance-line);
+    border-radius: 10px;
+    background: var(--maintenance-surface);
+  }
+  .workTableSelectable tr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workTable td {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    min-width: 0;
+    padding: 7px 0;
+    border: 0;
+  }
+  .workTable td::before {
+    content: attr(data-label);
+    color: var(--maintenance-muted);
+    font-size: var(--type-caption);
+    line-height: 1.4;
+  }
+  .workTable td[data-column="photo"],
+  .workTable td[data-column="context"] {
+    grid-column: 1 / -1;
+  }
+  .workTable td[data-column="photo"] {
+    grid-row: 1;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .workTable td[data-column="context"] {
+    grid-row: 2;
+  }
+  .workTable td[data-column="grade"] {
+    grid-column: 1;
+    grid-row: 3;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .workTable td[data-column="status"] {
+    grid-column: 2;
+    grid-row: 3;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .workTable td[data-column="selection"] {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    gap: 6px;
+    grid-column: 3;
+    grid-row: 3;
+    align-self: center;
+    padding: 7px 0;
+  }
+  .workTableSelectable td[data-column="selection"] {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    justify-self: end;
+  }
+  .workTable td[data-column="selection"]::before {
+    content: attr(data-label);
+  }
+  .workTable .workPhotoButton {
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+  .workTable .workContext {
+    max-width: none;
+    min-width: 0;
+  }
+  .workTable .clickableRow:hover td {
+    background: transparent;
+  }
+  .workTable:not(.workTableSelectable) .clickableRow:active {
+    background: var(--maintenance-green-soft);
   }
   .pagination {
     align-items: flex-start;

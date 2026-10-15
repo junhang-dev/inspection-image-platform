@@ -10,7 +10,11 @@
   min-width: 0;
 }
 .root {
-  margin: 2px 0 14px;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--bundle-line);
+  border-radius: var(--card-radius, 12px);
+  background: var(--bundle-surface);
 }
 .root h2,
 .root h3,
@@ -27,7 +31,7 @@
   gap: 14px;
 }
 .heading {
-  margin-bottom: 11px;
+  margin-bottom: 8px;
 }
 .heading h2 {
   font-size: var(--type-section);
@@ -153,6 +157,12 @@
   font-size: var(--type-small);
   vertical-align: middle;
 }
+.memberRow {
+  cursor: pointer;
+}
+.memberRow:hover td {
+  background: var(--surface-muted, #f8fafc);
+}
 .memberContext {
   display: grid;
   gap: 3px;
@@ -166,10 +176,12 @@
   font-weight: 600;
 }
 .memberContext small {
-  overflow: hidden;
+  min-width: 0;
   color: var(--bundle-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .photoCell {
   display: flex;
@@ -194,6 +206,15 @@
   color: var(--warning, #805b1c);
   font-weight: 650;
 }
+.photoCell .scopeMatch {
+  width: fit-content;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--bundle-green);
+  background: var(--bundle-green-soft);
+  font-size: var(--type-caption);
+  font-weight: 650;
+}
 .thumb {
   display: grid;
   place-items: center;
@@ -212,7 +233,8 @@
 .openButton,
 .createButton,
 .clearButton,
-.closeButton {
+.closeButton,
+.selectedRemoveButton {
   min-height: 34px;
   padding: 6px 10px;
   border: 1px solid var(--bundle-line);
@@ -225,14 +247,16 @@
   cursor: pointer;
 }
 .openButton:hover,
-.clearButton:hover {
+.clearButton:hover,
+.selectedRemoveButton:hover:not(:disabled) {
   border-color: var(--bundle-green);
   color: var(--bundle-green);
 }
 .openButton:disabled,
 .createButton:disabled,
 .clearButton:disabled,
-.closeButton:disabled {
+.closeButton:disabled,
+.selectedRemoveButton:disabled {
   cursor: default;
   opacity: 0.55;
 }
@@ -254,6 +278,45 @@
 }
 .composerHeading h3 {
   font-size: var(--type-body);
+}
+.selectedList {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.selectedItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--bundle-line);
+  border-radius: 7px;
+  background: var(--bundle-surface);
+}
+.selectedDetails {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.selectedDetails strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--type-small);
+}
+.selectedDetails small {
+  color: var(--bundle-muted);
+  overflow-wrap: anywhere;
+  font-size: var(--type-caption);
+  line-height: 1.45;
+}
+.selectedRemoveButton {
+  flex: 0 0 auto;
+  min-height: 30px;
 }
 .help {
   color: var(--bundle-muted);
@@ -304,6 +367,10 @@
   margin: 8px 0 !important;
   color: var(--error, #a33);
   font-size: var(--type-small);
+}
+.heading h2[tabindex="-1"]:focus-visible {
+  outline: 3px solid var(--green, #009688);
+  outline-offset: 3px;
 }
 .srOnly {
   position: absolute;

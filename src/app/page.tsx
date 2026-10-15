@@ -13,10 +13,13 @@ import HomeDashboard from "@/components/HomeDashboard";
 import PlantDashboard from "@/components/PlantDashboard";
 import RoiPanel from "@/components/RoiPanel";
 import MaintenanceContext from "@/components/MaintenanceContext";
+import { useAuth } from "@/components/AuthProvider";
+import { AuthAccountButton } from "@/components/AuthPanel";
 import {
   MaintenanceWorklist,
   type MaintenanceWorklistRow,
   type RepairMethod,
+  type RepairStatus,
 } from "@/components/MaintenancePanel";
 import {
   MaintenanceBundleComposer,
@@ -38,11 +41,13 @@ import {
   type PhotoPage,
 } from "@/lib/photo-query";
 import { requestJson } from "@/lib/api";
+import { getAuthUserId } from "@/lib/auth";
 
 import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -60,6 +65,7 @@ import {
   CircleAlert,
   CircleHelp,
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   CloudUpload,
   Clock3,
@@ -70,6 +76,7 @@ import {
   Layers3,
   LoaderCircle,
   MapPin,
+  Menu,
   Moon,
   Plus,
   RefreshCw,
@@ -126,6 +133,12 @@ type PlanPhotoPreviewState = {
   loading: boolean;
   error: string;
 };
+type MaintenanceBundleSelection = {
+  editVersion: number;
+  photoName: string;
+  planTitle: string | null;
+  pointLabel: string;
+};
 type MaintenanceTarget = {
   planId: string | null;
   pointId: string | null;
@@ -135,6 +148,21 @@ type MaintenanceTarget = {
   recordPurpose: Purpose;
   photoId?: string;
 };
+type PendingMaintenanceLeave =
+  | { kind: "saving" }
+  | { kind: "transitioning" }
+  | {
+      kind: "worklist-navigation";
+      message: string;
+      actionLabel: string;
+      direction: -1 | 1;
+    }
+  | {
+      kind: "discard";
+      message: string;
+      actionLabel: string;
+      action: () => void;
+    };
 type Audit = {
   id: string;
   actor: string;
@@ -204,7 +232,7 @@ const navGroups: {
     ],
   },
   {
-    label: "학습 메뉴 관리",
+    label: "학습 관리",
     items: [
       { id: "models", label: "AI 모델 관리", icon: Activity },
       { id: "labels", label: "라벨링 후보", icon: Tag },
@@ -273,9 +301,17 @@ function Grade({ photo }: { photo: Photo }) {
     );
   return <span className="badge muted">등급 없음</span>;
 }
-function Empty({ text, action }: { text: string; action?: React.ReactNode }) {
+function Empty({
+  text,
+  action,
+  role,
+}: {
+  text: string;
+  action?: React.ReactNode;
+  role?: "status" | "alert";
+}) {
   return (
-    <div className="empty">
+    <div className="empty" role={role}>
       <Layers3 size={30} />
       <p>{text}</p>
       {action}
@@ -329,14 +365,48 @@ function useDialogCompletion(
 }
 
 export default function Home() {
+  const { session, can } = useAuth();
+  const canWrite = can("work.write");
+  const canManageRecords = can("records.manage");
+  const actor = (session?.authenticated ? session.user?.displayName : null) ?? "현업 엔지니어";
   const [tab, setTab] = useState<Tab>("home");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const errorRetryTabRef = useRef<Tab | null>(null);
+  const planResultsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const planCountRetryFocusedRef = useRef(false);
   const isMaintenanceTab = tab === "worklist" || tab === "taWorklist";
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [points, setPoints] = useState<Point[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [plansLoaded, setPlansLoaded] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState("");
+  const [pointsError, setPointsError] = useState("");
+  const [plansError, setPlansError] = useState("");
+  const [healthError, setHealthError] = useState("");
+  const plansUnavailable = !plansLoaded || Boolean(plansError);
+  const error = [
+    plansError && "검사계획",
+    pointsError && "포인트",
+    healthError && "모델 상태",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const recordsError = [plansError && "검사계획", pointsError && "포인트"]
+    .filter(Boolean)
+    .join(" · ");
+  useLayoutEffect(() => {
+    if (!errorRetryTabRef.current) return;
+    if (errorRetryTabRef.current !== tab || tab === "dashboard") {
+      errorRetryTabRef.current = null;
+      return;
+    }
+    if (error) return;
+    errorRetryTabRef.current = null;
+    if (document.activeElement === document.body)
+      pageHeadingRef.current?.focus({ preventScroll: true });
+  }, [error, tab]);
   const [toast, setToast] = useState<Toast | null>(null);
   const [scope, setScope] = useState<PhotoScope>(defaultPhotoScope);
   const [filter, setFilter] = useState("all");
@@ -397,17 +467,39 @@ export default function Home() {
         ? { pageSize: photoPageSize }
         : {}),
   });
+  useLayoutEffect(() => {
+    if (!planCountRetryFocusedRef.current) return;
+    if (tab !== "plans") {
+      planCountRetryFocusedRef.current = false;
+      return;
+    }
+    if (photoList.error) return;
+    planCountRetryFocusedRef.current = false;
+    if (document.activeElement === document.body)
+      planResultsHeadingRef.current?.focus({ preventScroll: true });
+  }, [photoList.error, tab]);
   const [workPage, setWorkPage] = useState(1);
   const [workPageSize, setWorkPageSize] = useState(10);
   const maintenanceBundles = useMaintenanceBundles(tab === "taWorklist");
   const [selectedBundleMembers, setSelectedBundleMembers] = useState<
-    Record<string, number>
+    Record<string, MaintenanceBundleSelection>
   >({});
   const [bundleComposerOpen, setBundleComposerOpen] = useState(false);
+  const [bundleComposerCloseInViewport, setBundleComposerCloseInViewport] =
+    useState(false);
+  const bundleSelectionActionRef = useRef<HTMLButtonElement>(null);
+  const bundleSelectionStartRef = useRef<HTMLInputElement>(null);
+  const focusBundleSelectionActionOnClose = useRef(false);
   const [maintenanceBundleName, setMaintenanceBundleName] = useState("");
   const [maintenanceBundleBusy, setMaintenanceBundleBusy] = useState(false);
+  const [pendingBundleMembership, setPendingBundleMembership] = useState<{
+    maintenanceIds: string[];
+    queryRevision: number;
+  } | null>(null);
   const [maintenanceBundleError, setMaintenanceBundleError] = useState("");
-  const [workStatus, setWorkStatus] = useState("all");
+  const [pendingBundleNavigation, setPendingBundleNavigation] =
+    useState<Tab | null>(null);
+  const [workStatus, setWorkStatus] = useState<RepairStatus | "all">("all");
   const [workMethod, setWorkMethod] = useState("all");
   const [workTa, setWorkTa] = useState("all");
   const [worklistStatusSnapshot, setWorklistStatusSnapshot] = useState<{
@@ -416,11 +508,18 @@ export default function Home() {
   } | null>(null);
   const [maintenanceTarget, setMaintenanceTarget] =
     useState<MaintenanceTarget | null>(null);
-  const pendingWorklistNavigation = useRef<"first" | "last" | null>(null);
+  const [pendingMaintenanceLeave, setPendingMaintenanceLeave] =
+    useState<PendingMaintenanceLeave | null>(null);
+  const maintenanceEditStateRef = useRef({ dirty: false, busy: false });
+  const pendingWorklistNavigation = useRef<{
+    edge: "first" | "last";
+    fromPage: number;
+  } | null>(null);
   const pendingPhotoNavigation = useRef<"first" | "last" | null>(null);
   const [workVisibility, setWorkVisibility] = useState("visible");
   const [showAllWork, setShowAllWork] = useState(false);
   const worklistCountScopeKey = JSON.stringify([
+    tab === "taWorklist" ? "unassigned-ta" : "maintenance",
     scope.planId,
     scope.recordPurpose,
     scope.teamId,
@@ -474,14 +573,37 @@ export default function Home() {
       });
     }
   }, [isMaintenanceTab, maintenance.data, worklistCountScopeKey]);
-  const worklistStatusCounts =
-    worklistStatusSnapshot?.scopeKey === worklistCountScopeKey
+  useEffect(() => {
+    if (
+      !pendingBundleMembership ||
+      !maintenanceBundles.data ||
+      maintenance.loadedRevision < pendingBundleMembership.queryRevision
+    )
+      return;
+    const bundledIds = new Set(
+      maintenanceBundles.data.flatMap((bundle) => bundle.maintenanceIds),
+    );
+    if (
+      pendingBundleMembership.maintenanceIds.every((id) => bundledIds.has(id))
+    )
+      setPendingBundleMembership(null);
+  }, [
+    maintenance.loadedRevision,
+    maintenanceBundles.data,
+    pendingBundleMembership,
+  ]);
+  const bundleMembershipRefreshPending =
+    tab === "taWorklist" && pendingBundleMembership !== null;
+  const worklistStatusCounts = bundleMembershipRefreshPending
+    ? null
+    : worklistStatusSnapshot?.scopeKey === worklistCountScopeKey
       ? worklistStatusSnapshot.counts
       : (maintenance.data?.statusCounts ?? null);
   const worklistItems = isMaintenanceTab ? (maintenance.data?.items ?? []) : [];
-  const visibleMaintenanceBundles = (maintenanceBundles.data ?? []).filter(
-    (bundle) =>
-      bundle.members.some((item) => {
+  const bundleSearch = scope.search.trim().toLocaleLowerCase("ko-KR");
+  const visibleMaintenanceBundles = (maintenanceBundles.data ?? []).flatMap(
+    (bundle) => {
+      const matchingMembers = bundle.members.filter((item) => {
         const inTeam = scope.teamId === "all" || item.teamId === scope.teamId;
         const inRack = scope.rackId === "all" || item.rackId === scope.rackId;
         const inPlan =
@@ -489,25 +611,26 @@ export default function Home() {
           (scope.planId === "unassigned"
             ? !item.planId
             : item.planId === scope.planId);
-        const search = scope.search.trim().toLocaleLowerCase("ko-KR");
         const matchesSearch =
-          !search ||
+          !bundleSearch ||
           `${item.planTitle ?? ""} ${item.pointLabel ?? ""} ${item.photoName ?? ""}`
             .toLocaleLowerCase("ko-KR")
-            .includes(search);
-        const matchesStatus =
-          workStatus === "all" || item.repairStatus === workStatus;
+            .includes(bundleSearch);
         const matchesMethod =
           workMethod === "all" || item.repairMethod === workMethod;
-        return (
-          inTeam &&
-          inRack &&
-          inPlan &&
-          matchesSearch &&
-          matchesStatus &&
-          matchesMethod
-        );
-      }),
+        return inTeam && inRack && inPlan && matchesSearch && matchesMethod;
+      });
+      return matchingMembers.length
+        ? [
+            {
+              bundle,
+              matchingMemberIds: new Set(
+                matchingMembers.map((member) => member.id),
+              ),
+            },
+          ]
+        : [];
+    },
   );
   const maintenanceItemTarget = useCallback(
     (item: MaintenanceWorklistRow): MaintenanceTarget => ({
@@ -535,36 +658,105 @@ export default function Home() {
       ? maintenance.data.page > 1
       : maintenance.data.page < maintenance.data.pages;
   };
-  const navigateWorklist = (direction: -1 | 1) => {
-    if (worklistItemIndex < 0 || !maintenance.data) return;
+  const performNavigateWorklist = (direction: -1 | 1) => {
+    if (!canNavigateWorklist(direction) || !maintenance.data) return false;
     const nextIndex = worklistItemIndex + direction;
     const nextItem = worklistItems[nextIndex];
     if (nextItem) {
+      maintenanceEditStateRef.current = { dirty: false, busy: false };
+      setPendingMaintenanceLeave(null);
       setMaintenanceTarget(maintenanceItemTarget(nextItem));
-      return;
+      return true;
     }
     const nextPage = maintenance.data.page + direction;
-    if (nextPage < 1 || nextPage > maintenance.data.pages) return;
-    pendingWorklistNavigation.current = direction > 0 ? "first" : "last";
+    if (nextPage < 1 || nextPage > maintenance.data.pages) return false;
+    pendingWorklistNavigation.current = {
+      edge: direction > 0 ? "first" : "last",
+      fromPage: maintenance.data.page,
+    };
+    setPendingMaintenanceLeave({ kind: "transitioning" });
     setWorkPage(nextPage);
+    return true;
+  };
+  const requestMaintenanceLeave = (
+    message: string,
+    actionLabel: string,
+    action: () => void,
+  ) => {
+    if (pendingMaintenanceLeave) return;
+    if (maintenanceEditStateRef.current.busy) {
+      setPendingMaintenanceLeave({ kind: "saving" });
+      return;
+    }
+    if (maintenanceEditStateRef.current.dirty) {
+      setPendingMaintenanceLeave({
+        kind: "discard",
+        message,
+        actionLabel,
+        action,
+      });
+      return;
+    }
+    setPendingMaintenanceLeave(null);
+    action();
+  };
+  const navigateWorklist = (direction: -1 | 1) => {
+    if (!canNavigateWorklist(direction) || pendingMaintenanceLeave) return;
+    const message = `저장하지 않은 보수 변경이 있습니다. ${direction < 0 ? "이전" : "다음"} 사진으로 이동하면 변경 내용이 사라집니다.`;
+    const actionLabel =
+      direction < 0 ? "변경을 버리고 이전 사진" : "변경을 버리고 다음 사진";
+    if (maintenanceEditStateRef.current.busy) {
+      setPendingMaintenanceLeave({ kind: "saving" });
+      return;
+    }
+    if (maintenanceEditStateRef.current.dirty) {
+      setPendingMaintenanceLeave({
+        kind: "worklist-navigation",
+        message,
+        actionLabel,
+        direction,
+      });
+      return;
+    }
+    void performNavigateWorklist(direction);
   };
   useEffect(() => {
-    const edge = pendingWorklistNavigation.current;
-    if (
-      !isMaintenanceTab ||
-      !edge ||
-      !maintenance.data ||
-      maintenance.data.page !== workPage ||
-      !maintenance.data.items.length
-    )
+    const navigation = pendingWorklistNavigation.current;
+    if (!isMaintenanceTab || !navigation) return;
+    const restoreCurrentItem = (message: string) => {
+      pendingWorklistNavigation.current = null;
+      setPendingMaintenanceLeave(null);
+      setWorkPage(navigation.fromPage);
+      setToast({ tone: "info", message });
+    };
+    if (maintenance.error) {
+      restoreCurrentItem(
+        "다음 사진을 불러오지 못했습니다. 현재 사진과 수정 내용을 유지했습니다.",
+      );
       return;
+    }
+    if (!maintenance.data || maintenance.data.page !== workPage) return;
+    if (!maintenance.data.items.length) {
+      restoreCurrentItem(
+        "이동할 사진이 목록에 없습니다. 현재 사진과 수정 내용을 유지했습니다.",
+      );
+      return;
+    }
     const item =
-      edge === "first"
+      navigation.edge === "first"
         ? maintenance.data.items[0]
         : maintenance.data.items[maintenance.data.items.length - 1];
     pendingWorklistNavigation.current = null;
+    maintenanceEditStateRef.current = { dirty: false, busy: false };
+    setPendingMaintenanceLeave(null);
     setMaintenanceTarget(maintenanceItemTarget(item));
-  }, [isMaintenanceTab, maintenance.data, workPage, maintenanceItemTarget]);
+  }, [
+    isMaintenanceTab,
+    maintenance.data,
+    maintenance.error,
+    workPage,
+    maintenanceItemTarget,
+  ]);
   const needsMaintenanceReviewQuery =
     tab === "dashboard" &&
     scope.rackId !== "all" &&
@@ -585,6 +777,8 @@ export default function Home() {
   );
   const openMaintenance = (target: MaintenanceTarget) => {
     pendingWorklistNavigation.current = null;
+    maintenanceEditStateRef.current = { dirty: false, busy: false };
+    setPendingMaintenanceLeave(null);
     setDetail(null);
     setPointDetail(null);
     setMaintenanceTarget(target);
@@ -592,6 +786,7 @@ export default function Home() {
   const createMaintenanceBundle = async () => {
     const maintenanceIds = Object.keys(selectedBundleMembers);
     if (
+      !canWrite ||
       maintenanceBundleBusy ||
       maintenanceIds.length < 2 ||
       !maintenanceBundleName.trim()
@@ -605,13 +800,23 @@ export default function Home() {
         body: JSON.stringify({
           name: maintenanceBundleName,
           maintenanceIds,
-          expectedVersions: selectedBundleMembers,
-          actor: "현업 엔지니어",
+          expectedVersions: Object.fromEntries(
+            Object.entries(selectedBundleMembers).map(([id, member]) => [
+              id,
+              member.editVersion,
+            ]),
+          ),
+          actor,
           reason: `TA 작업 묶음 구성: ${maintenanceBundleName.trim()}`,
         }),
       });
+      setPendingBundleMembership({
+        maintenanceIds,
+        queryRevision: maintenance.requestRevision + 1,
+      });
       setSelectedBundleMembers({});
       setMaintenanceBundleName("");
+      focusBundleSelectionActionOnClose.current = true;
       setBundleComposerOpen(false);
       maintenanceBundles.refresh();
       await notify("TA 작업 묶음을 만들었습니다.");
@@ -652,6 +857,9 @@ export default function Home() {
   const [planPhotoPreviews, setPlanPhotoPreviews] = useState<
     Record<string, PlanPhotoPreviewState>
   >({});
+  const [expandedPlanPreviewId, setExpandedPlanPreviewId] = useState<
+    string | null
+  >(null);
   const [planPhotoRevision, setPlanPhotoRevision] = useState(0);
   const [draggingPhotoPlanId, setDraggingPhotoPlanId] = useState<string | null>(
     null,
@@ -748,11 +956,30 @@ export default function Home() {
   const [month, setMonth] = useState(
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSidebarOpen(false);
+      window.requestAnimationFrame(() => sidebarToggleRef.current?.focus());
+    };
+    const closeOnWideViewport = () => {
+      if (window.innerWidth > 900) setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("resize", closeOnWideViewport);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("resize", closeOnWideViewport);
+    };
+  }, [sidebarOpen]);
   const selectedPlan = plans.find((plan) => plan.id === scope.planId);
-  const scopedPlans = plans.filter(
+  const plansForVisibility = plans.filter(
     (plan) =>
-      plan.recordPurpose === "inspection" &&
-      plan.visibility === planVisibility &&
+      plan.recordPurpose === "inspection" && plan.visibility === planVisibility,
+  );
+  const scopedPlans = plansForVisibility.filter(
+    (plan) =>
       (scope.teamId === "all" || plan.teamId === scope.teamId) &&
       (scope.rackId === "all" || plan.rackIds.includes(scope.rackId)),
   );
@@ -774,15 +1001,24 @@ export default function Home() {
           shortDateDigits.includes(searchDigits)));
     return titleMatches || dateMatches;
   });
-  const visiblePlans = searchedPlans
-    .filter((plan) => planStatus === "all" || plan.status === planStatus)
-    .sort(
-      (a, b) =>
-        planStatusOrder[a.status] - planStatusOrder[b.status] ||
-        (planSort === "date"
-          ? (a.date || "9999-12-31").localeCompare(b.date || "9999-12-31")
-          : 0),
-    );
+  const filteredPlans = searchedPlans.filter(
+    (plan) => planStatus === "all" || plan.status === planStatus,
+  );
+  const visiblePlans =
+    planSort === "date"
+      ? [...filteredPlans].sort((a, b) => {
+          const dateOrder = (a.date || "9999-12-31").localeCompare(
+            b.date || "9999-12-31",
+          );
+          return (
+            dateOrder || planStatusOrder[a.status] - planStatusOrder[b.status]
+          );
+        })
+      : filteredPlans;
+  const planOptionsSummary = [
+    ...(planVisibility === "hidden" ? ["삭제한 계획 보기"] : []),
+    ...(planSort === "date" ? ["예정일 빠른 순"] : []),
+  ].join(" · ");
   const planPageCount = Math.max(
     1,
     Math.ceil(visiblePlans.length / plansPerPage),
@@ -796,6 +1032,7 @@ export default function Home() {
     if (tab !== "plans" || !pagePlanIds) return;
     const planIds = pagePlanIds.split(",");
     let active = true;
+    let loading = false;
     const controller = new AbortController();
     setPlanPhotoPreviews((previous) => ({
       ...previous,
@@ -811,47 +1048,53 @@ export default function Home() {
       ),
     }));
     const load = async () => {
-      const results = await Promise.all(
-        planIds.map(async (planId) => {
-          try {
-            const data = await api<PhotoPage>(
-              `/inspections/query?planId=${encodeURIComponent(planId)}&page=1&pageSize=4`,
-              {
-                signal: AbortSignal.any([
-                  controller.signal,
-                  AbortSignal.timeout(10000),
-                ]),
-              },
-            );
-            return [
-              planId,
-              {
-                items: data.items,
-                total: data.total,
-                pages: data.pages,
-                loading: false,
-                error: "",
-              },
-            ] as const;
-          } catch (cause) {
-            return [
-              planId,
-              {
-                items: [],
-                total: 0,
-                pages: 1,
-                loading: false,
-                error: (cause as Error).message,
-              },
-            ] as const;
-          }
-        }),
-      );
-      if (active)
-        setPlanPhotoPreviews((previous) => ({
-          ...previous,
-          ...Object.fromEntries(results),
-        }));
+      if (!active || loading) return;
+      loading = true;
+      try {
+        const results = await Promise.all(
+          planIds.map(async (planId) => {
+            try {
+              const data = await api<PhotoPage>(
+                `/inspections/query?planId=${encodeURIComponent(planId)}&page=1&pageSize=4`,
+                {
+                  signal: AbortSignal.any([
+                    controller.signal,
+                    AbortSignal.timeout(10000),
+                  ]),
+                },
+              );
+              return [
+                planId,
+                {
+                  items: data.items,
+                  total: data.total,
+                  pages: data.pages,
+                  loading: false,
+                  error: "",
+                },
+              ] as const;
+            } catch (cause) {
+              return [
+                planId,
+                {
+                  items: [],
+                  total: 0,
+                  pages: 1,
+                  loading: false,
+                  error: (cause as Error).message,
+                },
+              ] as const;
+            }
+          }),
+        );
+        if (active)
+          setPlanPhotoPreviews((previous) => ({
+            ...previous,
+            ...Object.fromEntries(results),
+          }));
+      } finally {
+        loading = false;
+      }
     };
     void load();
     const timer = setInterval(() => void load(), 8000);
@@ -861,6 +1104,9 @@ export default function Home() {
       controller.abort();
     };
   }, [tab, pagePlanIds, planPhotoRevision]);
+  useEffect(() => {
+    setExpandedPlanPreviewId(null);
+  }, [pagePlanIds, tab]);
   useEffect(() => {
     setPlanPage((current) => (current === 1 ? current : 1));
   }, [
@@ -900,28 +1146,62 @@ export default function Home() {
     [pointPageCount],
   );
   const loading = useRef(false);
+  const refreshQueued = useRef(false);
   const refresh = useCallback(async () => {
     if (loading.current) return;
     loading.current = true;
     try {
-      const [s, c, h] = await Promise.all([
-        api<Point[]>("/points?recordPurpose=all"),
-        api<Plan[]>("/plans?visibility=all"),
-        api<Health>("/health"),
-      ]);
-      setPoints(s);
-      setPlans(c);
-      setPlansLoaded(true);
-      setHealth(h);
-      setError("");
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "서버 연결을 확인하세요.",
-      );
+      const pointsRequest = api<Point[]>("/points?recordPurpose=all")
+        .then((data) => {
+          setPoints(data);
+          setPointsError("");
+        })
+        .catch((cause: unknown) => {
+          setPointsError(
+            cause instanceof Error ? cause.message : "다시 조회하세요.",
+          );
+        });
+      const plansRequest = api<Plan[]>("/plans?visibility=all")
+        .then((data) => {
+          setPlans(data);
+          setPlansLoaded(true);
+          setPlansError("");
+        })
+        .catch((cause: unknown) => {
+          setPlansError(
+            cause instanceof Error ? cause.message : "다시 조회하세요.",
+          );
+        });
+      const healthRequest = api<Health>("/health")
+        .then((data) => {
+          setHealth(data);
+          setHealthError("");
+        })
+        .catch((cause: unknown) => {
+          setHealthError(
+            cause instanceof Error ? cause.message : "다시 조회하세요.",
+          );
+        });
+      await Promise.all([pointsRequest, plansRequest, healthRequest]);
     } finally {
       loading.current = false;
+      if (refreshQueued.current) {
+        refreshQueued.current = false;
+        void refresh();
+      }
     }
   }, []);
+  const retryRefresh = () => {
+    if (loading.current) {
+      refreshQueued.current = true;
+      setToast({
+        tone: "info",
+        message: "조회 중입니다. 현재 조회가 끝나면 다시 조회합니다.",
+      });
+      return;
+    }
+    void refresh();
+  };
   useEffect(() => {
     void refresh();
     const timer = setInterval(refresh, 3000);
@@ -933,6 +1213,16 @@ export default function Home() {
       return () => clearTimeout(timer);
     }
   }, [toast]);
+  useEffect(() => {
+    if (
+      bundleComposerOpen || bundleMembershipRefreshPending ||
+      maintenanceBundleBusy || !focusBundleSelectionActionOnClose.current
+    )
+      return;
+    focusBundleSelectionActionOnClose.current = false;
+    if (document.activeElement === document.body)
+      bundleSelectionActionRef.current?.focus();
+  }, [bundleComposerOpen, bundleMembershipRefreshPending, maintenanceBundleBusy]);
   const notify = async (message: string, tone: ToastTone = "success") => {
     setToast({ tone, message });
     photoList.refresh();
@@ -950,7 +1240,7 @@ export default function Home() {
   };
   const pageTitle =
     tab === "taWorklist"
-      ? "TA 작업 묶음"
+      ? "워크리스트 관리"
       : nav.find((item) => item.id === tab)?.label;
   const daysInMonth = new Date(
     month.getFullYear(),
@@ -959,10 +1249,19 @@ export default function Home() {
   ).getDate();
   const dateKey = (day: number) =>
     `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const go = (target: Tab) => {
+  const performTabNavigation = (target: Tab) => {
+    setSidebarOpen(false);
+    setPendingBundleNavigation(null);
     setSelectedBundleMembers({});
     setMaintenanceBundleName("");
     setMaintenanceBundleError("");
+    setBundleComposerOpen(false);
+    setDetail(null);
+    setPointDetail(null);
+    pendingWorklistNavigation.current = null;
+    maintenanceEditStateRef.current = { dirty: false, busy: false };
+    setPendingMaintenanceLeave(null);
+    setMaintenanceTarget(null);
     setTab(target);
     resetFilters(
       target,
@@ -975,9 +1274,114 @@ export default function Home() {
           },
     );
   };
+  const requestTabNavigation = (target: Tab) => {
+    if (target === tab) {
+      setSidebarOpen(false);
+      return;
+    }
+    if (tab === "taWorklist" && maintenanceBundleBusy) {
+      setToast({
+        tone: "info",
+        message: "작업 묶음을 등록하고 있습니다. 완료된 뒤 이동할 수 있습니다.",
+      });
+      return;
+    }
+    const hasBundleDraft =
+      Object.keys(selectedBundleMembers).length > 0 ||
+      Boolean(maintenanceBundleName.trim());
+    if (tab === "taWorklist" && hasBundleDraft) {
+      setPendingBundleNavigation(target);
+      return;
+    }
+    performTabNavigation(target);
+  };
+  const go = (target: Tab) => {
+    if (!maintenanceTarget) {
+      requestTabNavigation(target);
+      return;
+    }
+    if (tab === "taWorklist" && maintenanceBundleBusy) {
+      setToast({
+        tone: "info",
+        message: "작업 묶음을 등록하고 있습니다. 완료된 뒤 이동할 수 있습니다.",
+      });
+      return;
+    }
+    requestMaintenanceLeave(
+      "저장하지 않은 보수 변경이 있습니다. 화면을 이동하면 변경 내용이 사라집니다.",
+      "변경을 버리고 화면 이동",
+      () => {
+        closeMaintenance();
+        requestTabNavigation(target);
+      },
+    );
+  };
+  const closeMaintenance = () => {
+    pendingWorklistNavigation.current = null;
+    maintenanceEditStateRef.current = { dirty: false, busy: false };
+    setPendingMaintenanceLeave(null);
+    setMaintenanceTarget(null);
+  };
+  const closeMaintenanceRequest = () =>
+    requestMaintenanceLeave(
+      "저장하지 않은 보수 변경이 있습니다. 창을 닫으면 변경 내용이 사라집니다.",
+      "변경을 버리고 닫기",
+      closeMaintenance,
+    );
+  const handleMaintenanceClose = () => {
+    if (
+      pendingMaintenanceLeave?.kind === "saving" ||
+      pendingMaintenanceLeave?.kind === "transitioning"
+    )
+      return;
+    if (pendingMaintenanceLeave) {
+      setPendingMaintenanceLeave(null);
+      return;
+    }
+    closeMaintenanceRequest();
+  };
+  const confirmMaintenanceLeave = () => {
+    if (pendingMaintenanceLeave?.kind === "worklist-navigation") {
+      const { direction } = pendingMaintenanceLeave;
+      if (!canNavigateWorklist(direction)) {
+        setPendingMaintenanceLeave(null);
+        setToast({
+          tone: "info",
+          message:
+            "사진 목록이 변경되어 이동할 수 없습니다. 수정 내용은 유지했습니다.",
+        });
+        return;
+      }
+      if (!performNavigateWorklist(direction)) {
+        setPendingMaintenanceLeave(null);
+        setToast({
+          tone: "info",
+          message:
+            "사진 목록이 변경되어 이동할 수 없습니다. 수정 내용은 유지했습니다.",
+        });
+      }
+      return;
+    }
+    if (pendingMaintenanceLeave?.kind !== "discard") return;
+    const { action } = pendingMaintenanceLeave;
+    maintenanceEditStateRef.current = { dirty: false, busy: false };
+    setPendingMaintenanceLeave({ kind: "transitioning" });
+    action();
+    if (!pendingWorklistNavigation.current) setPendingMaintenanceLeave(null);
+  };
+  const updateMaintenanceEditState = useCallback(
+    (state: { dirty: boolean; busy: boolean }) => {
+      maintenanceEditStateRef.current = state;
+      if (!state.busy)
+        setPendingMaintenanceLeave((current) =>
+          current?.kind === "saving" ? null : current,
+        );
+    },
+    [],
+  );
   const createMaintenanceForSelectedPhotos = async () => {
     const chosen = Object.values(selectedMaintenancePhotos);
-    if (!chosen.length || bulkMaintenanceBusy) return;
+    if (!canWrite || !chosen.length || bulkMaintenanceBusy) return;
     setBulkMaintenanceBusy(true);
     setBulkMaintenanceError("");
     const savedIds = new Set<string>();
@@ -996,7 +1400,7 @@ export default function Home() {
           continue;
         }
         const payload = {
-          actor: "현업 엔지니어",
+          actor,
           reason: "사진 판독에서 선택한 보수 대상을 작업 예정으로 등록",
           expectedVersion: current?.persisted ? current.editVersion : null,
           repairStatus: "planned" as const,
@@ -1004,7 +1408,7 @@ export default function Home() {
           inWorklist: true,
           ta: bulkMaintenanceTa,
           inclusionMode: "auto" as const,
-          visibility: current?.visibility ?? "visible",
+          ...(canManageRecords ? { visibility: current?.visibility ?? "visible" } : {}),
           photoIds: [photo.id],
           ...(!current?.persisted
             ? {
@@ -1046,8 +1450,24 @@ export default function Home() {
     }
     if (failures.length) setBulkMaintenanceError(failures.join("\n"));
   };
-  const openPlanFromScope = () => {
-    setMapPlanSeed(
+  const openPlanDialog = (
+    seed: { teamId: string; rackIds: string[] } | null,
+  ) => {
+    if (!canWrite) return;
+    if (plansUnavailable) {
+      setToast({
+        tone: "info",
+        message: plansError
+          ? "검사계획 조회가 복구되면 계획을 추가할 수 있습니다."
+          : "검사계획 목록 확인이 끝나면 계획을 추가할 수 있습니다.",
+      });
+      return;
+    }
+    setMapPlanSeed(seed);
+    setPlanOpen(true);
+  };
+  const openPlanFromScope = () =>
+    openPlanDialog(
       scope.teamId === "all"
         ? null
         : {
@@ -1055,26 +1475,51 @@ export default function Home() {
             rackIds: scope.rackId === "all" ? [] : [scope.rackId],
           },
     );
-    setPlanOpen(true);
-  };
   const uploadForPlan = (
     plan: Plan,
     point?: Point,
     rackId?: string,
     files?: File[],
   ) => {
+    if (!canWrite) return;
+    if (plansUnavailable) {
+      setToast({
+        tone: "info",
+        message: plansError
+          ? "검사계획 조회가 복구되면 사진을 추가할 수 있습니다."
+          : "검사계획 목록 확인이 끝나면 사진을 추가할 수 있습니다.",
+      });
+      return;
+    }
     setPlanManagement(null);
     setUploadContext({ plan, point, rackId, files });
     setUploadOpen(true);
   };
   const planAcceptsPhotoDrop = (plan: Plan) =>
     plan.status === "planned" && plan.visibility === "visible";
+  const selectedPhotoPlan =
+    selectedPhotoPlanIds?.length === 1
+      ? plans.find((plan) => plan.id === selectedPhotoPlanIds[0])
+      : undefined;
+  const selectedPhotoPlanNeedsManagement = Boolean(
+    selectedPhotoPlan && !planAcceptsPhotoDrop(selectedPhotoPlan),
+  );
   const hasDraggedFiles = (event: DragEvent<HTMLElement>) =>
     Array.from(event.dataTransfer.types).includes("Files");
   const handlePlanPhotoDrop = (event: DragEvent<HTMLElement>, plan: Plan) => {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
     setDraggingPhotoPlanId(null);
+    if (!canWrite) return;
+    if (plansUnavailable) {
+      setToast({
+        tone: "info",
+        message: plansError
+          ? "검사계획 조회가 복구되면 사진을 추가할 수 있습니다."
+          : "검사계획 목록 확인이 끝나면 사진을 추가할 수 있습니다.",
+      });
+      return;
+    }
     if (!planAcceptsPhotoDrop(plan)) return;
     const files = Array.from(event.dataTransfer.files).filter(
       (file) =>
@@ -1101,14 +1546,27 @@ export default function Home() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={sidebarOpen ? "sidebar sidebar-expanded" : "sidebar"}>
         <button className="brand" style={{ border: 0, background: "transparent", textAlign: "left", cursor: "pointer", width: "100%" }} aria-label="홈으로 이동" onClick={() => go("home")}>
           <span className="brand-mark">
             <img src="/flare-stack-mark.png" alt="" />
           </span>
           <span>Drone Inspection Platform</span>
         </button>
-        <nav aria-label="업무 메뉴">
+        <button
+          ref={sidebarToggleRef}
+          className="sidebar-menu-toggle"
+          type="button"
+          aria-label={sidebarOpen ? "업무 메뉴 닫기" : "업무 메뉴 펼치기"}
+          aria-expanded={sidebarOpen}
+          aria-controls="primary-work-navigation"
+          title={sidebarOpen ? "업무 메뉴 닫기" : "업무 메뉴 펼치기"}
+          onClick={() => setSidebarOpen((open) => !open)}
+        >
+          {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+          <span>{sidebarOpen ? "메뉴 닫기" : "메뉴"}</span>
+        </button>
+        <nav id="primary-work-navigation" aria-label="업무 메뉴">
           {navGroups.map((group) => (
             <section
               className="nav-group"
@@ -1133,7 +1591,21 @@ export default function Home() {
           ))}
         </nav>
       </aside>
-      <div className="main-shell">
+      {sidebarOpen && (
+        <button
+          className="sidebar-backdrop"
+          type="button"
+          aria-label="메뉴 닫기"
+          tabIndex={-1}
+          onClick={() => {
+            setSidebarOpen(false);
+            window.requestAnimationFrame(() =>
+              sidebarToggleRef.current?.focus(),
+            );
+          }}
+        />
+      )}
+      <div className="main-shell" inert={sidebarOpen}>
         {tab !== "dashboard" && (
           <header className="topbar">
             <div className="top-actions">
@@ -1148,17 +1620,7 @@ export default function Home() {
               >
                 {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
               </button>
-              <button
-                className="button secondary login-button"
-                onClick={() =>
-                  setToast({
-                    tone: "info",
-                    message: "로그인 기능은 추후 연결 예정입니다.",
-                  })
-                }
-              >
-                로그인
-              </button>
+              <AuthAccountButton />
             </div>
           </header>
         )}
@@ -1166,30 +1628,22 @@ export default function Home() {
           {tab !== "dashboard" && tab !== "home" && (
             <div className="page-heading">
               <div>
-                <h1>{pageTitle}</h1>
-              </div>
-              <div className="heading-actions">
+                <h1 ref={pageHeadingRef} tabIndex={-1}>
+                  {pageTitle}
+                </h1>
+                {tab === "plans" && <p>팀·랙별 계획과 사진 판독 현황</p>}
                 {tab === "worklist" && (
-                  <button
-                    className="button secondary"
-                    onClick={() => go("taWorklist")}
-                  >
-                    <Wrench size={16} />
-                    워크리스트 보기
-                  </button>
+                  <p>사진별 보수 상태·이력을 관리합니다.</p>
                 )}
                 {tab === "taWorklist" && (
-                  <button
-                    className="button secondary"
-                    onClick={() => go("worklist")}
-                  >
-                    <ChevronLeft size={16} />
-                    보수 관리
-                  </button>
+                  <p>TA 작업 묶음 관리 · 보수 기록은 사진별로 유지</p>
                 )}
+              </div>
+              <div className="heading-actions">
                 {tab === "plans" && (
                   <button
                     className="button primary"
+                    disabled={!canWrite || plansUnavailable}
                     onClick={openPlanFromScope}
                   >
                     <CalendarDays size={16} />
@@ -1199,24 +1653,38 @@ export default function Home() {
                 {tab === "photos" && (
                   <button
                     className="button primary"
+                    disabled={!canWrite || plansUnavailable}
                     onClick={() => {
-                      const selectedPlan =
-                        selectedPhotoPlanIds?.length === 1
-                          ? plans.find(
-                              (plan) =>
-                                plan.id === selectedPhotoPlanIds[0] &&
-                                planAcceptsPhotoDrop(plan),
-                            )
-                          : undefined;
-                      setUploadContext(
-                        selectedPlan ? { plan: selectedPlan } : null,
-                      );
+                      if (!canWrite) return;
+                      if (selectedPhotoPlan) {
+                        if (planAcceptsPhotoDrop(selectedPhotoPlan))
+                          uploadForPlan(selectedPhotoPlan);
+                        else setPlanManagement(selectedPhotoPlan);
+                        return;
+                      }
+                      setUploadContext(null);
                       if (plans.some(planAcceptsPhotoDrop)) setUploadOpen(true);
-                      else setPlanOpen(true);
+                      else openPlanDialog(null);
                     }}
                   >
-                    <Plus size={18} />
-                    사진 추가
+                    {plansUnavailable ? (
+                      plansError ? (
+                        "계획 조회 실패"
+                      ) : (
+                        "계획 확인 중…"
+                      )
+                    ) : (
+                      <>
+                        {selectedPhotoPlanNeedsManagement ? (
+                          <SlidersHorizontal size={16} />
+                        ) : (
+                          <Plus size={18} />
+                        )}
+                        {selectedPhotoPlanNeedsManagement
+                          ? "계획 관리"
+                          : "사진 추가"}
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -1226,20 +1694,28 @@ export default function Home() {
             <div className="notice error" role="alert">
               <Activity size={18} />
               <span>
-                서버에 연결하지 못했습니다. 잠시 뒤 다시 연결하세요.{" "}
-                <small>{error}</small>
+                일부 자료를 조회하지 못했습니다.{" "}
+                <small>{error} 조회 실패</small>
               </span>
               <button
+                onFocus={() => {
+                  errorRetryTabRef.current = tab;
+                }}
+                onBlur={() => {
+                  errorRetryTabRef.current = null;
+                }}
                 onClick={() => {
                   photoList.refresh();
-                  void refresh();
+                  if (isMaintenanceTab) maintenance.refresh();
+                  if (tab === "taWorklist") maintenanceBundles.refresh();
+                  retryRefresh();
                 }}
               >
-                다시 연결
+                다시 조회
               </button>
             </div>
           )}
-          {!health?.model?.ready && !error && tab !== "dashboard" && (
+          {!health?.model?.ready && !healthError && tab !== "dashboard" && (
             <div className="notice">
               <Clock3 size={17} />
               <span>
@@ -1316,7 +1792,10 @@ export default function Home() {
               if (target === "photos" && status) setFilter(status);
               if (target === "worklist" && status) setWorkStatus(status);
             }}
-            onTeamPhotos={(teamId) => { go("photos"); changeScope({ ...defaultPhotoScope, teamId }); }}
+            onTeamPhotos={(teamId) => {
+              go("photos");
+              changeScope({ ...defaultPhotoScope, teamId });
+            }}
           />}
           <div hidden={tab !== "dashboard"}>
             <PlantDashboard
@@ -1363,9 +1842,9 @@ export default function Home() {
                 maintenance.error ||
                 (needsMaintenanceReviewQuery ? maintenanceReview.error : "")
               }
-              error={error}
+              error={recordsError ? `${recordsError} 조회 실패` : ""}
               onRetryData={() => {
-                void refresh();
+                retryRefresh();
               }}
               onRetryPhotos={photoList.refresh}
               onRetryMaintenance={() => {
@@ -1380,9 +1859,9 @@ export default function Home() {
                 })
               }
               onCreatePlan={(teamId, rackIds) => {
-                setMapPlanSeed({ teamId, rackIds });
-                setPlanOpen(true);
+                openPlanDialog({ teamId, rackIds });
               }}
+              onStartPlan={openPlanFromScope}
               onOpenPlan={(id) => {
                 const plan = plans.find((item) => item.id === id);
                 if (plan) setPlanManagement(plan);
@@ -1479,19 +1958,22 @@ export default function Home() {
                       <button
                         className="text-button"
                         type="button"
-                        onClick={() => setSelectedMaintenancePhotos({})}
+                        disabled={!canWrite}
+                        onClick={() => { if (canWrite) setSelectedMaintenancePhotos({}); }}
                       >
                         선택 해제
                       </button>
                       <button
                         className="button primary"
                         type="button"
+                        disabled={!canWrite}
                         onClick={() => {
+                          if (!canWrite) return;
                           setBulkMaintenanceError("");
                           setBulkMaintenanceOpen(true);
                         }}
                       >
-                        <Wrench size={16} /> 보수 관리에 등록
+                        <Wrench size={16} /> 사진별 보수 등록
                       </button>
                     </div>
                   )}
@@ -1509,19 +1991,22 @@ export default function Home() {
                   points={points}
                   plans={plans}
                   onSelect={selectPhoto}
-                  onVisibilityChange={setPhotoVisibilityTarget}
+                  onVisibilityChange={(photo) => { if (canManageRecords) setPhotoVisibilityTarget(photo); }}
+                  compact={tab === "photos"}
                   selectedPhotoIds={
                     new Set(Object.keys(selectedMaintenancePhotos))
                   }
-                  onTogglePhoto={(photo) =>
+                  onTogglePhoto={(photo) => {
+                    if (!canWrite) return;
                     setSelectedMaintenancePhotos((current) => {
                       const next = { ...current };
                       if (next[photo.id]) delete next[photo.id];
                       else next[photo.id] = photo;
                       return next;
-                    })
-                  }
-                  onTogglePage={(eligiblePhotos, checked) =>
+                    });
+                  }}
+                  onTogglePage={(eligiblePhotos, checked) => {
+                    if (!canWrite) return;
                     setSelectedMaintenancePhotos((current) => {
                       const next = { ...current };
                       for (const photo of eligiblePhotos) {
@@ -1529,8 +2014,8 @@ export default function Home() {
                         else delete next[photo.id];
                       }
                       return next;
-                    })
-                  }
+                    });
+                  }}
                   selectable={tab === "photos"}
                 />
               ) : (
@@ -1566,81 +2051,41 @@ export default function Home() {
                     !maintenanceBundles.data && !maintenanceBundles.error
                   }
                   error={maintenanceBundles.error || null}
+                  hasCachedData={maintenanceBundles.data !== null}
+                  onRetry={maintenanceBundles.refresh}
+                  retryScopeKey={worklistCountScopeKey}
                   onOpen={(item) =>
                     openMaintenance(maintenanceItemTarget(item))
                   }
                 />
               )}
-              <div
-                className="worklist-status-bar"
-                role="group"
-                aria-label={
-                  tab === "taWorklist"
-                    ? "작업 묶음에 넣을 사진 상태 필터"
-                    : "보수 업무 상태별 필터"
-                }
-              >
-                <button
-                  type="button"
-                  className={`worklist-status-chip${workStatus === "all" ? " is-selected" : ""}`}
-                  aria-pressed={workStatus === "all"}
-                  disabled={!worklistStatusCounts}
-                  onClick={() => {
-                    setWorkStatus("all");
-                    setWorkPage(1);
-                  }}
-                >
-                  <span>전체</span>
-                  <strong>
-                    {worklistStatusCounts
-                      ? Object.values(worklistStatusCounts).reduce(
-                          (sum, count) => sum + count,
-                          0,
-                        )
-                      : "—"}
-                  </strong>
-                </button>
-                {workStatusStages.map(({ id, label }) => (
-                  <button
-                    type="button"
-                    key={id}
-                    className={`worklist-status-chip${workStatus === id ? " is-selected" : ""}`}
-                    aria-pressed={workStatus === id}
-                    disabled={!worklistStatusCounts}
-                    onClick={() => {
-                      setWorkStatus(id);
-                      setWorkPage(1);
-                    }}
-                  >
-                    <span>{label}</span>
-                    <strong>{worklistStatusCounts?.[id] ?? "—"}</strong>
-                  </button>
-                ))}
-                {(workStatus === "none" || !!worklistStatusCounts?.none) && (
-                  <button
-                    type="button"
-                    className={`worklist-status-chip${workStatus === "none" ? " is-selected" : ""}`}
-                    aria-pressed={workStatus === "none"}
-                    disabled={!worklistStatusCounts}
-                    onClick={() => {
-                      setWorkStatus("none");
-                      setWorkPage(1);
-                    }}
-                  >
-                    <span>상태 미지정</span>
-                    <strong>{worklistStatusCounts?.none ?? "—"}</strong>
-                  </button>
-                )}
-              </div>
               {tab === "taWorklist" && bundleComposerOpen && (
                 <MaintenanceBundleComposer
+                  selectedMembers={Object.entries(selectedBundleMembers).map(
+                    ([id, member]) => ({ id, ...member }),
+                  )}
                   selectedCount={Object.keys(selectedBundleMembers).length}
+                  selectionStartRef={bundleSelectionStartRef}
                   name={maintenanceBundleName}
                   busy={maintenanceBundleBusy}
                   error={maintenanceBundleError}
-                  onNameChange={setMaintenanceBundleName}
-                  onClear={() => setSelectedBundleMembers({})}
-                  onClose={() => setBundleComposerOpen(false)}
+                  onNameChange={(name) => { if (canWrite) setMaintenanceBundleName(name); }}
+                  onClear={() => { if (canWrite) setSelectedBundleMembers({}); }}
+                  onRemove={(id) => {
+                    if (!canWrite) return;
+                    setSelectedBundleMembers((current) => {
+                      const next = { ...current };
+                      delete next[id];
+                      return next;
+                    });
+                  }}
+                  onCloseActionVisibilityChange={
+                    setBundleComposerCloseInViewport
+                  }
+                  onClose={() => {
+                    focusBundleSelectionActionOnClose.current = true;
+                    setBundleComposerOpen(false);
+                  }}
                   onCreate={() => void createMaintenanceBundle()}
                 />
               )}
@@ -1654,27 +2099,121 @@ export default function Home() {
                   setWorkPageSize(value);
                   setWorkPage(1);
                 }}
-                title={tab === "taWorklist" ? "미배정 TA 사진" : "대상 목록"}
+                title={
+                  tab === "taWorklist" ? "미배정 TA 사진" : "보수 대상 사진"
+                }
+                showTaIndicator={tab === "worklist"}
+                busyMessage={
+                  bundleMembershipRefreshPending
+                    ? maintenance.error || maintenanceBundles.error
+                      ? "작업 묶음은 저장됐습니다. 실패한 목록을 다시 조회해 반영을 확인하세요."
+                      : "작업 묶음은 저장됐습니다. 목록을 갱신하고 있습니다."
+                    : undefined
+                }
+                statusFilter={
+                  <>
+                    <p className="worklist-status-label">상태</p>
+                    <div
+                      className="worklist-status-bar"
+                      role="group"
+                      aria-label={
+                        tab === "taWorklist"
+                          ? "미배정 TA 사진 상태 필터"
+                          : "보수 대상 사진 상태 필터"
+                      }
+                    >
+                      <button
+                        type="button"
+                        className={`worklist-status-chip${workStatus === "all" ? " is-selected" : ""}`}
+                        aria-pressed={workStatus === "all"}
+                        disabled={!worklistStatusCounts}
+                        onClick={() => {
+                          setWorkStatus("all");
+                          setWorkPage(1);
+                        }}
+                      >
+                        <span>전체</span>
+                        <strong>
+                          {worklistStatusCounts
+                            ? Object.values(worklistStatusCounts).reduce(
+                                (sum, count) => sum + count,
+                                0,
+                              )
+                            : "—"}
+                        </strong>
+                      </button>
+                      {workStatusStages.map(({ id, label }) => (
+                        <button
+                          type="button"
+                          key={id}
+                          className={`worklist-status-chip${workStatus === id ? " is-selected" : ""}`}
+                          aria-pressed={workStatus === id}
+                          disabled={!worklistStatusCounts}
+                          onClick={() => {
+                            setWorkStatus(id);
+                            setWorkPage(1);
+                          }}
+                        >
+                          <span>{label}</span>
+                          <strong>{worklistStatusCounts?.[id] ?? "—"}</strong>
+                        </button>
+                      ))}
+                      {(workStatus === "none" ||
+                        !!worklistStatusCounts?.none) && (
+                        <button
+                          type="button"
+                          className={`worklist-status-chip${workStatus === "none" ? " is-selected" : ""}`}
+                          aria-pressed={workStatus === "none"}
+                          disabled={!worklistStatusCounts}
+                          onClick={() => {
+                            setWorkStatus("none");
+                            setWorkPage(1);
+                          }}
+                        >
+                          <span>등록 전</span>
+                          <strong>{worklistStatusCounts?.none ?? "—"}</strong>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                }
                 selectionActionLabel={
-                  bundleComposerOpen ? "작성 닫기" : "새 작업 묶음"
+                  bundleComposerOpen
+                    ? "작성 접기"
+                    : Object.keys(selectedBundleMembers).length > 0
+                      ? "선택한 사진 묶기"
+                      : maintenanceBundleName.trim()
+                        ? "작성 계속"
+                        : "새 작업 묶음"
                 }
                 selectionActionExpanded={bundleComposerOpen}
+                selectionActionRef={bundleSelectionActionRef}
+                selectionStartRef={
+                  tab === "taWorklist"
+                    ? bundleSelectionStartRef
+                    : undefined
+                }
+                selectionActionHidden={
+                  bundleComposerOpen && bundleComposerCloseInViewport
+                }
                 onSelectionAction={
                   tab === "taWorklist"
                     ? () => {
+                        if (!canWrite) return;
                         setMaintenanceBundleError("");
                         setBundleComposerOpen((open) => !open);
                       }
                     : undefined
                 }
-                emptyDescription={
-                  tab === "taWorklist"
-                    ? "미배정된 TA 사진이 없습니다."
-                    : undefined
-                }
                 onPageChange={setWorkPage}
-                busy={!maintenance.data && !maintenance.error}
+                busy={
+                  maintenanceBundleBusy ||
+                  bundleMembershipRefreshPending ||
+                  (!maintenance.data && !maintenance.error)
+                }
                 error={maintenance.error || null}
+                onRetry={maintenance.refresh}
+                retryScopeKey={maintenance.queryKey}
                 onOpen={(item) => openMaintenance(maintenanceItemTarget(item))}
                 selectedIds={
                   tab === "taWorklist"
@@ -1684,13 +2223,19 @@ export default function Home() {
                 onSelectionChange={
                   tab === "taWorklist"
                     ? (item, selected) => {
+                        if (!canWrite) return;
                         setSelectedBundleMembers((current) => {
                           const next = { ...current };
-                          if (selected) next[item.id] = item.editVersion;
+                          if (selected)
+                            next[item.id] = {
+                              editVersion: item.editVersion,
+                              photoName: item.photoName || "사진 이름 미조회",
+                              planTitle: item.planTitle,
+                              pointLabel: item.pointLabel || "위치 미확인",
+                            };
                           else delete next[item.id];
                           return next;
                         });
-                        if (selected) setBundleComposerOpen(true);
                       }
                     : undefined
                 }
@@ -1700,9 +2245,6 @@ export default function Home() {
           {tab === "plans" && (
             <section className="panel plan-panel">
               <div className="plan-query-area">
-                <div className="panel-title">
-                  <h2>조회 조건</h2>
-                </div>
                 <PhotoScopeFields
                   context={tab}
                   scope={scope}
@@ -1717,11 +2259,12 @@ export default function Home() {
                 />
                 <div className="plan-list-toolbar">
                   <div className="plan-status-section">
-                    <span className="plan-filter-label">진행 상태</span>
+                    <span className="plan-filter-label">상태</span>
                     <div
                       className="plan-status-filters"
                       role="group"
                       aria-label="계획 상태"
+                      aria-busy={!plansLoaded}
                     >
                       {(
                         [
@@ -1736,6 +2279,7 @@ export default function Home() {
                           type="button"
                           className={planStatus === status ? "selected" : ""}
                           aria-pressed={planStatus === status}
+                          disabled={!plansLoaded}
                           onClick={() => {
                             setPlanStatus(status);
                             setPlanPage(1);
@@ -1743,48 +2287,21 @@ export default function Home() {
                         >
                           {label}{" "}
                           <span>
-                            {status === "all"
-                              ? searchedPlans.length
-                              : searchedPlans.filter(
-                                  (plan) => plan.status === status,
-                                ).length}
+                            {plansLoaded
+                              ? status === "all"
+                                ? searchedPlans.length
+                                : searchedPlans.filter(
+                                    (plan) => plan.status === status,
+                                  ).length
+                              : "—"}
                           </span>
                         </button>
                       ))}
                     </div>
                   </div>
-                  <div className="plan-list-tools">
-                    <label className="filter-control plan-visibility">
-                      계획 범위
-                      <select
-                        value={planVisibility}
-                        onChange={(event) => {
-                          const next = event.target.value;
-                          setPlanVisibility(next);
-                          setPlanStatus(next === "visible" ? "planned" : "all");
-                          setPlanPage(1);
-                        }}
-                      >
-                        <option value="visible">현재 계획</option>
-                        <option value="hidden">삭제한 계획 보기</option>
-                      </select>
-                    </label>
-                    <label className="filter-control plan-sort">
-                      정렬
-                      <select
-                        value={planSort}
-                        onChange={(event) => {
-                          setPlanSort(event.target.value as "created" | "date");
-                          setPlanPage(1);
-                        }}
-                      >
-                        {" "}
-                        <option value="created">최근 등록 순</option>
-                        <option value="date">예정일 빠른 순</option>
-                      </select>
-                    </label>
+                  <div className="plan-list-controls">
                     <label className="filter-control plan-search-control">
-                      계획 이름·예정일
+                      계획 검색
                       <span className="plan-list-search">
                         <Search size={17} aria-hidden="true" />
                         <input
@@ -1794,11 +2311,51 @@ export default function Home() {
                             setPlanSearch(event.target.value);
                             setPlanPage(1);
                           }}
-                          placeholder="이름 또는 예정일 검색"
+                          placeholder="계획명 · 예정일"
                           title="계획 이름, 261001 또는 2026-10-01로 검색"
                         />
                       </span>
                     </label>
+                    <details className="plan-list-options">
+                      <summary>
+                        목록 옵션
+                        {planOptionsSummary ? ` · ${planOptionsSummary}` : ""}
+                      </summary>
+                      <div className="plan-list-tools">
+                        <label className="filter-control plan-visibility">
+                          계획 범위
+                          <select
+                            value={planVisibility}
+                            onChange={(event) => {
+                              const next = event.target.value;
+                              setPlanVisibility(next);
+                              setPlanStatus(
+                                next === "visible" ? "planned" : "all",
+                              );
+                              setPlanPage(1);
+                            }}
+                          >
+                            <option value="visible">현재 계획</option>
+                            <option value="hidden">삭제한 계획 보기</option>
+                          </select>
+                        </label>
+                        <label className="filter-control plan-sort">
+                          정렬
+                          <select
+                            value={planSort}
+                            onChange={(event) => {
+                              setPlanSort(
+                                event.target.value as "created" | "date",
+                              );
+                              setPlanPage(1);
+                            }}
+                          >
+                            <option value="created">최근 등록 순</option>
+                            <option value="date">예정일 빠른 순</option>
+                          </select>
+                        </label>
+                      </div>
+                    </details>
                   </div>
                 </div>
               </div>
@@ -1808,6 +2365,13 @@ export default function Home() {
                   <button
                     type="button"
                     className="text-button"
+                    aria-label="검사계획 사진 장수 다시 조회"
+                    onFocus={() => {
+                      planCountRetryFocusedRef.current = true;
+                    }}
+                    onBlur={() => {
+                      planCountRetryFocusedRef.current = false;
+                    }}
                     onClick={photoList.refresh}
                   >
                     다시 조회
@@ -1815,19 +2379,45 @@ export default function Home() {
                 </div>
               )}
               <div className="plan-results-heading">
-                <h2>계획 목록</h2>
-                <span>조회 결과 {visiblePlans.length}건</span>
+                <h2 ref={planResultsHeadingRef} tabIndex={-1}>
+                  계획 목록
+                </h2>
+                {(!plansLoaded || plansError) && (
+                  <span>
+                    {plansError
+                      ? plansLoaded
+                        ? `조회 실패 · 마지막 정상 목록 ${visiblePlans.length}건 · 읽기 전용`
+                        : "조회 실패"
+                      : "조회 중"}
+                  </span>
+                )}
               </div>
-              {!visiblePlans.length && (
+              {!plansLoaded ? (
                 <Empty
+                  role={plansError ? undefined : "status"}
                   text={
-                    planStatus === "planned" &&
-                    !planSearch &&
-                    scopedPlans.length
-                      ? "진행 중인 계획이 없습니다. 완료·취소 계획은 위 상태에서 확인하세요."
-                      : scopedPlans.length
-                        ? "조건에 맞는 검사계획이 없습니다."
-                        : "선택한 범위의 검사계획이 없습니다."
+                    plansError
+                      ? "계획 목록을 조회하지 못했습니다. 위쪽 안내에서 다시 조회하세요."
+                      : "검사계획을 불러오는 중입니다."
+                  }
+                />
+              ) : !visiblePlans.length ? (
+                <Empty
+                  role="status"
+                  text={
+                    plansError
+                      ? "마지막 정상 조회에서는 조건에 맞는 계획이 없습니다."
+                      : planVisibility === "hidden"
+                        ? "조건에 맞는 삭제한 계획이 없습니다."
+                        : planStatus === "planned" &&
+                            !planSearch &&
+                            scopedPlans.length
+                          ? "진행 중인 계획이 없습니다."
+                          : scopedPlans.length
+                            ? "조건에 맞는 계획이 없습니다."
+                            : plansForVisibility.length
+                              ? "선택한 팀·랙 범위에 계획이 없습니다."
+                              : "검사계획이 없습니다."
                   }
                   action={
                     planVisibility === "visible" &&
@@ -1835,6 +2425,8 @@ export default function Home() {
                     !planSearch ? (
                       <button
                         className="button primary"
+                        type="button"
+                        disabled={!canWrite || plansUnavailable}
                         onClick={openPlanFromScope}
                       >
                         검사계획 만들기
@@ -1842,17 +2434,18 @@ export default function Home() {
                     ) : scopedPlans.length ? (
                       <button
                         className="button secondary"
+                        type="button"
                         onClick={() => {
                           setPlanStatus("all");
                           setPlanSearch("");
                         }}
                       >
-                        목록 조건 초기화
+                        상태·검색 초기화
                       </button>
                     ) : undefined
                   }
                 />
-              )}
+              ) : null}
               {pagePlans.length > 0 && (
                 <div className="plan-table-wrap">
                   <table className="v3-plan-table">
@@ -1869,8 +2462,14 @@ export default function Home() {
                       </tr>
                     </thead>
                     {pagePlans.map((plan) => {
-                      const photoStatus =
-                        photoList.data?.planStatusCounts?.[plan.id];
+                      const planPhotoCount = photoList.error
+                        ? undefined
+                        : photoList.data?.planCounts
+                          ? (photoList.data.planCounts[plan.id] ?? 0)
+                          : undefined;
+                      const photoStatus = photoList.error
+                        ? undefined
+                        : photoList.data?.planStatusCounts?.[plan.id];
                       const waiting =
                         (photoStatus?.pending ?? 0) +
                         (photoStatus?.processing ?? 0);
@@ -1884,8 +2483,6 @@ export default function Home() {
                         <tbody key={plan.id} className="plan-row-group">
                           <tr
                             className="plan-data-row"
-                            tabIndex={0}
-                            aria-label={`${plan.title} 계획의 사진·판독 보기`}
                             onClick={(event) => {
                               if (
                                 (event.target as HTMLElement).closest(
@@ -1894,13 +2491,6 @@ export default function Home() {
                               )
                                 return;
                               viewPlanPhotos(plan);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.target !== event.currentTarget) return;
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                viewPlanPhotos(plan);
-                              }
                             }}
                           >
                             <td data-label="검사계획">
@@ -1927,7 +2517,7 @@ export default function Home() {
                                   </span>
                                 </span>
                                 <span className="plan-card-open-label">
-                                  사진 · 판독 보기{" "}
+                                  사진·판독 목록{" "}
                                   <ChevronRight size={14} aria-hidden="true" />
                                 </span>
                               </button>
@@ -2001,6 +2591,45 @@ export default function Home() {
                                   </span>
                                 )
                               )}
+                              <div className="plan-inline-actions">
+                                {planPhotoCount !== 0 && (
+                                  <button
+                                    className="plan-preview-toggle"
+                                    type="button"
+                                    aria-expanded={
+                                      expandedPlanPreviewId === plan.id
+                                    }
+                                    aria-controls={
+                                      expandedPlanPreviewId === plan.id
+                                        ? `plan-photo-preview-${plan.id}`
+                                        : undefined
+                                    }
+                                    aria-label={`${plan.title} 사진 미리보기 ${expandedPlanPreviewId === plan.id ? "닫기" : "열기"}`}
+                                    onClick={() =>
+                                      setExpandedPlanPreviewId((current) =>
+                                        current === plan.id ? null : plan.id,
+                                      )
+                                    }
+                                  >
+                                    {expandedPlanPreviewId === plan.id
+                                      ? "닫기"
+                                      : "미리보기"}
+                                    <ChevronDown size={12} aria-hidden="true" />
+                                  </button>
+                                )}
+                                {planAcceptsPhotoDrop(plan) && (
+                                  <button
+                                    className="button secondary plan-inline-add"
+                                    type="button"
+                                    disabled={!canWrite || plansUnavailable}
+                                    onClick={() => uploadForPlan(plan)}
+                                    aria-label={`${plan.title} 사진 추가`}
+                                  >
+                                    <ImagePlus size={13} aria-hidden="true" />
+                                    추가
+                                  </button>
+                                )}
+                              </div>
                             </td>
                             <td data-label="관리">
                               <button
@@ -2017,80 +2646,85 @@ export default function Home() {
                               </button>
                             </td>
                           </tr>
-                          <tr className="plan-photo-row">
-                            <td colSpan={6}>
-                              <section
-                                className={`plan-card-photos${draggingPhotoPlanId === plan.id ? " is-drop-active" : ""}${planAcceptsPhotoDrop(plan) ? " can-add-photos" : ""}`}
-                                aria-label={`${plan.title} 등록 사진`}
-                                onDragEnter={(event) => {
-                                  if (
-                                    !planAcceptsPhotoDrop(plan) ||
-                                    !hasDraggedFiles(event)
-                                  )
-                                    return;
-                                  event.preventDefault();
-                                  setDraggingPhotoPlanId(plan.id);
-                                }}
-                                onDragOver={(event) => {
-                                  if (
-                                    !planAcceptsPhotoDrop(plan) ||
-                                    !hasDraggedFiles(event)
-                                  )
-                                    return;
-                                  event.preventDefault();
-                                  event.dataTransfer.dropEffect = "copy";
-                                }}
-                                onDragLeave={(event) => {
-                                  if (
-                                    event.currentTarget.contains(
-                                      event.relatedTarget as Node | null,
+                          {expandedPlanPreviewId === plan.id && (
+                            <tr className="plan-photo-row">
+                              <td colSpan={6}>
+                                <section
+                                  id={`plan-photo-preview-${plan.id}`}
+                                  className={`plan-card-photos${draggingPhotoPlanId === plan.id && !plansError ? " is-drop-active" : ""}${planAcceptsPhotoDrop(plan) && !plansError ? " can-add-photos" : ""}`}
+                                  aria-label={`${plan.title} 등록 사진 미리보기`}
+                                  onDragEnter={(event) => {
+                                    if (!canWrite) return;
+                                    if (!hasDraggedFiles(event)) return;
+                                    event.preventDefault();
+                                    if (
+                                      plansError ||
+                                      !planAcceptsPhotoDrop(plan)
+                                    ) {
+                                      setDraggingPhotoPlanId(null);
+                                      return;
+                                    }
+                                    setDraggingPhotoPlanId(plan.id);
+                                  }}
+                                  onDragOver={(event) => {
+                                    if (!canWrite) return;
+                                    if (!hasDraggedFiles(event)) return;
+                                    event.preventDefault();
+                                    event.dataTransfer.dropEffect =
+                                      plansError || !planAcceptsPhotoDrop(plan)
+                                        ? "none"
+                                        : "copy";
+                                  }}
+                                  onDragLeave={(event) => {
+                                    if (
+                                      event.currentTarget.contains(
+                                        event.relatedTarget as Node | null,
+                                      )
                                     )
-                                  )
-                                    return;
-                                  setDraggingPhotoPlanId(null);
-                                }}
-                                onDrop={(event) =>
-                                  handlePlanPhotoDrop(event, plan)
-                                }
-                              >
-                                {draggingPhotoPlanId === plan.id && (
-                                  <div
-                                    className="plan-photo-drop-overlay"
-                                    aria-live="polite"
-                                  >
-                                    <CloudUpload size={22} /> 이 계획에 사진
-                                    추가
-                                  </div>
-                                )}
-                                {preview?.error ? (
-                                  <div
-                                    className="plan-photo-inline-message"
-                                    role="alert"
-                                  >
-                                    사진을 불러오지 못했습니다.{" "}
-                                    <button
-                                      className="text-button"
-                                      type="button"
-                                      onClick={() =>
-                                        setPlanPhotoRevision(
-                                          (revision) => revision + 1,
-                                        )
-                                      }
+                                      return;
+                                    setDraggingPhotoPlanId(null);
+                                  }}
+                                  onDrop={(event) =>
+                                    handlePlanPhotoDrop(event, plan)
+                                  }
+                                >
+                                  {draggingPhotoPlanId === plan.id && (
+                                    <div
+                                      className="plan-photo-drop-overlay"
+                                      aria-live="polite"
                                     >
-                                      다시 불러오기
-                                    </button>
-                                  </div>
-                                ) : preview?.loading && !preview.total ? (
-                                  <div
-                                    className="plan-photo-skeleton-grid"
-                                    aria-label="사진 불러오는 중"
-                                  >
-                                    {Array.from({ length: 4 }, (_, index) => (
-                                      <span key={index} />
-                                    ))}
-                                  </div>
-                                ) : preview?.total ? (
-                                  <>
+                                      <CloudUpload size={22} /> 이 계획에 사진
+                                      추가
+                                    </div>
+                                  )}
+                                  {preview?.error ? (
+                                    <div
+                                      className="plan-photo-inline-message"
+                                      role="alert"
+                                    >
+                                      사진을 불러오지 못했습니다.{" "}
+                                      <button
+                                        className="text-button"
+                                        type="button"
+                                        onClick={() =>
+                                          setPlanPhotoRevision(
+                                            (revision) => revision + 1,
+                                          )
+                                        }
+                                      >
+                                        다시 불러오기
+                                      </button>
+                                    </div>
+                                  ) : preview?.loading && !preview.total ? (
+                                    <div
+                                      className="plan-photo-skeleton-grid"
+                                      aria-label="사진 불러오는 중"
+                                    >
+                                      {Array.from({ length: 4 }, (_, index) => (
+                                        <span key={index} />
+                                      ))}
+                                    </div>
+                                  ) : preview?.total ? (
                                     <div className="plan-photo-grid">
                                       {preview.items.map((photo) => {
                                         const status =
@@ -2107,12 +2741,9 @@ export default function Home() {
                                           photo.status === "pending" ||
                                           photo.status === "processing";
                                         return (
-                                          <button
-                                            type="button"
+                                          <figure
                                             className={`plan-photo-card${isWaiting ? " is-waiting" : ""}${photo.status === "done" ? " is-done" : ""}${photo.status === "error" ? " is-error" : ""}`}
                                             key={photo.id}
-                                            onClick={() => viewPlanPhotos(plan)}
-                                            aria-label={`${photo.name}, ${status}. ${plan.title} 사진·판독 목록 보기`}
                                           >
                                             <span className="plan-photo-image">
                                               <img
@@ -2134,79 +2765,31 @@ export default function Home() {
                                                 </span>
                                               )}
                                             </span>
-                                            <span className="plan-photo-caption">
+                                            <figcaption className="plan-photo-caption">
                                               <strong title={photo.name}>
                                                 {photo.name}
                                               </strong>
                                               <small>{status}</small>
-                                            </span>
-                                          </button>
+                                            </figcaption>
+                                          </figure>
                                         );
                                       })}
                                     </div>
-                                    {(preview.total > preview.items.length ||
-                                      planAcceptsPhotoDrop(plan)) && (
-                                      <div className="plan-photo-more">
-                                        {preview.total >
-                                          preview.items.length && (
-                                          <button
-                                            type="button"
-                                            className="text-button"
-                                            onClick={() => viewPlanPhotos(plan)}
-                                          >
-                                            전체 사진 {preview.total}장 보기
-                                          </button>
-                                        )}
-                                        {planAcceptsPhotoDrop(plan) && (
-                                          <>
-                                            <span className="plan-photo-drop-hint">
-                                              사진을 이 구간에 끌어 놓아 추가
-                                            </span>
-                                            <button
-                                              type="button"
-                                              className="text-button plan-photo-add-inline"
-                                              onClick={() =>
-                                                uploadForPlan(plan)
-                                              }
-                                            >
-                                              <ImagePlus
-                                                size={15}
-                                                aria-hidden="true"
-                                              />{" "}
-                                              사진 추가
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    )}
-                                  </>
-                                ) : (
-                                  preview &&
-                                  (planAcceptsPhotoDrop(plan) ? (
-                                    <button
-                                      className="plan-photo-empty"
-                                      type="button"
-                                      onClick={() => uploadForPlan(plan)}
-                                    >
-                                      <ImagePlus size={19} aria-hidden="true" />
-                                      <span>
-                                        클릭해 사진을 선택하거나 여기에 끌어
-                                        놓으세요
-                                      </span>
-                                    </button>
                                   ) : (
-                                    <div className="plan-photo-empty is-readonly">
-                                      <span>등록된 사진이 없습니다.</span>
-                                      <span className="plan-photo-empty-hint">
-                                        계획을 재개하면 사진을 추가할 수
-                                        있습니다.
-                                      </span>
-                                    </div>
-                                  ))
-                                )}
-                              </section>
-                            </td>
-                          </tr>
+                                    preview && (
+                                      <div className="plan-photo-inline-message">
+                                        {planAcceptsPhotoDrop(plan)
+                                          ? "등록 사진이 없습니다."
+                                          : plan.visibility === "hidden"
+                                            ? "삭제된 계획은 복원 후 상태를 확인하세요."
+                                            : "계획 관리에서 재개 후 사진을 추가할 수 있습니다."}
+                                      </div>
+                                    )
+                                  )}
+                                </section>
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       );
                     })}
@@ -2456,7 +3039,7 @@ export default function Home() {
                 >
                   {health?.model.ready
                     ? "연결됨"
-                    : error
+                    : healthError
                       ? "확인 필요"
                       : "연결 대기"}
                 </span>
@@ -2496,7 +3079,7 @@ export default function Home() {
               <button
                 className="button secondary"
                 type="button"
-                onClick={() => void refresh()}
+                onClick={retryRefresh}
               >
                 <RefreshCw size={15} /> 상태 새로고침
               </button>
@@ -2508,6 +3091,7 @@ export default function Home() {
         <PlanManagementDialog
           key={planManagement.id}
           initialPlan={planManagement}
+          readOnly={plansUnavailable}
           close={() => setPlanManagement(null)}
           done={notify}
           reportHistoryError={reportHistoryError}
@@ -2530,6 +3114,7 @@ export default function Home() {
       )}
       {uploadOpen && (
         <UploadDialog
+          plansUnavailable={plansUnavailable}
           publicUploadsAllowed={
             publicUploads || health?.publicUploadsAllowed === true
           }
@@ -2555,6 +3140,7 @@ export default function Home() {
       )}
       {planOpen && (
         <PlanDialog
+          plansUnavailable={plansUnavailable}
           initialTeamId={
             mapPlanSeed?.teamId ?? (scope.teamId === "all" ? "" : scope.teamId)
           }
@@ -2586,11 +3172,10 @@ export default function Home() {
             const rack = locations.racks.find(
               (item) => item.id === photo.rackId,
             );
-            setMapPlanSeed({
+            openPlanDialog({
               teamId: photo.teamId ?? rack?.teamId ?? "",
               rackIds: photo.rackId ? [photo.rackId] : [],
             });
-            setPlanOpen(true);
           }}
         />
       )}
@@ -2603,17 +3188,24 @@ export default function Home() {
       )}
       {bulkMaintenanceOpen && (
         <Modal
-          title="선택 사진을 보수 관리에 등록"
+          title="보수 항목 일괄 등록"
           wide
           close={() => {
             if (!bulkMaintenanceBusy) setBulkMaintenanceOpen(false);
           }}
         >
           <div className="bulk-maintenance-dialog">
-            <p>
-              선택한 사진을 각각 보수 대상으로 등록해 <strong>작업 예정</strong>
-              으로 둡니다. 아래 작업 방법과 TA 여부는 선택한 사진 전체에
-              적용됩니다.
+            <div className="bulk-maintenance-summary">
+              <strong>
+                {Object.keys(selectedMaintenancePhotos).length}장 선택
+              </strong>
+              <span>
+                사진마다 보수 항목을 따로 만들고 작업 예정으로 설정합니다.
+              </span>
+            </div>
+            <p className="bulk-maintenance-note">
+              작업 방법과 TA 설정은 모든 사진에 적용됩니다. 작업 묶음은
+              워크리스트 관리에서 별도로 만듭니다.
             </p>
             <ul className="bulk-maintenance-list">
               {Object.values(selectedMaintenancePhotos).map((photo) => (
@@ -2632,9 +3224,11 @@ export default function Home() {
                 작업 방법
                 <select
                   value={bulkMaintenanceMethod}
-                  onChange={(event) =>
-                    setBulkMaintenanceMethod(event.target.value as RepairMethod)
-                  }
+                  disabled={!canWrite || bulkMaintenanceBusy}
+                  onChange={(event) => {
+                    if (canWrite && !bulkMaintenanceBusy)
+                      setBulkMaintenanceMethod(event.target.value as RepairMethod);
+                  }}
                 >
                   <option value="undecided">방법 미정</option>
                   <option value="paint">도장</option>
@@ -2645,16 +3239,16 @@ export default function Home() {
                 <input
                   type="checkbox"
                   checked={bulkMaintenanceTa}
-                  onChange={(event) =>
-                    setBulkMaintenanceTa(event.target.checked)
-                  }
+                  disabled={!canWrite || bulkMaintenanceBusy}
+                  onChange={(event) => {
+                    if (canWrite && !bulkMaintenanceBusy) setBulkMaintenanceTa(event.target.checked);
+                  }}
                 />
                 TA 작업에 포함
               </label>
             </div>
-            <p className="form-intro">
-              이미 작업 중이거나 완료된 사진은 변경하지 않습니다. 등록 후 보수
-              관리에서 사진별 진행 상태를 확인할 수 있습니다.
+            <p className="bulk-maintenance-note">
+              이미 작업 중이거나 완료된 사진은 건너뜁니다.
             </p>
             {bulkMaintenanceError && (
               <p className="form-error" role="alert">
@@ -2676,12 +3270,13 @@ export default function Home() {
                 className="button primary"
                 type="button"
                 disabled={
+                  !canWrite ||
                   bulkMaintenanceBusy ||
                   !Object.keys(selectedMaintenancePhotos).length
                 }
                 onClick={() => void createMaintenanceForSelectedPhotos()}
               >
-                {bulkMaintenanceBusy ? "등록 중…" : "보수 관리에 등록"}
+                {bulkMaintenanceBusy ? "등록 중…" : "사진별 보수 항목 만들기"}
               </button>
             </div>
           </div>
@@ -2699,16 +3294,47 @@ export default function Home() {
           created={setPointDetail}
         />
       )}
+      {pendingBundleNavigation && (
+        <Modal
+          title="작업 묶음 작성 중"
+          descriptionId="bundle-navigation-description"
+          close={() => setPendingBundleNavigation(null)}
+        >
+          <p id="bundle-navigation-description" className="form-intro">
+            {Object.keys(selectedBundleMembers).length > 0 &&
+              `${Object.keys(selectedBundleMembers).length}장의 사진을 선택했고 `}
+            {maintenanceBundleName.trim() &&
+              `작업명 ‘${maintenanceBundleName.trim()}’을 입력했습니다. `}
+            아직 저장하지 않은 내용입니다. 화면을 이동하면 초안이 사라집니다.
+          </p>
+          <div className="form-actions">
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setPendingBundleNavigation(null)}
+            >
+              작성 계속
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              onClick={() => {
+                const target = pendingBundleNavigation;
+                if (target) performTabNavigation(target);
+              }}
+            >
+              초안을 버리고 이동
+            </button>
+          </div>
+        </Modal>
+      )}
       {maintenanceTarget && (
         <Modal
           title={
             maintenanceTarget.targetType === "photo" ? "보수 관리" : "보수 기록"
           }
           wide
-          close={() => {
-            pendingWorklistNavigation.current = null;
-            setMaintenanceTarget(null);
-          }}
+          close={handleMaintenanceClose}
           onNavigate={
             maintenanceTarget.targetType === "photo"
               ? navigateWorklist
@@ -2716,7 +3342,7 @@ export default function Home() {
           }
         >
           <MaintenanceContext
-            key={`${maintenanceTarget.planId}/${maintenanceTarget.pointId}/${maintenanceTarget.photoId ?? maintenanceTarget.targetId}`}
+            key={`${maintenanceTarget.planId}/${maintenanceTarget.pointId}/${maintenanceTarget.photoId ?? maintenanceTarget.targetId}/${maintenanceTarget.targetType}/${maintenanceTarget.recordPurpose}`}
             {...maintenanceTarget}
             planTitle={
               maintenanceTarget.planId
@@ -2734,8 +3360,49 @@ export default function Home() {
             onNext={() => navigateWorklist(1)}
             canPrevious={canNavigateWorklist(-1)}
             canNext={canNavigateWorklist(1)}
+            visibleStatusFilter={isMaintenanceTab ? workStatus : "all"}
+            onEditStateChange={updateMaintenanceEditState}
+            editingBlocked={pendingMaintenanceLeave !== null}
             done={notify}
           />
+          {pendingMaintenanceLeave && (
+            <div
+              className="form-error"
+              role={
+                pendingMaintenanceLeave.kind === "discard" ||
+                pendingMaintenanceLeave.kind === "worklist-navigation"
+                  ? "alert"
+                  : "status"
+              }
+            >
+              {pendingMaintenanceLeave.kind === "saving" ? (
+                <p>저장 중에는 사진을 이동하거나 창을 닫을 수 없습니다.</p>
+              ) : pendingMaintenanceLeave.kind === "transitioning" ? (
+                <p>선택한 사진을 불러오는 중입니다.</p>
+              ) : (
+                <>
+                  <p>{pendingMaintenanceLeave.message}</p>
+                  <div className="form-actions">
+                    <button
+                      className="button secondary"
+                      type="button"
+                      autoFocus
+                      onClick={() => setPendingMaintenanceLeave(null)}
+                    >
+                      계속 편집
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={confirmMaintenanceLeave}
+                    >
+                      {pendingMaintenanceLeave.actionLabel}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </Modal>
       )}
       {pointDetail && (
@@ -2795,23 +3462,79 @@ function PhotoScopeFields({
   };
 }) {
   const set = (patch: Partial<PhotoScope>) => change({ ...scope, ...patch });
+  const searchUsesDebounce = context === "worklist";
+  const [searchDraft, setSearchDraft] = useState(scope.search);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scopeRef = useRef(scope);
+  const changeRef = useRef(change);
+  scopeRef.current = scope;
+  changeRef.current = change;
+  useEffect(() => {
+    setSearchDraft(scope.search);
+    if (searchTimer.current !== null) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+  }, [context, scope.search]);
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current !== null) clearTimeout(searchTimer.current);
+    };
+  }, []);
+  const updateSearch = (value: string) => {
+    setSearchDraft(value);
+    if (!searchUsesDebounce) {
+      set({ search: value });
+      return;
+    }
+    if (searchTimer.current !== null) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      searchTimer.current = null;
+      changeRef.current({ ...scopeRef.current, search: value });
+    }, 300);
+  };
+  const resetScope = () => {
+    if (searchTimer.current !== null) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+    setSearchDraft("");
+    reset();
+  };
   const hasAdvancedFilters = context !== "plans";
   const hasVisibilityFilter = context !== "worklist";
   const inspectionPlans = plans.filter(
     (plan) => plan.recordPurpose === "inspection",
   );
-  const hasActiveAdvancedFilter =
-    (context !== "photos" && scope.planId !== "all") ||
-    scope.search !== "" ||
-    (hasVisibilityFilter && scope.visibility !== "visible") ||
-    (context === "worklist" &&
-      !!worklistFilters &&
-      (worklistFilters.method !== "all" ||
-        (!taOnly && worklistFilters.ta !== "all") ||
-        (!taOnly && worklistFilters.visibility !== "visible") ||
-        (!taOnly && worklistFilters.showAll)));
-  const detailSummary =
-    context === "worklist" ? "검사계획·검색 조건" : "상세 조건";
+  const activeAdvancedFilterLabels: string[] = [];
+  if (context !== "photos" && scope.planId !== "all") {
+    activeAdvancedFilterLabels.push("계획");
+  }
+  if (scope.search) activeAdvancedFilterLabels.push("검색");
+  if (hasVisibilityFilter && scope.visibility !== "visible") {
+    activeAdvancedFilterLabels.push("사진 표시");
+  }
+  if (context === "worklist" && worklistFilters) {
+    if (worklistFilters.method !== "all") {
+      activeAdvancedFilterLabels.push("작업 방법");
+    }
+    if (!taOnly && worklistFilters.ta === "true") {
+      activeAdvancedFilterLabels.push("TA 포함");
+    } else if (!taOnly && worklistFilters.ta === "false") {
+      activeAdvancedFilterLabels.push("TA 미포함");
+    }
+    if (!taOnly && worklistFilters.visibility !== "visible") {
+      activeAdvancedFilterLabels.push("표시 상태");
+    }
+    if (!taOnly && worklistFilters.showAll) {
+      activeAdvancedFilterLabels.push("수동 제외·하향 포함");
+    }
+  }
+  const hasActiveAdvancedFilter = activeAdvancedFilterLabels.length > 0;
+  const activeAdvancedFilterSummary = hasActiveAdvancedFilter
+    ? ` · ${activeAdvancedFilterLabels.join(" · ")}`
+    : "";
+  const detailSummary = context === "worklist" ? "검색·상세 조건" : "상세 조건";
   const worklistPlans = inspectionPlans.filter(
     (plan) =>
       (scope.teamId === "all" || plan.teamId === scope.teamId) &&
@@ -2883,7 +3606,7 @@ function PhotoScopeFields({
           <button
             className="text-button scope-reset"
             type="button"
-            onClick={reset}
+            onClick={resetScope}
           >
             조회 초기화
           </button>
@@ -2909,15 +3632,13 @@ function PhotoScopeFields({
           <button
             className="text-button scope-reset"
             type="button"
-            onClick={reset}
+            onClick={resetScope}
           >
             조회 초기화
           </button>
         </div>
         <details className="scope-details">
-          <summary>
-            상세 조건{hasActiveAdvancedFilter ? " · 적용 중" : ""}
-          </summary>
+          <summary>상세 조건{activeAdvancedFilterSummary}</summary>
           <div className="photo-scope">
             <label>
               사진 표시
@@ -2991,22 +3712,31 @@ function PhotoScopeFields({
             }}
           >
             <option value="all">모든 랙</option>
-            {locations.racks
-              .filter(
-                (rack) =>
-                  scope.teamId === "all" || rack.teamId === scope.teamId,
-              )
-              .map((rack) => (
-                <option key={rack.id} value={rack.id}>
-                  {rackName(rack.id)}
-                </option>
-              ))}
+            {scope.teamId === "all"
+              ? locations.teams.map((team) => (
+                  <optgroup key={team.id} label={team.name}>
+                    {locations.racks
+                      .filter((rack) => rack.teamId === team.id)
+                      .map((rack) => (
+                        <option key={rack.id} value={rack.id}>
+                          {rack.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))
+              : locations.racks
+                  .filter((rack) => rack.teamId === scope.teamId)
+                  .map((rack) => (
+                    <option key={rack.id} value={rack.id}>
+                      {rack.name}
+                    </option>
+                  ))}
           </select>
         </label>
         <button
           className="text-button scope-reset"
           type="button"
-          onClick={reset}
+          onClick={resetScope}
         >
           조회 초기화
         </button>
@@ -3015,7 +3745,7 @@ function PhotoScopeFields({
         <details className="scope-details">
           <summary>
             {detailSummary}
-            {hasActiveAdvancedFilter ? " · 적용 중" : ""}
+            {activeAdvancedFilterSummary}
           </summary>
           <div className="photo-scope">
             <label>
@@ -3060,8 +3790,8 @@ function PhotoScopeFields({
               <input
                 type="search"
                 maxLength={200}
-                value={scope.search}
-                onChange={(event) => set({ search: event.target.value })}
+                value={searchUsesDebounce ? searchDraft : scope.search}
+                onChange={(event) => updateSearch(event.target.value)}
                 placeholder={
                   context === "worklist"
                     ? "계획명, 포인트 또는 사진명"
@@ -3161,12 +3891,26 @@ function PhotoPlanFilter({
       : new Set(selectedIds.filter((id) => planIds.has(id)));
   const selectedCount = selected.size;
   const allSelected = plans.length > 0 && selectedCount === plans.length;
+  const selectedPlan =
+    selectedCount === 1
+      ? plans.find((plan) => selected.has(plan.id))
+      : undefined;
+  const selectedTeamName = selectedPlan
+    ? locations.teams.find((team) => team.id === selectedPlan.teamId)?.name
+    : undefined;
+  const singleSelectedLabel = selectedPlan
+    ? selectedTeamName && !selectedPlan.title.includes(selectedTeamName)
+      ? `${selectedPlan.title} · ${selectedTeamName}`
+      : selectedPlan.title
+    : undefined;
   const label =
     selectedIds === null || allSelected
       ? "모든 검사계획"
       : selectedCount === 0
         ? "검사계획 0개 선택"
-        : `${selectedCount}개 검사계획 선택`;
+        : selectedCount === 1
+          ? singleSelectedLabel ?? "검사계획 1개 선택"
+          : `${selectedCount}개 검사계획 선택`;
   const matchingPlans = normalizedSearch
     ? plans.filter((plan) => {
         const teamName =
@@ -3390,6 +4134,9 @@ function PhotoVisibilityDialog({
   done: (message: string) => Promise<void>;
   close: () => void;
 }) {
+  const { session, can } = useAuth();
+  const canManageRecords = can("records.manage");
+  const sessionActor = session?.authenticated ? session.user?.displayName : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const hidden = photo.visibility === "hidden";
@@ -3405,7 +4152,7 @@ function PhotoVisibilityDialog({
       <form
         onSubmit={async (event) => {
           event.preventDefault();
-          if (busy) return;
+          if (!canManageRecords || busy) return;
           const form = new FormData(event.currentTarget);
           setBusy(true);
           setError("");
@@ -3414,7 +4161,7 @@ function PhotoVisibilityDialog({
               method: "PATCH",
               body: JSON.stringify({
                 expectedVersion: photo.editVersion,
-                actor: form.get("actor"),
+                actor: sessionActor ?? form.get("actor"),
                 reason: form.get("reason"),
                 visibility: hidden ? "visible" : "hidden",
               }),
@@ -3437,12 +4184,14 @@ function PhotoVisibilityDialog({
             name="actor"
             required
             maxLength={60}
-            defaultValue="현업 엔지니어"
+            defaultValue={sessionActor ?? "현업 엔지니어"}
+            readOnly={Boolean(session?.authenticated)}
+            disabled={!canManageRecords || busy}
           />
         </label>
         <label className="field">
           사유
-          <textarea name="reason" required maxLength={1000} rows={2} />
+          <textarea name="reason" required maxLength={1000} rows={2} disabled={!canManageRecords || busy} />
         </label>
         {error && (
           <p className="form-error" role="alert">
@@ -3458,7 +4207,7 @@ function PhotoVisibilityDialog({
           >
             취소
           </button>
-          <button className="button primary" disabled={busy}>
+          <button className="button primary" disabled={!canManageRecords || busy}>
             {busy ? "저장 중…" : hidden ? "복원" : "숨기기"}
           </button>
         </div>
@@ -3481,6 +4230,10 @@ function NewMapPointDialog({
   done: (message: string) => Promise<void>;
   created: (point: Point) => void;
 }) {
+  const { session, can } = useAuth();
+  const canWrite = can("work.write"), canManageRecords = can("records.manage");
+  const sessionActor = session?.authenticated ? session.user?.displayName : null;
+  const purpose = canManageRecords ? recordPurpose : "inspection";
   const [saved, setSaved] = useState<Point | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -3488,12 +4241,13 @@ function NewMapPointDialog({
   return (
     <Modal title="가상 랙에 새 포인트 등록" close={close}>
       <p className="form-intro">
-        {purposeName[recordPurpose]} · {rackName(rackId)}
+        {purposeName[purpose]} · {rackName(rackId)}
         {plan ? ` · ${plan.title}에 연결` : " · 계획은 미지정"}
       </p>
       <form
         onSubmit={async (event) => {
           event.preventDefault();
+          if (!canWrite || busy) return;
           const form = new FormData(event.currentTarget);
           setBusy(true);
           setError("");
@@ -3504,7 +4258,7 @@ function NewMapPointDialog({
                 method: "POST",
                 body: JSON.stringify({
                   rackId,
-                  recordPurpose,
+                  ...(canManageRecords ? { recordPurpose } : {}),
                   rack: "",
                   equipment: form.get("equipment"),
                   name: form.get("name"),
@@ -3522,7 +4276,7 @@ function NewMapPointDialog({
                   body: JSON.stringify({
                     pointIds: [...latest.pointIds, point.id],
                     expectedVersion: latest.editVersion,
-                    actor: "현업 엔지니어",
+                    actor: sessionActor ?? "현업 엔지니어",
                     reason: "지도에서 검사 포인트 등록·연결",
                   }),
                 });
@@ -3545,7 +4299,7 @@ function NewMapPointDialog({
       >
         <label className="field">
           설비번호
-          <input name="equipment" maxLength={120} disabled={!!saved || busy} />
+          <input name="equipment" maxLength={120} disabled={!canWrite || !!saved || busy} />
         </label>
         <label className="field">
           포인트 이름
@@ -3553,7 +4307,7 @@ function NewMapPointDialog({
             name="name"
             required
             maxLength={120}
-            disabled={!!saved || busy}
+            disabled={!canWrite || !!saved || busy}
           />
         </label>
         {error && (
@@ -3561,7 +4315,7 @@ function NewMapPointDialog({
             {error}
           </p>
         )}
-        <button className="button primary full-width" disabled={busy}>
+        <button className="button primary full-width" disabled={!canWrite || busy}>
           {saved ? "등록된 포인트 연결 재시도" : "포인트 등록"}
         </button>
       </form>
@@ -3579,6 +4333,7 @@ function PhotoTable({
   onTogglePhoto,
   onTogglePage,
   selectable = false,
+  compact = false,
 }: {
   photos: Photo[];
   points: Point[];
@@ -3589,7 +4344,10 @@ function PhotoTable({
   onTogglePhoto?: (photo: Photo) => void;
   onTogglePage?: (eligiblePhotos: Photo[], checked: boolean) => void;
   selectable?: boolean;
+  compact?: boolean;
 }) {
+  const { can } = useAuth();
+  const canWrite = can("work.write"), canManageRecords = can("records.manage");
   const eligiblePhotos = photos.filter((photo) => {
     const grade = gradeOf(photo);
     return (
@@ -3607,8 +4365,20 @@ function PhotoTable({
   const allSelected =
     eligiblePhotos.length > 0 && selectedCount === eligiblePhotos.length;
   return (
-    <div className="table-wrap">
-      <table>
+    <div className={`table-wrap${compact ? " photo-table-wrap" : ""}`}>
+      <table className={compact ? "photo-list-table" : undefined}>
+        {compact && (
+          <colgroup>
+            <col className="photo-select-column" />
+            <col className="photo-image-column" />
+            <col className="photo-plan-column" />
+            <col className="photo-context-column" />
+            <col className="photo-reading-column" />
+            <col className="photo-followup-column" />
+            <col className="photo-created-column" />
+            <col className="photo-manage-column" />
+          </colgroup>
+        )}
         <thead>
           <tr>
             {selectable && (
@@ -3617,25 +4387,38 @@ function PhotoTable({
                   type="checkbox"
                   aria-label="현재 페이지 보수 대상 전체 선택"
                   checked={allSelected}
-                  disabled={!eligiblePhotos.length}
-                  onChange={(event) =>
-                    onTogglePage?.(eligiblePhotos, event.target.checked)
-                  }
+                  disabled={!canWrite || !eligiblePhotos.length}
+                  onChange={(event) => {
+                    if (canWrite) onTogglePage?.(eligiblePhotos, event.target.checked);
+                  }}
                 />
               </th>
             )}
             <th scope="col">검사 사진</th>
             <th scope="col">검사계획</th>
-            <th scope="col">생산팀</th>
-            <th scope="col">파이프랙</th>
-            <th scope="col">검사 포인트</th>
-            <th scope="col">AI 판독</th>
-            <th scope="col">현재 분류</th>
-            <th scope="col">후속 표시</th>
-            <th scope="col">등록 일시</th>
-            <th scope="col">
-              <span className="sr-only">상세 작업</span>
-            </th>
+            {compact ? (
+              <>
+                <th scope="col">팀 · 랙 · 포인트</th>
+                <th scope="col">AI 판독 · 현재 분류</th>
+                <th scope="col">후속 표시</th>
+                <th scope="col">등록</th>
+              </>
+            ) : (
+              <>
+                <th scope="col">생산팀</th>
+                <th scope="col">파이프랙</th>
+                <th scope="col">검사 포인트</th>
+                <th scope="col">AI 판독</th>
+                <th scope="col">현재 분류</th>
+                <th scope="col">후속 표시</th>
+                <th scope="col">등록 일시</th>
+              </>
+            )}
+            {onVisibilityChange && (
+              <th scope="col">
+                <span className="sr-only">사진 관리</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -3648,14 +4431,16 @@ function PhotoTable({
               const team = locations.teams.find(
                 (item) => item.id === (photo.teamId ?? rack?.teamId),
               );
+              const planTitle =
+                plans.find((plan) => plan.id === photo.planId)?.title ||
+                (photo.planId ? "계획 정보 확인 필요" : "계획 미지정");
               const selectableForRepair = eligiblePhotos.some(
                 (eligible) => eligible.id === photo.id,
               );
               return (
                 <tr
                   key={photo.id}
-                  tabIndex={0}
-                  aria-label={`${photo.name} 상세 열기`}
+                  className="photo-clickable-row"
                   onClick={(event) => {
                     if (
                       (event.target as HTMLElement).closest(
@@ -3665,24 +4450,22 @@ function PhotoTable({
                       return;
                     onSelect(photo);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.target !== event.currentTarget) return;
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onSelect(photo);
-                    }
-                  }}
                 >
                   {selectable && (
-                    <td>
+                    <td
+                      className={compact ? "photo-select-cell" : undefined}
+                      data-label={compact ? "보수 선택" : undefined}
+                    >
                       <input
                         type="checkbox"
                         aria-label={`${photo.name} 보수 작업 대상 선택`}
                         checked={selectedPhotoIds?.has(photo.id) ?? false}
-                        disabled={!selectableForRepair}
-                        onChange={() => onTogglePhoto?.(photo)}
+                        disabled={!canWrite || !selectableForRepair}
+                        onChange={() => { if (canWrite) onTogglePhoto?.(photo); }}
                         title={
-                          photo.visibility !== "visible"
+                          !canWrite
+                            ? "조회 권한에서는 보수 작업 대상을 선택할 수 없습니다."
+                            : photo.visibility !== "visible"
                             ? "숨김 사진은 선택할 수 없습니다."
                             : photo.retake
                               ? "재촬영 결과를 확인한 뒤 보수 계획을 만들 수 있습니다."
@@ -3693,9 +4476,14 @@ function PhotoTable({
                       />
                     </td>
                   )}
-                  <td>
+                  <td
+                    className={compact ? "photo-image-cell" : undefined}
+                    data-label={compact ? "검사 사진" : undefined}
+                  >
                     <button
-                      className="photo-name"
+                      className={`photo-name${compact ? " photo-list-name" : ""}`}
+                      type="button"
+                      aria-label={`${photo.name} 상세 보기`}
                       onClick={() => onSelect(photo)}
                     >
                       {photo.visibility === "hidden" ? (
@@ -3709,62 +4497,125 @@ function PhotoTable({
                       <span>{photo.name}</span>
                     </button>
                   </td>
-                  <td>
-                    <b className="photo-plan-name">
-                      {plans.find((plan) => plan.id === photo.planId)?.title ||
-                        (photo.planId ? "계획 정보 확인 필요" : "계획 미지정")}
-                    </b>
-                  </td>
-                  <td>{team?.name ?? "팀 미확인"}</td>
-                  <td>{rack?.name ?? "랙 미확인"}</td>
-                  <td>
-                    <span>{point?.name ?? "포인트 미연결"}</span>
-                    <small>{point?.equipment || "설비 미확인"}</small>
-                  </td>
-                  <td>
-                    <PhotoStatus photo={photo} />
-                  </td>
-                  <td>
-                    <Grade photo={photo} />
-                    {photo.humanGrade !== null &&
-                      photo.humanGrade !== photo.ai?.grade && (
+                  {compact ? (
+                    <>
+                      <td className="photo-plan-cell" data-label="검사계획">
+                        <b className="photo-plan-name">{planTitle}</b>
+                      </td>
+                      <td
+                        className="photo-context-cell"
+                        data-label="팀 · 랙 · 포인트"
+                      >
+                        <span>
+                          {team?.name ?? "팀 미확인"} ·{" "}
+                          {rack?.name ?? "랙 미확인"}
+                        </span>
                         <small>
-                          AI {photo.ai?.grade ?? "미판독"}등급에서 수정
+                          {point?.name ?? "포인트 미연결"} ·{" "}
+                          {point?.equipment || "설비 미확인"}
                         </small>
-                      )}
-                  </td>
-                  <td>
-                    {photo.retake && (
-                      <span className="badge amber">재촬영</span>
-                    )}{" "}
-                    {photo.labeling && (
-                      <span className="badge muted">라벨링 후보</span>
-                    )}
-                    {!photo.retake && !photo.labeling && (
-                      <span className="faint">—</span>
-                    )}
-                  </td>
-                  <td className="faint">
-                    {new Date(photo.createdAt).toLocaleString("ko-KR", {
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </td>
-                  <td>
-                    <div className="photo-row-actions">
-                      {onVisibilityChange && (
+                      </td>
+                      <td
+                        className="photo-reading-cell"
+                        data-label="AI 판독 · 현재 분류"
+                      >
+                        <PhotoStatus photo={photo} />
+                        <Grade photo={photo} />
+                        {photo.humanGrade !== null &&
+                          photo.humanGrade !== photo.ai?.grade && (
+                            <small>
+                              AI {photo.ai?.grade ?? "미판독"}등급에서 수정
+                            </small>
+                          )}
+                      </td>
+                      <td
+                        className="photo-followup-cell"
+                        data-label="후속 표시"
+                      >
+                        <div className="photo-followup-badges">
+                          {photo.retake && (
+                            <span className="badge amber">재촬영</span>
+                          )}
+                          {photo.labeling && (
+                            <span className="badge muted">라벨링 후보</span>
+                          )}
+                          {!photo.retake && !photo.labeling && (
+                            <span className="faint">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="photo-created-cell" data-label="등록">
+                        {new Date(photo.createdAt).toLocaleString("ko-KR", {
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>
+                        <b className="photo-plan-name">{planTitle}</b>
+                      </td>
+                      <td>{team?.name ?? "팀 미확인"}</td>
+                      <td>{rack?.name ?? "랙 미확인"}</td>
+                      <td>
+                        <span>{point?.name ?? "포인트 미연결"}</span>
+                        <small>{point?.equipment || "설비 미확인"}</small>
+                      </td>
+                      <td>
+                        <PhotoStatus photo={photo} />
+                      </td>
+                      <td>
+                        <Grade photo={photo} />
+                        {photo.humanGrade !== null &&
+                          photo.humanGrade !== photo.ai?.grade && (
+                            <small>
+                              AI {photo.ai?.grade ?? "미판독"}등급에서 수정
+                            </small>
+                          )}
+                      </td>
+                      <td>
+                        {photo.retake && (
+                          <span className="badge amber">재촬영</span>
+                        )}{" "}
+                        {photo.labeling && (
+                          <span className="badge muted">라벨링 후보</span>
+                        )}
+                        {!photo.retake && !photo.labeling && (
+                          <span className="faint">—</span>
+                        )}
+                      </td>
+                      <td className="faint">
+                        {new Date(photo.createdAt).toLocaleString("ko-KR", {
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                    </>
+                  )}
+                  {onVisibilityChange && (
+                    <td
+                      className={compact ? "photo-manage-cell" : undefined}
+                      data-label={compact ? "사진 관리" : undefined}
+                    >
+                      <div className="photo-row-actions">
                         <button
                           type="button"
                           className="icon-button"
+                          disabled={!canManageRecords}
                           aria-label={`${photo.name} ${photo.visibility === "hidden" ? "복원" : "숨기기"}`}
                           title={
-                            photo.visibility === "hidden"
-                              ? "사진 복원"
-                              : "사진 숨기기"
+                            !canManageRecords
+                              ? "사진 숨김·복원은 관리자만 할 수 있습니다."
+                              : photo.visibility === "hidden"
+                                ? "사진 복원"
+                                : "사진 숨기기"
                           }
-                          onClick={() => onVisibilityChange(photo)}
+                          onClick={() => { if (canManageRecords) onVisibilityChange(photo); }}
                         >
                           {photo.visibility === "hidden" ? (
                             <RotateCcw size={16} />
@@ -3772,17 +4623,9 @@ function PhotoTable({
                             <EyeOff size={16} />
                           )}
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={`${photo.name} 상세 보기`}
-                        onClick={() => onSelect(photo)}
-                      >
-                        <ChevronRight size={17} />
-                      </button>
-                    </div>
-                  </td>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })(),
@@ -3794,12 +4637,14 @@ function PhotoTable({
 }
 function Modal({
   title,
+  descriptionId,
   children,
   close,
   wide = false,
   onNavigate,
 }: {
   title: string;
+  descriptionId?: string;
   children: React.ReactNode;
   close: () => void;
   wide?: boolean;
@@ -3830,6 +4675,7 @@ function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        aria-describedby={descriptionId}
         onKeyDown={(e) => {
           if (e.key === "Escape") close();
           if (onNavigate && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
@@ -3850,10 +4696,17 @@ function Modal({
             if (!nodes?.length) return;
             const first = nodes[0];
             const last = nodes[nodes.length - 1];
-            if (e.shiftKey && document.activeElement === first) {
+            const activeElement = document.activeElement;
+            if (
+              e.shiftKey &&
+              (activeElement === ref.current || activeElement === first)
+            ) {
               e.preventDefault();
               last.focus();
-            } else if (!e.shiftKey && document.activeElement === last) {
+            } else if (
+              !e.shiftKey &&
+              (activeElement === ref.current || activeElement === last)
+            ) {
               e.preventDefault();
               first.focus();
             }
@@ -3874,6 +4727,7 @@ function Modal({
 function UploadDialog({
   points,
   plans,
+  plansUnavailable,
   context,
   close,
   viewPhotos,
@@ -3881,6 +4735,7 @@ function UploadDialog({
   publicUploadsAllowed,
 }: {
   publicUploadsAllowed: boolean;
+  plansUnavailable: boolean;
   points: Point[];
   plans: Plan[];
   context: {
@@ -3893,6 +4748,10 @@ function UploadDialog({
   viewPhotos: (plan: Plan, rackId?: string) => void;
   done: (s: string, tone?: ToastTone) => Promise<void>;
 }) {
+  const { can } = useAuth();
+  const canWrite = can("work.write");
+  const canWriteRef = useRef(canWrite);
+  canWriteRef.current = canWrite;
   const [files, setFiles] = useState<File[]>(context?.files ?? []);
   const [planId, setPlanId] = useState(context?.plan.id || "");
   const [pointId, setPointId] = useState(context?.point?.id || "");
@@ -3900,11 +4759,13 @@ function UploadDialog({
     context?.rackId || context?.point?.rackId || "",
   );
   const [queue, setQueue] = useState<UploadEntry[]>([]);
+  const queueOwner = useRef(getAuthUserId());
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [storageWarning, setStorageWarning] = useState(false);
   const rows = useRef<UploadEntry[]>([]);
   const handles = useRef(new Map<string, File>());
+  const activeTransferIds = useRef<string[]>([]);
   const alive = useRef(true);
   const operation = useRef<AbortController | null>(null);
   const selectedPlan =
@@ -3926,10 +4787,13 @@ function UploadDialog({
   );
 
   function saveQueue(next: UploadEntry[]) {
-    if (!alive.current) return;
+    if (!alive.current || queueOwner.current !== getAuthUserId()) {
+      operation.current?.abort();
+      return;
+    }
     rows.current = next;
     setQueue(next);
-    setStorageWarning(!persistUploadQueue(next));
+    setStorageWarning(!persistUploadQueue(next, queueOwner.current));
   }
   function patch(id: string, changes: Partial<UploadEntry>) {
     saveQueue(
@@ -3959,20 +4823,39 @@ function UploadDialog({
   async function checkEntry(entry: UploadEntry, signal: AbortSignal) {
     let session = await uploadRequest(`/${entry.id}`, {}, signal);
     // Finalization already verified the original, so it can recover without a File handle.
-    if (session.status === "finalizing")
-      session = await uploadRequest(
-        `/${entry.id}/complete`,
-        { method: "POST" },
-        signal,
-      );
-    if (!signal.aborted) applySession(entry.id, session);
+    if (session.status === "finalizing") {
+      if (!canWriteRef.current) return session;
+      if (plansUnavailable || signal.aborted) {
+        if (!signal.aborted)
+          patch(entry.id, {
+            state: "failed",
+            error:
+              "저장 완료 여부를 확인 중입니다. 계획 조회가 복구되면 다시 확인하세요.",
+          });
+      } else {
+        session = await uploadRequest(
+          `/${entry.id}/complete`,
+          { method: "POST" },
+          signal,
+        );
+      }
+    }
+    if (!signal.aborted && session.status !== "finalizing")
+      applySession(entry.id, session);
     return session;
   }
   useEffect(() => {
     alive.current = true;
     const controller = new AbortController();
     operation.current = controller;
-    const saved = readUploadQueue();
+    const saved = readUploadQueue(queueOwner.current);
+    const stopOnAccountChange = () => {
+      if (queueOwner.current === getAuthUserId()) return;
+      alive.current = false;
+      controller.abort();
+      operation.current?.abort();
+    };
+    window.addEventListener("inspection-auth-owner-changed", stopOnAccountChange);
     rows.current = saved;
     setQueue(saved);
     void (async () => {
@@ -4000,15 +4883,36 @@ function UploadDialog({
       alive.current = false;
       controller.abort();
       operation.current?.abort();
+      window.removeEventListener("inspection-auth-owner-changed", stopOnAccountChange);
     };
     // Restore once; later prop refreshes must not restart an active transfer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (!plansUnavailable) return;
+    operation.current?.abort();
+    operation.current = null;
+    setBusy(false);
+    for (const id of activeTransferIds.current) {
+      const entry = rows.current.find((row) => row.id === id);
+      if (!entry || entry.state === "stored") continue;
+      patch(id, {
+        state: "failed",
+        error:
+          "전송 응답이 중단됐습니다. 계획 조회가 복구되면 저장 상태를 확인하세요.",
+      });
+    }
+    activeTransferIds.current = [];
+  }, [plansUnavailable]);
+  useEffect(() => {
+    if (!canWrite) operation.current?.abort();
+  }, [canWrite]);
 
   async function run(ids: string[], restart = false) {
-    if (operation.current) return;
+    if (!canWrite || operation.current || plansUnavailable) return;
     const controller = new AbortController();
     operation.current = controller;
+    activeTransferIds.current = ids;
     setBusy(true);
     setError("");
     let stored = 0;
@@ -4080,14 +4984,21 @@ function UploadDialog({
           `${stored}장 저장 확인 · 사진 목록에서 AI 판독 상태와 결과를 확인하세요.`,
         );
     } finally {
-      if (operation.current === controller) operation.current = null;
-      if (alive.current) setBusy(false);
+      if (operation.current === controller) {
+        operation.current = null;
+        activeTransferIds.current = [];
+        if (alive.current) setBusy(false);
+      }
     }
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (operation.current) return;
+    if (!canWrite || operation.current) return;
     setError("");
+    if (plansUnavailable)
+      return setError(
+        "검사계획 목록을 확인할 수 없습니다. 조회가 복구된 뒤 사진을 전송하세요.",
+      );
     if (!files.length) return setError("추가할 사진을 선택하세요.");
     if (!selectedPlan) return setError("사진을 추가할 검사계획을 선택하세요.");
     if (!rackId || !selectedPlan.rackIds.includes(rackId))
@@ -4126,7 +5037,7 @@ function UploadDialog({
         setError((cause as Error).message);
     } finally {
       if (operation.current === controller) operation.current = null;
-      if (alive.current) setBusy(false);
+      if (!operation.current && alive.current) setBusy(false);
     }
   }
   async function checkOne(entry: UploadEntry) {
@@ -4141,7 +5052,7 @@ function UploadDialog({
         patch(entry.id, { state: "failed", error: (cause as Error).message });
     } finally {
       if (operation.current === controller) operation.current = null;
-      if (alive.current) setBusy(false);
+      if (operation.current === null && alive.current) setBusy(false);
     }
   }
   const leave = () => {
@@ -4161,6 +5072,12 @@ function UploadDialog({
   return (
     <Modal title="검사 사진 업로드" close={leave}>
       <form onSubmit={submit}>
+        {plansUnavailable && (
+          <p className="form-error" role="status">
+            계획 조회 중에는 새 사진 전송과 이어 보내기를 잠급니다. 이미 전송
+            중이던 요청은 중단하며, 조회 복구 후 저장 상태를 확인할 수 있습니다.
+          </p>
+        )}
         <p className="form-intro">
           {publicUploadsAllowed
             ? "공개 가능한 사진만 선택하세요. 링크를 가진 사람이 사진을 조회할 수 있습니다."
@@ -4181,8 +5098,9 @@ function UploadDialog({
             type="file"
             multiple
             accept="image/jpeg,image/png"
-            disabled={busy}
+            disabled={!canWrite || busy || plansUnavailable}
             onChange={(event) => {
+              if (!canWrite || busy || plansUnavailable) return;
               setFiles(Array.from(event.target.files || []));
               event.target.value = "";
             }}
@@ -4201,8 +5119,9 @@ function UploadDialog({
             required
             aria-label="업로드 검사계획"
             value={planId}
-            disabled={busy}
+            disabled={!canWrite || busy || plansUnavailable}
             onChange={(event) => {
+              if (!canWrite || busy || plansUnavailable) return;
               setPlanId(event.target.value);
               setRackId("");
               setPointId("");
@@ -4239,9 +5158,10 @@ function UploadDialog({
           <select
             required
             aria-label="업로드 파이프랙"
-            disabled={busy || !selectedPlan}
+            disabled={!canWrite || busy || plansUnavailable || !selectedPlan}
             value={rackId}
             onChange={(event) => {
+              if (!canWrite || busy || plansUnavailable) return;
               setRackId(event.target.value);
               setPointId("");
             }}
@@ -4266,8 +5186,8 @@ function UploadDialog({
             연결할 포인트
             <select
               value={pointId}
-              disabled={busy || !rackId}
-              onChange={(event) => setPointId(event.target.value)}
+              disabled={!canWrite || busy || !rackId}
+              onChange={(event) => { if (canWrite && !busy) setPointId(event.target.value); }}
             >
               <option value="">포인트 없이 저장</option>
               {availablePoints.map((point) => (
@@ -4284,7 +5204,10 @@ function UploadDialog({
           </p>
         )}
         <div className="form-actions">
-          <button className="button primary" disabled={busy || !files.length}>
+          <button
+            className="button primary"
+            disabled={!canWrite || busy || plansUnavailable || !files.length}
+          >
             <Upload size={16} />
             선택한 사진 전송
           </button>
@@ -4348,8 +5271,9 @@ function UploadDialog({
                         type="file"
                         accept="image/jpeg,image/png"
                         aria-label={`${entry.name} 원래 파일 선택`}
-                        disabled={busy}
+                        disabled={!canWrite || busy || plansUnavailable}
                         onChange={(event) => {
+                          if (!canWrite || busy || plansUnavailable) return;
                           const file = event.target.files?.[0];
                           if (file) {
                             handles.current.set(entry.id, file);
@@ -4374,7 +5298,12 @@ function UploadDialog({
                     <button
                       type="button"
                       className="button primary"
-                      disabled={busy || !handles.current.has(entry.id)}
+                      disabled={
+                        !canWrite ||
+                        busy ||
+                        plansUnavailable ||
+                        !handles.current.has(entry.id)
+                      }
                       onClick={() => void run([entry.id])}
                     >
                       이어서 전송
@@ -4383,7 +5312,12 @@ function UploadDialog({
                       <button
                         type="button"
                         className="button secondary"
-                        disabled={busy || !handles.current.has(entry.id)}
+                        disabled={
+                          !canWrite ||
+                          busy ||
+                          plansUnavailable ||
+                          !handles.current.has(entry.id)
+                        }
                         onClick={() => void run([entry.id], true)}
                       >
                         처음부터 전송
@@ -4423,7 +5357,9 @@ function UploadDialog({
               type="button"
               className="button primary"
               disabled={
+                !canWrite ||
                 busy ||
+                plansUnavailable ||
                 !queue.some(
                   (entry) =>
                     entry.state !== "stored" && handles.current.has(entry.id),
@@ -4469,11 +5405,16 @@ function PlanScopeEditor({
   compact?: boolean;
   lockTeam?: boolean;
 }) {
+  const { can } = useAuth();
+  const canWrite = can("work.write");
+  const update = (team: string, racks: string[]) => {
+    if (canWrite && !disabled) change(team, racks);
+  };
   const [rackEditOpen, setRackEditOpen] = useState(!compact && !rackIds.length);
   const racks = locations.racks.filter((rack) => rack.teamId === teamId);
   const selectedRacks = racks.filter((rack) => rackIds.includes(rack.id));
   return (
-    <fieldset className="plan-scope-editor" disabled={disabled}>
+    <fieldset className="plan-scope-editor" disabled={!canWrite || disabled}>
       <legend>검사 범위</legend>
       <label className="field">
         생산팀
@@ -4482,7 +5423,7 @@ function PlanScopeEditor({
           aria-label="계획 생산팀"
           value={teamId}
           disabled={lockTeam}
-          onChange={(e) => change(e.target.value, [])}
+          onChange={(e) => update(e.target.value, [])}
         >
           <option value="">생산팀 선택</option>
           {locations.teams.map((team) => (
@@ -4520,7 +5461,7 @@ function PlanScopeEditor({
                 type="button"
                 className="text-button"
                 onClick={() =>
-                  change(
+                  update(
                     teamId,
                     racks.map((rack) => rack.id),
                   )
@@ -4531,7 +5472,7 @@ function PlanScopeEditor({
               <button
                 type="button"
                 className="text-button"
-                onClick={() => change(teamId, [])}
+                onClick={() => update(teamId, [])}
               >
                 전체 해제
               </button>
@@ -4547,7 +5488,7 @@ function PlanScopeEditor({
                     aria-label={`${rack.name} 선택`}
                     checked={rackIds.includes(rack.id)}
                     onChange={(e) =>
-                      change(
+                      update(
                         teamId,
                         e.target.checked
                           ? [...new Set([...rackIds, rack.id])]
@@ -4671,7 +5612,7 @@ function PlanFields({ plan, teamId }: { plan?: Plan; teamId: string }) {
           placeholder="촬영 조건이나 확인할 사항"
         />
       </label>
-      <div className="plan-memo-suggestions" aria-label="메모 빠른 입력">
+      <div className="plan-memo-suggestions" role="group" aria-label="메모 빠른 입력">
         {planMemoSuggestions.map((example) => (
           <button
             key={example}
@@ -4695,18 +5636,22 @@ function PlanFields({ plan, teamId }: { plan?: Plan; teamId: string }) {
   );
 }
 function PlanDialog({
+  plansUnavailable,
   initialTeamId,
   initialRackIds,
   close,
   done,
   created,
 }: {
+  plansUnavailable: boolean;
   initialTeamId: string;
   initialRackIds: string[];
   close: () => void;
   done: (s: string) => Promise<void>;
   created: (plan: Plan) => void;
 }) {
+  const { can } = useAuth();
+  const canWrite = can("work.write");
   const [teamId, setTeamId] = useState(initialTeamId);
   const [rackIds, setRackIds] = useState<string[]>(initialRackIds);
   const [busy, setBusy] = useState(false),
@@ -4718,7 +5663,7 @@ function PlanDialog({
       <form
         onSubmit={async (event) => {
           event.preventDefault();
-          if (lock.current) return;
+          if (!canWrite || lock.current || plansUnavailable) return;
           if (!rackIds.length)
             return setError("검사할 랙을 하나 이상 선택하세요.");
           lock.current = true;
@@ -4755,18 +5700,28 @@ function PlanDialog({
           }
         }}
       >
-        <PlanFields teamId={teamId} />
-        <PlanScopeEditor
-          teamId={teamId}
-          rackIds={rackIds}
-          change={(team, racks) => {
-            setTeamId(team);
-            setRackIds(racks);
-          }}
-          disabled={busy}
-          compact={initialRackIds.length > 0}
-          lockTeam={Boolean(initialTeamId && initialRackIds.length)}
-        />
+        {plansUnavailable && (
+          <p className="form-error" role="status">
+            계획 목록을 확인한 뒤 저장할 수 있습니다.
+          </p>
+        )}
+        <fieldset
+          disabled={!canWrite || busy || plansUnavailable}
+          style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
+        >
+          <PlanFields teamId={teamId} />
+          <PlanScopeEditor
+            teamId={teamId}
+            rackIds={rackIds}
+            change={(team, racks) => {
+              setTeamId(team);
+              setRackIds(racks);
+            }}
+            disabled={!canWrite || busy || plansUnavailable}
+            compact={initialRackIds.length > 0}
+            lockTeam={Boolean(initialTeamId && initialRackIds.length)}
+          />
+        </fieldset>
         {error && (
           <p className="form-error" role="alert">
             {error}
@@ -4778,9 +5733,13 @@ function PlanDialog({
           </button>
           <button
             className="button primary"
-            disabled={busy || !teamId || !rackIds.length}
+            disabled={!canWrite || busy || plansUnavailable || !teamId || !rackIds.length}
           >
-            {busy ? "저장 중…" : "계획 저장"}
+            {busy
+              ? "저장 중…"
+              : plansUnavailable
+                ? "목록 확인 후 저장"
+                : "계획 저장"}
           </button>
         </div>
       </form>
@@ -4844,15 +5803,20 @@ function RackFields({
 
 function PlanManagementDialog({
   initialPlan,
+  readOnly,
   close,
   done,
   reportHistoryError,
 }: {
   initialPlan: Plan;
+  readOnly: boolean;
   close: () => void;
   done: (message: string) => Promise<void>;
   reportHistoryError: (message: string) => void;
 }) {
+  const { session, can } = useAuth();
+  const canWrite = can("work.write"), canManageRecords = can("records.manage");
+  const sessionActor = session?.authenticated ? session.user?.displayName : null;
   const plan = initialPlan;
   const [teamId, setTeamId] = useState(plan.teamId ?? ""),
     [rackIds, setRackIds] = useState(plan.rackIds);
@@ -4865,7 +5829,8 @@ function PlanManagementDialog({
     action: "edit" | Plan["status"] | "visibility",
     data: FormData,
   ) => {
-    if (lock.current) return;
+    if (!canWrite || lock.current || readOnly) return;
+    if (action === "visibility" && !canManageRecords) return;
     const dateText = String(data.get("dateText") ?? "");
     const date = action === "edit" ? parsePlanDate(dateText) : null;
     if (action === "edit" && (dateText || plan.date) && !date)
@@ -4891,7 +5856,7 @@ function PlanManagementDialog({
         body: JSON.stringify({
           ...patch,
           expectedVersion: plan.editVersion,
-          actor: data.get("actor"),
+          actor: sessionActor ?? data.get("actor"),
           reason: data.get("reason"),
         }),
       });
@@ -4934,6 +5899,11 @@ function PlanManagementDialog({
           · {plan.date || "예정일 미지정"} · {planRackSummary(plan.rackIds)}
         </p>
       </div>
+      {readOnly && (
+        <p className="form-error" role="status">
+          계획 목록을 확인할 때까지 변경 기능은 잠겨 있습니다.
+        </p>
+      )}
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -4948,47 +5918,53 @@ function PlanManagementDialog({
               void savePlan("edit", new FormData(event.currentTarget));
             }}
           >
-            <PlanFields plan={plan} teamId={teamId} />
-            <PlanScopeEditor
-              teamId={teamId}
-              rackIds={rackIds}
-              change={(team, racks) => {
-                setTeamId(team);
-                setRackIds(racks);
-              }}
-              disabled={busy}
-              lockTeam={Boolean(plan.teamId)}
-            />
-            {plan.pointIds.length > 0 && (
-              <details>
-                <summary>기존 위치 관계 {plan.pointIds.length}개</summary>
-                <p>
-                  연결된 포인트와 사진의 원래 위치는 유지됩니다. 사용 중인 랙을
-                  제외하려면 관련 기록을 먼저 확인하세요.
-                </p>
-              </details>
-            )}
-            <label className="field">
-              수정자
-              <input
-                name="actor"
-                required
-                maxLength={60}
-                defaultValue="현업 엔지니어"
+            <fieldset
+              disabled={!canWrite || busy || readOnly}
+              style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
+            >
+              <PlanFields plan={plan} teamId={teamId} />
+              <PlanScopeEditor
+                teamId={teamId}
+                rackIds={rackIds}
+                change={(team, racks) => {
+                  setTeamId(team);
+                  setRackIds(racks);
+                }}
+                disabled={!canWrite || busy || readOnly}
+                lockTeam={Boolean(plan.teamId)}
               />
-            </label>
-            <label className="field">
-              변경 사유
-              <textarea name="reason" required maxLength={1000} rows={2} />
-            </label>
-            <div className="form-actions">
-              <button
-                className="button primary"
-                disabled={busy || !teamId || !rackIds.length}
-              >
-                변경 저장
-              </button>
-            </div>
+              {plan.pointIds.length > 0 && (
+                <details>
+                  <summary>기존 위치 관계 {plan.pointIds.length}개</summary>
+                  <p>
+                    연결된 포인트와 사진의 원래 위치는 유지됩니다. 사용 중인
+                    랙을 제외하려면 관련 기록을 먼저 확인하세요.
+                  </p>
+                </details>
+              )}
+              <label className="field">
+                수정자
+                <input
+                  name="actor"
+                  required
+                  maxLength={60}
+                  defaultValue={sessionActor ?? "현업 엔지니어"}
+                  readOnly={Boolean(session?.authenticated)}
+                />
+              </label>
+              <label className="field">
+                변경 사유
+                <textarea name="reason" required maxLength={1000} rows={2} />
+              </label>
+              <div className="form-actions">
+                <button
+                  className="button primary"
+                  disabled={!teamId || !rackIds.length}
+                >
+                  변경 저장
+                </button>
+              </div>
+            </fieldset>
           </form>
         </details>
       )}
@@ -5015,55 +5991,62 @@ function PlanManagementDialog({
                   ? "완료"
                   : "취소"}
           </p>
-          <label className="field">
-            처리자
-            <input
-              name="actor"
-              required
-              maxLength={60}
-              defaultValue="현업 엔지니어"
-            />
-          </label>
-          <label className="field">
-            변경 사유
-            <textarea name="reason" required maxLength={1000} rows={2} />
-          </label>
-          <div className="form-actions">
-            {plan.visibility === "visible" &&
-              (plan.status === "planned" ? (
-                <>
+          <fieldset
+            disabled={!canWrite || busy || readOnly}
+            style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
+          >
+            <label className="field">
+              처리자
+              <input
+                name="actor"
+                required
+                maxLength={60}
+                defaultValue={sessionActor ?? "현업 엔지니어"}
+                readOnly={Boolean(session?.authenticated)}
+              />
+            </label>
+            <label className="field">
+              변경 사유
+              <textarea name="reason" required maxLength={1000} rows={2} />
+            </label>
+            <div className="form-actions">
+              {plan.visibility === "visible" &&
+                (plan.status === "planned" ? (
+                  <>
+                    <button
+                      value="done"
+                      className="button secondary"
+                      disabled={busy}
+                    >
+                      검사계획 완료
+                    </button>
+                    <button
+                      value="cancelled"
+                      className="button secondary"
+                      disabled={busy}
+                    >
+                      계획 취소
+                    </button>
+                  </>
+                ) : (
                   <button
-                    value="done"
+                    value="planned"
                     className="button secondary"
                     disabled={busy}
                   >
-                    검사계획 완료
+                    계획 재개
                   </button>
-                  <button
-                    value="cancelled"
-                    className="button secondary"
-                    disabled={busy}
-                  >
-                    계획 취소
-                  </button>
-                </>
-              ) : (
-                <button
-                  value="planned"
-                  className="button secondary"
-                  disabled={busy}
-                >
-                  계획 재개
-                </button>
-              ))}
-            <button
-              value="visibility"
-              className="button secondary"
-              disabled={busy}
-            >
-              {plan.visibility === "hidden" ? "계획 복원" : "계획 삭제"}
-            </button>
-          </div>
+                ))}
+              <button
+                value="visibility"
+                className="button secondary"
+                disabled={!canManageRecords || busy}
+                title={!canManageRecords ? "계획 삭제·복원은 관리자만 할 수 있습니다." : undefined}
+              >
+                {plan.visibility === "hidden" ? "계획 복원" : "계획 삭제"}
+              </button>
+            </div>
+          </fieldset>
         </form>
       </details>
       <AuditList history={history} />
@@ -5087,7 +6070,7 @@ function AuditList({ history }: { history: Audit[] }) {
     rackId: "소속 파이프랙",
     repairStatus: "보수 상태",
     managed: "관리 대상",
-    ta: "TA 포함",
+    ta: "TA 작업 포함",
     status: "처리 상태",
     ai: "AI 결과",
     equipment: "설비번호",
@@ -5124,7 +6107,7 @@ function AuditList({ history }: { history: Audit[] }) {
       error: "판독 실패",
       planned: "검사 예정",
       cancelled: "취소",
-      none: "미지정",
+      none: "등록 전",
       review: "보수 검토",
       progress: "보수 진행",
     };
@@ -5181,6 +6164,9 @@ function PhotoDialog({
   canNavigatePrevious: boolean;
   canNavigateNext: boolean;
 }) {
+  const { session, can } = useAuth();
+  const canWrite = can("work.write");
+  const sessionActor = session?.authenticated ? session.user?.displayName : null;
   const { photo, error: readError } = usePhotoRecord(seed);
   const [initial] = useState(seed);
   const [savedJudgment, setSavedJudgment] = useState({
@@ -5199,7 +6185,7 @@ function PhotoDialog({
   const [busy, setBusy] = useState(false);
   const actionLock = useRef(false);
   const begin = () => {
-    if (actionLock.current) return false;
+    if (!canWrite || actionLock.current) return false;
     actionLock.current = true;
     setBusy(true);
     return true;
@@ -5243,7 +6229,7 @@ function PhotoDialog({
           humanGrade: effectiveHumanGrade,
           retake,
           retakeReason: retake ? reason : "",
-          actor: "현업 엔지니어",
+          actor: sessionActor ?? "현업 엔지니어",
           reason: reason.trim(),
         }),
       });
@@ -5276,7 +6262,7 @@ function PhotoDialog({
         body: JSON.stringify({
           expectedVersion: editVersion,
           labeling: next,
-          actor: "현업 엔지니어",
+          actor: sessionActor ?? "현업 엔지니어",
           reason: next
             ? "학습 라벨링 후보로 지정"
             : "학습 라벨링 후보에서 해제",
@@ -5372,7 +6358,7 @@ function PhotoDialog({
           className="photo-judgment-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!judgmentDirty) return;
+            if (!canWrite || !judgmentDirty) return;
             if (retake && !savedJudgment.retake) {
               setRetakePlanPrompt(true);
             } else {
@@ -5414,7 +6400,7 @@ function PhotoDialog({
               <button
                 type="button"
                 className="button secondary"
-                disabled={busy}
+                disabled={!canWrite || busy}
                 onClick={async () => {
                   if (!begin()) return;
                   setError("");
@@ -5439,7 +6425,9 @@ function PhotoDialog({
             <select
               name="grade"
               value={retake ? "retake" : (effectiveHumanGrade ?? "")}
+              disabled={!canWrite || busy}
               onChange={(event) => {
+                if (!canWrite || busy) return;
                 const value = event.target.value;
                 setRetake(value === "retake");
                 setHumanGrade(
@@ -5466,7 +6454,7 @@ function PhotoDialog({
             type="button"
             className={`photo-labeling-toggle${labeling ? " is-selected" : ""}${humanGradeDirty ? " has-pending-change" : ""}${humanCorrection && !labeling ? " is-recommended" : ""}`}
             aria-pressed={labeling}
-            disabled={busy}
+            disabled={!canWrite || busy}
             onClick={() => void toggleLabeling()}
           >
             <CloudUpload size={18} aria-hidden="true" />
@@ -5481,7 +6469,8 @@ function PhotoDialog({
               name="reason"
               required={judgmentDirty}
               value={reason}
-              onChange={(event) => setReason(event.target.value)}
+              disabled={!canWrite || busy}
+              onChange={(event) => { if (canWrite && !busy) setReason(event.target.value); }}
               maxLength={1000}
               rows={3}
               placeholder={
@@ -5515,7 +6504,7 @@ function PhotoDialog({
                   <button
                     type="button"
                     className="button secondary"
-                    disabled={busy}
+                    disabled={!canWrite || busy}
                     onClick={() => void saveJudgment(false)}
                   >
                     판독 변경만 저장
@@ -5523,7 +6512,7 @@ function PhotoDialog({
                   <button
                     type="button"
                     className="button primary"
-                    disabled={busy || !reason.trim()}
+                    disabled={!canWrite || busy || !reason.trim()}
                     onClick={() => void saveJudgment(true)}
                   >
                     {busy ? "저장 중…" : "저장 후 새 계획 만들기"}
@@ -5541,7 +6530,7 @@ function PhotoDialog({
             ) : (
               <button
                 className={`button ${judgmentDirty ? "primary" : "secondary"} full-width photo-save-button`}
-                disabled={busy || !judgmentDirty || !reason.trim()}
+                disabled={!canWrite || busy || !judgmentDirty || !reason.trim()}
               >
                 {busy
                   ? "저장 중…"
@@ -5582,6 +6571,9 @@ function PointDialog({
   close: () => void;
   done: (s: string) => Promise<void>;
 }) {
+  const { session, can } = useAuth();
+  const canWrite = can("work.write");
+  const sessionActor = session?.authenticated ? session.user?.displayName : null;
   const [initial] = useState(point);
   const [maintenancePlan, setMaintenancePlan] = useState(
     scope.planId === "all" ? "" : scope.planId,
@@ -5666,9 +6658,10 @@ function PointDialog({
           <AuditList history={history} />
         </div>
         <form
-          onChangeCapture={() => setMetadataDirty(true)}
+          onChangeCapture={() => { if (canWrite) setMetadataDirty(true); }}
           onSubmit={async (e) => {
             e.preventDefault();
+            if (!canWrite || busy) return;
             const form = new FormData(e.currentTarget);
             setBusy(true);
             setError("");
@@ -5680,7 +6673,7 @@ function PointDialog({
                   equipment: form.get("equipment"),
                   rack: form.get("rack"),
                   name: form.get("name"),
-                  actor: form.get("actor"),
+                  actor: sessionActor ?? form.get("actor"),
                   reason: form.get("reason"),
                 }),
               });
@@ -5697,6 +6690,7 @@ function PointDialog({
               설비번호
               <input
                 name="equipment"
+                disabled={!canWrite || busy}
                 defaultValue={initial.equipment}
                 maxLength={120}
               />
@@ -5705,6 +6699,7 @@ function PointDialog({
               랙 번호
               <input
                 name="rack"
+                disabled={!canWrite || busy}
                 defaultValue={initial.rack}
                 maxLength={120}
                 readOnly={!!initial.rackId}
@@ -5716,22 +6711,25 @@ function PointDialog({
           </div>
           <label className="field">
             포인트 이름
-            <input name="name" defaultValue={initial.name} maxLength={120} />
+            <input name="name" disabled={!canWrite || busy} defaultValue={initial.name} maxLength={120} />
           </label>
           <div className="divider" />
           <label className="field">
             수정자
             <input
               name="actor"
+              disabled={!canWrite || busy}
               required
               maxLength={60}
-              defaultValue="현업 엔지니어"
+              defaultValue={sessionActor ?? "현업 엔지니어"}
+              readOnly={Boolean(session?.authenticated)}
             />
           </label>
           <label className="field">
             변경 사유
             <textarea
               name="reason"
+              disabled={!canWrite || busy}
               required
               rows={3}
               maxLength={1000}
@@ -5743,7 +6741,7 @@ function PointDialog({
               {error}
             </p>
           )}
-          <button className="button primary full-width" disabled={busy}>
+          <button className="button primary full-width" disabled={!canWrite || busy}>
             {busy ? "저장 중…" : "기본 정보·이력 저장"}
           </button>
         </form>

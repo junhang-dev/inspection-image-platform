@@ -6,6 +6,7 @@ import { deriveMaintenance, maintenancePage, evidenceFingerprint } from "../serv
 import { createMaintenanceItem, photoMaintenanceId, maintenanceId } from "../server/maintenance-domain.mjs";
 import { roiCoordinates, currentAnalysis } from "../server/roi-domain.mjs";
 import { maintenanceQuerySchema } from "../server/maintenance-query.mjs";
+import { finishMaintenanceSave } from "../src/lib/maintenance-save.ts";
 
 const planId = randomUUID(), pointId = randomUUID();
 const plan = { id: planId, title: "합성 계약 검증", date: "2026-09-22", teamId: "team-1", rackIds: ["team-1-rack-1", "team-1-rack-30"], pointIds: [], status: "planned", visibility: "visible", recordPurpose: "inspection" };
@@ -145,4 +146,95 @@ test("ROI는 원본 범위를 벗어나거나 영면적이면 거절하며 늦�
   assert.equal(currentAnalysis(job, image, { ...roi, editVersion: 3 }), false);
   assert.equal(currentAnalysis(job, { ...image, visibility: "hidden" }, roi), false);
   assert.equal(currentAnalysis(job, { ...image, id: "other-photo" }, roi), false);
+});
+
+test("보수 저장 응답은 후속 조회 전에 버전과 persisted를 즉시 반영한다", async () => {
+  const calls = [], confirmed = [];
+  const saved = { id: randomUUID(), editVersion: 3, repairStatus: "planned" };
+  let resolveRead;
+  const read = new Promise((resolve) => { resolveRead = resolve; });
+  const pending = finishMaintenanceSave(saved, {
+    onConfirmed: (item) => { calls.push("confirmed"); confirmed.push(item); },
+    readLatest: (id) => { assert.equal(id, saved.id); calls.push("read"); return read; },
+    refreshLists: async () => { calls.push("lists"); },
+  });
+  assert.deepEqual(calls, ["confirmed", "read"]);
+  assert.deepEqual(confirmed[0], { ...saved, persisted: true });
+  resolveRead({ ...saved, inWorklist: true });
+  assert.deepEqual(await pending, []);
+  assert.deepEqual(calls, ["confirmed", "read", "confirmed", "lists"]);
+  assert.equal(confirmed[1].inWorklist, true);
+  assert.equal(confirmed[1].persisted, true);
+  assert.equal(Object.hasOwn(saved, "persisted"), false);
+});
+
+test("보수 저장 응답 뒤 GET 실패에도 신규 기록의 다음 저장은 PATCH와 응답 버전을 쓴다", async () => {
+  const saved = { id: randomUUID(), editVersion: 0, repairStatus: "planned" };
+  const readError = new Error("상세 조회 실패");
+  let basis = { item: { editVersion: 0, persisted: false } }, listRefreshes = 0;
+  const errors = await finishMaintenanceSave(saved, {
+    onConfirmed: (item) => { basis = { item }; },
+    readLatest: async () => { throw readError; },
+    refreshLists: async (readFailed) => { assert.equal(readFailed, true); listRefreshes++; },
+  });
+  assert.deepEqual(errors, [readError]);
+  assert.equal(basis.item.persisted ? "PATCH" : "POST", "PATCH");
+  assert.equal(basis.item.persisted ? basis.item.editVersion : null, 0);
+  assert.equal(basis.item.repairStatus, "planned");
+  assert.equal(listRefreshes, 1);
+});
+
+test("보수 저장 응답 뒤 GET 실패에도 기존 기록은 이전 CAS 버전으로 되돌아가지 않는다", async () => {
+  let basis = { id: randomUUID(), editVersion: 7, persisted: true, repairStatus: "review" };
+  const saved = { ...basis, editVersion: 8, repairStatus: "progress" };
+  delete saved.persisted;
+  await finishMaintenanceSave(saved, {
+    onConfirmed: (item) => { basis = item; },
+    readLatest: async () => { throw new Error("상세 조회 실패"); },
+    refreshLists: async () => {},
+  });
+  assert.equal(basis.editVersion, 8);
+  assert.equal(basis.repairStatus, "progress");
+  assert.equal(basis.persisted, true);
+});
+
+test("보수 저장 응답 뒤 목록 갱신 실패는 저장된 상세와 버전을 유지한다", async () => {
+  const saved = { id: randomUUID(), editVersion: 2, repairStatus: "done" };
+  const listError = new Error("목록 갱신 실패");
+  let basis;
+  const errors = await finishMaintenanceSave(saved, {
+    onConfirmed: (item) => { basis = item; },
+    readLatest: async () => ({ ...saved, inWorklist: true }),
+    refreshLists: async (readFailed) => { assert.equal(readFailed, false); throw listError; },
+  });
+  assert.deepEqual(errors, [listError]);
+  assert.deepEqual(basis, { ...saved, inWorklist: true, persisted: true });
+});
+
+test("보수 저장 응답 뒤 상세·목록 갱신이 모두 실패해도 저장 확인은 한 번 유지된다", async () => {
+  const saved = { id: randomUUID(), editVersion: 4, repairMethod: "paint", ta: true };
+  const confirmed = [], readError = new Error("상세 실패"), listError = new Error("목록 실패");
+  const errors = await finishMaintenanceSave(saved, {
+    onConfirmed: (item) => { confirmed.push(item); },
+    readLatest: async () => { throw readError; },
+    refreshLists: async () => { throw listError; },
+  });
+  assert.deepEqual(errors, [readError, listError]);
+  assert.deepEqual(confirmed, [{ ...saved, persisted: true }]);
+});
+
+test("보수 저장 응답 뒤 상세 실패는 부모 알림에도 전달해 창 닫기와 무관하게 구분한다", async () => {
+  const saved = { id: randomUUID(), editVersion: 0 };
+  let active = true, notifiedReadFailure = false;
+  const errors = await finishMaintenanceSave(saved, {
+    onConfirmed: () => { assert.equal(active, true); },
+    readLatest: async () => { throw new Error("상세 재조회 실패"); },
+    refreshLists: async (readFailed) => {
+      notifiedReadFailure = readFailed;
+      active = false;
+    },
+  });
+  assert.equal(notifiedReadFailure, true);
+  assert.equal(active, false);
+  assert.equal(errors.length, 1);
 });

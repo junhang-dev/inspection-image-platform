@@ -77,8 +77,11 @@ export function useMaintenanceBundles(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let active = true;
+    let pending = false;
     const controller = new AbortController();
     const load = async () => {
+      if (pending) return;
+      pending = true;
       try {
         const response = await maintenanceApi<{ items: MaintenanceBundle[] }>("/bundles", {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
@@ -89,6 +92,8 @@ export function useMaintenanceBundles(enabled = true) {
           data: current.data,
           error: (error as Error).message,
         }));
+      } finally {
+        pending = false;
       }
     };
     void load();
@@ -114,7 +119,8 @@ export function useMaintenanceQuery(query: MaintenanceQuery, enabled = true) {
     key: string;
     data: MaintenancePage | null;
     error: string;
-  }>({ key: "", data: null, error: "" });
+    revision: number;
+  }>({ key: "", data: null, error: "", revision: -1 });
   useEffect(() => {
     if (!enabled) return;
     let active = true,
@@ -130,13 +136,14 @@ export function useMaintenanceQuery(query: MaintenanceQuery, enabled = true) {
             AbortSignal.timeout(10000),
           ]),
         });
-        if (active) setState({ key, data, error: "" });
+        if (active) setState({ key, data, error: "", revision });
       } catch (error) {
         if (active)
           setState((old) => ({
             key,
             data: old.key === key ? old.data : null,
             error: (error as Error).message,
+            revision: old.key === key ? old.revision : -1,
           }));
       } finally {
         pending = false;
@@ -150,8 +157,12 @@ export function useMaintenanceQuery(query: MaintenanceQuery, enabled = true) {
       clearInterval(timer);
     };
   }, [key, revision, enabled]);
+  const currentQuery = state.key === key;
   return {
-    ...(state.key === key ? state : { data: null, error: "" }),
+    ...(currentQuery ? state : { data: null, error: "", revision: -1 }),
+    queryKey: key,
     refresh,
+    requestRevision: revision,
+    loadedRevision: currentQuery ? state.revision : -1,
   };
 }

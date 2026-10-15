@@ -3,6 +3,8 @@ import { createReadStream } from "node:fs";
 import { copyFile, open, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { insertEntity } from "./store.mjs";
+import { currentPrincipal } from "./auth-context.mjs";
+import { hasPermission } from "./auth-policy.mjs";
 import {
   CHUNK_BYTES,
   appendChunk,
@@ -56,14 +58,22 @@ export async function createUploadService({
   let finalizing = false;
   let receivingRequests = 0;
 
+  function assertOwner(upload) {
+    const user = currentPrincipal();
+    if (user && user.role !== "admin" && upload.ownerUserId !== user.id)
+      throw fail(403, "자기 계정의 전송만 확인하거나 이어서 전송할 수 있습니다.");
+  }
+
   async function known(connection, id) {
     const upload = await readUpload(connection, id);
     if (!upload)
       throw fail(404, "전송 기록을 찾을 수 없습니다. 파일을 다시 선택하세요.");
+    assertOwner(upload);
     return upload;
   }
 
   async function publicStatus(connection, upload) {
+    assertOwner(upload);
     let photo = null;
     if (upload.status === "completed") {
       const [rows] = await connection.execute(
@@ -77,7 +87,7 @@ export async function createUploadService({
         : null;
       if (!photo) throw fail(500, "저장된 사진 기록을 찾을 수 없습니다.");
     }
-    const { objectKey, ...safe } = upload;
+    const { objectKey, ownerUserId, ...safe } = upload;
     return { ...safe, chunkBytes: CHUNK_BYTES, photo };
   }
 
@@ -126,10 +136,14 @@ export async function createUploadService({
     const recordPurpose = input.recordPurpose ?? "inspection";
     if (!["inspection", "presentation", "verification"].includes(recordPurpose))
       throw fail(422, "올바른 기록 목적을 선택하세요.");
-    input = { ...input, recordPurpose };
+    const user = currentPrincipal();
+    if (user && recordPurpose !== "inspection" && !hasPermission(user.role, "records.manage"))
+      throw fail(403, "기록 목적을 관리할 권한이 없습니다.");
+    input = { ...input, recordPurpose, ...(user ? { ownerUserId: user.id } : {}) };
     return locked(input.id, async (connection) => {
       const current = await readUpload(connection, input.id);
       if (current) {
+        assertOwner(current);
         current.recordPurpose ??= "inspection";
         if (identityKeys.some((key) => (current[key] ?? null) !== (input[key] ?? null)))
           throw fail(

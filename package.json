@@ -6,7 +6,7 @@
     "dev": "concurrently --kill-others \"npm:dev:web\" \"npm:dev:api\"",
     "dev:private": "concurrently --kill-others \"npm:dev:web:private\" \"npm:dev:api:private\"",
     "dev:web:private": "WATCHPACK_POLLING=true NEXT_TELEMETRY_DISABLED=1 API_INTERNAL_BASE_URL=http://127.0.0.1:4100 next dev --webpack --hostname 127.0.0.1 --port 3100",
-    "dev:api:private": "DOTENV_CONFIG_PATH=local/private-runtime/api.env DISABLE_BACKGROUND_WORKERS=1 node server/index.mjs",
+    "dev:api:private": "AUTH_MODE=local DOTENV_CONFIG_PATH=local/private-runtime/api.env DISABLE_BACKGROUND_WORKERS=1 node server/index.mjs",
     "dev:web": "NEXT_TELEMETRY_DISABLED=1 next dev --hostname 127.0.0.1",
     "dev:api": "node --watch server/index.mjs",
     "build": "NEXT_TELEMETRY_DISABLED=1 next build",

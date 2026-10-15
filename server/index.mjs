@@ -40,11 +40,13 @@ import {
 } from "./verified-model-input.mjs";
 import { verifyStorageProfile } from "./storage-profile.mjs";
 import { publicPayload } from "./publication-contract.mjs";
+import { registerAuth } from "./auth.mjs";
 
 const profile = runtimeProfile();
 const dataset = await loadDatasetContract(profile);
 const backgroundWorkersEnabled = process.env.DISABLE_BACKGROUND_WORKERS !== "1";
 const app = express();
+if (process.env.AUTH_MODE === "local") app.set("case sensitive routing", true);
 if (profile.scope === "shared") app.use((_req, res, next) => {
   const json = res.json.bind(res);
   res.json = (value) => json(publicPayload(value));
@@ -62,7 +64,7 @@ const allowedHashes = new Set(demoFiles.map((file) => file.sha256));
 app.disable("x-powered-by");
 const origins = (
   process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000"
-).split(",");
+).split(",").map((origin) => origin.trim());
 app.use((req, res, next) => {
   if (!privateRequestAllowed(profile, req.headers))
     return res
@@ -76,6 +78,7 @@ app.use((req, res, next) => {
 });
 app.use(cors({ origin: origins }));
 app.use(express.json({ limit: "100kb" }));
+const auth = registerAuth(app, { pool, profile, origins });
 const objects = new Client({
   endPoint: process.env.MINIO_ENDPOINT || "127.0.0.1",
   port: Number(process.env.MINIO_PORT || 9000),
@@ -152,6 +155,11 @@ app.get("/api/health", async (req, res) => {
     pool.query("SELECT 1"),
     objects.bucketExists(bucket),
   ]);
+  if (auth.enabled && !req.auth) return res.json({
+    ready: dependencies[0].status === "fulfilled" && dependencies[1].status === "fulfilled" && dependencies[1].value === true,
+    dataScope: profile.scope,
+    authRequired: true,
+  });
   let model = { ready: false, message: "모델 서비스를 기다리는 중" };
   try {
     const response = await fetch(
@@ -748,6 +756,7 @@ for (let attempt = 0; attempt < 30; attempt++) {
     await initializeStore(dataset.policy, {
       recover: backgroundWorkersEnabled,
     });
+    await auth.initialize();
     if (!(await objects.bucketExists(bucket))) {
       if (profile.scope === "local-private")
         throw new Error("전용 비공개 버킷을 먼저 준비하세요.");
