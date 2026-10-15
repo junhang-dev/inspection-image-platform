@@ -14,6 +14,16 @@
 
 Worker·VPC Service·named Tunnel을 각각 하나 생성했다. 기존 Workers Free($0) 계정에서 진행했고, 추가 유료 지출·결제 등록·새 OAuth 또는 관리 API token 발급은 없었다. 기존 quick tunnel은 복구용으로 유지한다. DB·사진 저장소·모델 포트를 외부에 직접 연결하지 않는다.
 
+### 2026-10-15 검사계획 배치 복원·홈 현황 연결 릴리스 (현재)
+
+- 제품 커밋 `028b21f59ad3eb7aaed372fa1b6ae614a3b46934`와 검사계획 배치 복원 커밋 `f1c9407`을 반영했다. 현재 웹 릴리스는 `local/shared-v3-final/releases/ux-plan-layout-20261015/web`, BUILD_ID는 `etPRfPgR-edLywffX4DD224`다. API는 이전 단계에서 적용한 `ux-flow-20261015`를 계속 사용한다.
+- 홈의 등급 수는 해당 등급 사진 목록으로, 보수 상태 수는 해당 상태 목록으로 이동한다. 공장 3D 카드에는 제목과 지도 이동만 남겼다. 운영 화면에서 사진 300장, 보수 대상 112건(검토 필요 57, 작업 예정 28, 작업 중 16, 완료 11)을 확인했다.
+- 검사계획은 이전의 위아래 정보 흐름으로 복원했다. 팀·랙 범위와 상태 필터를 먼저 보여주고 검색·목록 옵션을 아래에 둔다. 목록 옵션은 접힌 상태를 유지해 계획 범위·정렬 기능을 보존했다. 추가 설명 제목은 넣지 않았다.
+- 운영 전환에서는 웹만 다시 바꿨다. 공유 API 4000, Worker, Tunnel, MySQL, MinIO, 모델과 데이터는 그대로다. 운영 API는 `AUTH_MODE=disabled`이며 로그인·역할 제한은 적용하지 않았다.
+- 운영 전후 DB 집계가 같다: 검사 사진 300, 계획 5, 포인트 12, 보수 레코드 93, 작업 묶음 3, ROI 1, 분석 작업 2, 이력 555, 묶음 연결 7. 업로드 세션·청크는 각각 0, 대기·진행 중 추론과 영역 분석은 0이었다.
+- 웹 후보 Webpack 빌드와 타입 단계가 통과했다. 전체 검사 199개 중 188개 통과, 11개는 선택 인프라가 없어 건너뛰었다. 로컬·고정 주소 웹과 API health는 200이며 `ready=true`, `dataScope=shared`, 모델 버전은 `mobilenetv3small-ft-20260921T074822Z`다. 후보 웹과 고정 주소에서 홈·검사계획 화면을 브라우저로 확인했다. 새 업로드·추론 end-to-end는 실행하지 않았다.
+- 직전 웹 릴리스 `local/shared-v3-final/releases/ux-flow-20261015/web`와 전환 전 LaunchAgent 설정을 복구용으로 보존했다. 웹 설정 백업은 `local/shared-v3-final/runtime/backups/ux-plan-layout-20261015/com.droneinspection.shared.web.plist`다. API 설정은 전환하지 않았다.
+
 ### 2026-10-15 화면 흐름 개선 릴리스
 
 - `main` 커밋 `e962773114472bf394ecd4b897e684131532be26`의 웹/API를 `local/shared-v3-final/releases/ux-auth-20261015`에 반영했다. 웹 BUILD_ID는 `VHaCLAzUrsyRfNLoqvs7_`이다. 기존 고정 주소, Worker, Tunnel, 모델, MySQL, MinIO는 그대로 사용한다.
