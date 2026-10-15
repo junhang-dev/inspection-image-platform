@@ -372,6 +372,7 @@ export default function Home() {
   const actor = (session?.authenticated ? session.user?.displayName : null) ?? "현업 엔지니어";
   const [tab, setTab] = useState<Tab>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const pageHeadingRef = useRef<HTMLHeadingElement>(null);
   const errorRetryTabRef = useRef<Tab | null>(null);
@@ -1550,7 +1551,9 @@ export default function Home() {
   };
 
   return (
-    <div className="app-shell">
+    <div
+      className={sidebarCollapsed ? "app-shell sidebar-collapsed" : "app-shell"}
+    >
       <aside className={sidebarOpen ? "sidebar sidebar-expanded" : "sidebar"}>
         <button className="brand" style={{ border: 0, background: "transparent", textAlign: "left", cursor: "pointer", width: "100%" }} aria-label="홈으로 이동" onClick={() => go("home")}>
           <span className="brand-mark">
@@ -1570,6 +1573,24 @@ export default function Home() {
         >
           {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
           <span>{sidebarOpen ? "메뉴 닫기" : "메뉴"}</span>
+        </button>
+        <button
+          className="sidebar-collapse-toggle"
+          type="button"
+          aria-label={
+            sidebarCollapsed ? "업무 메뉴 펼치기" : "업무 메뉴 접기"
+          }
+          aria-expanded={!sidebarCollapsed}
+          aria-controls="primary-work-navigation"
+          title={sidebarCollapsed ? "업무 메뉴 펼치기" : "업무 메뉴 접기"}
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          {sidebarCollapsed ? (
+            <ChevronRight size={18} />
+          ) : (
+            <ChevronLeft size={18} />
+          )}
+          <span>{sidebarCollapsed ? "펼치기" : "접기"}</span>
         </button>
         <nav id="primary-work-navigation" aria-label="업무 메뉴">
           {navGroups.map((group) => (
@@ -6464,8 +6485,8 @@ function PhotoDialog({
               >
                 <h3 id="retake-plan-title">새 재촬영 계획을 만들까요?</h3>
                 <p>
-                  판독 내용을 저장한 뒤 같은 생산팀·랙으로 검사계획 만들기를
-                  엽니다.
+                  기존 사진과 판독 이력을 유지하고, 같은 생산팀·랙의 새
+                  계획을 엽니다.
                 </p>
                 <div className="form-actions">
                   <button
@@ -6482,7 +6503,7 @@ function PhotoDialog({
                     disabled={!canWrite || busy || !reason.trim()}
                     onClick={() => void saveJudgment(true)}
                   >
-                    {busy ? "저장 중…" : "저장 후 새 계획 만들기"}
+                    {busy ? "저장 중…" : "저장 후 재촬영 계획 만들기"}
                   </button>
                 </div>
                 <button
@@ -6495,16 +6516,37 @@ function PhotoDialog({
                 </button>
               </section>
             ) : (
-              <button
-                className={`button ${judgmentDirty ? "primary" : "secondary"} full-width photo-save-button`}
-                disabled={!canWrite || busy || !judgmentDirty || !reason.trim()}
-              >
-                {busy
-                  ? "저장 중…"
-                  : judgmentDirty
-                    ? "변경 사항 저장"
-                    : "저장할 변경 사항 없음"}
-              </button>
+              <>
+                <button
+                  className={`button ${judgmentDirty ? "primary" : "secondary"} full-width photo-save-button`}
+                  disabled={!canWrite || busy || !judgmentDirty || !reason.trim()}
+                >
+                  {busy
+                    ? "저장 중…"
+                    : judgmentDirty
+                      ? "변경 사항 저장"
+                      : "저장할 변경 사항 없음"}
+                </button>
+                {savedJudgment.retake && (
+                  <button
+                    type="button"
+                    className="button secondary photo-retake-plan-action"
+                    disabled={
+                      !canWrite ||
+                      busy ||
+                      judgmentDirty ||
+                      photo.visibility === "hidden"
+                    }
+                    title="기존 사진은 유지하고 같은 생산팀·랙으로 새 계획을 시작합니다"
+                    onClick={() => {
+                      close();
+                      createRetakePlan(photo);
+                    }}
+                  >
+                    재촬영 계획 만들기
+                  </button>
+                )}
+              </>
             )}
           </div>
         </form>
