@@ -13,7 +13,6 @@ import HomeDashboard from "@/components/HomeDashboard";
 import PlantDashboard from "@/components/PlantDashboard";
 import RoiPanel from "@/components/RoiPanel";
 import MaintenanceContext from "@/components/MaintenanceContext";
-import { InspectionLocation } from "@/components/InspectionLocation";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthAccountButton } from "@/components/AuthPanel";
 import {
@@ -607,28 +606,39 @@ export default function Home() {
       : (maintenance.data?.statusCounts ?? null);
   const enrichMaintenanceRowLocation = useCallback(
     <T extends MaintenanceWorklistRow>(item: T): T => {
-      const point = item.pointId
-        ? points.find((candidate) => candidate.id === item.pointId)
+      const resolvedPointId = item.pointId ?? item.sourcePointId;
+      const point = resolvedPointId
+        ? points.find((candidate) => candidate.id === resolvedPointId)
+        : undefined;
+      const plan = item.planId
+        ? plans.find((candidate) => candidate.id === item.planId)
         : undefined;
       const rack = locations.racks.find(
         (candidate) => candidate.id === (item.rackId ?? point?.rackId),
       );
       const team = locations.teams.find(
-        (candidate) => candidate.id === (item.teamId ?? rack?.teamId),
+        (candidate) =>
+          candidate.id === (item.teamId ?? rack?.teamId ?? plan?.teamId),
       );
       return {
         ...item,
         locationTeamName: team?.name ?? null,
-        locationRackName: rack?.name ?? (point?.rack || null),
+        locationRackName:
+          rack?.name ??
+          (point?.rack
+            ? point.rack.includes("랙")
+              ? point.rack
+              : `${point.rack} 랙`
+            : null),
         locationPointName: point
           ? point.name || "포인트 이름 확인 필요"
-          : item.pointId
+          : resolvedPointId
             ? item.pointLabel || "포인트 이름 확인 필요"
-            : "포인트 미연결",
+            : "—",
         locationEquipmentName: point?.equipment || null,
       };
     },
-    [points],
+    [points, plans],
   );
   const worklistItems = isMaintenanceTab
     ? (maintenance.data?.items ?? []).map(enrichMaintenanceRowLocation)
@@ -2546,7 +2556,8 @@ export default function Home() {
                     <thead>
                       <tr>
                         <th scope="col">검사계획</th>
-                        <th scope="col">검사 위치</th>
+                        <th scope="col">생산팀</th>
+                        <th scope="col">파이프랙</th>
                         <th scope="col">예정일</th>
                         <th scope="col">등록 사진 · 판독</th>
                         <th scope="col">
@@ -2624,20 +2635,27 @@ export default function Home() {
                                 </span>
                               </button>
                             </td>
-                            <td data-label="검사 위치">
-                              <InspectionLocation
-                                teamName={
-                                  locations.teams.find(
-                                    (team) => team.id === plan.teamId,
-                                  )?.name ?? null
-                                }
-                                rackNames={plan.rackIds.map(
-                                  (id) =>
-                                    locations.racks.find(
-                                      (rack) => rack.id === id,
-                                    )?.name ?? "랙 확인 필요",
-                                )}
-                              />
+                            <td data-label="생산팀">
+                              {locations.teams.find(
+                                (team) => team.id === plan.teamId,
+                              )?.name ?? "팀 미지정"}
+                            </td>
+                            <td
+                              data-label="파이프랙"
+                              title={
+                                plan.rackIds.length > 0
+                                  ? plan.rackIds
+                                      .map(
+                                        (id) =>
+                                          locations.racks.find(
+                                            (rack) => rack.id === id,
+                                          )?.name ?? "랙 확인 필요",
+                                      )
+                                      .join(", ")
+                                  : undefined
+                              }
+                            >
+                              {planRackSummary(plan.rackIds)}
                             </td>
                             <td data-label="예정일">{plan.date || "미지정"}</td>
                             <td data-label="등록 사진 · 판독">
@@ -2747,7 +2765,7 @@ export default function Home() {
                           </tr>
                           {expandedPlanPreviewId === plan.id && (
                             <tr className="plan-photo-row">
-                              <td colSpan={5}>
+                              <td colSpan={6}>
                                 <section
                                   id={`plan-photo-preview-${plan.id}`}
                                   className={`plan-card-photos${draggingPhotoPlanId === plan.id && !plansError ? " is-drop-active" : ""}${planAcceptsPhotoDrop(plan) && !plansError ? " can-add-photos" : ""}`}
@@ -2980,7 +2998,9 @@ export default function Home() {
                   <table>
                     <thead>
                       <tr>
-                        <th scope="col">검사 위치</th>
+                        <th scope="col">생산팀</th>
+                        <th scope="col">파이프랙</th>
+                        <th scope="col">검사포인트</th>
                         <th scope="col">연결 사진</th>
                         <th scope="col">보수 상태</th>
                         <th scope="col">
@@ -3021,19 +3041,28 @@ export default function Home() {
                               }
                             }}
                           >
+                            <td>{pointTeam?.name ?? "팀 미확인"}</td>
                             <td>
-                              <InspectionLocation
-                                teamName={pointTeam?.name ?? null}
-                                rackNames={
-                                  pointRack?.name
-                                    ? [pointRack.name]
-                                    : point.rack
-                                      ? [point.rack]
-                                      : []
-                                }
-                                pointName={point.name || "포인트 미확인"}
-                                equipmentName={point.equipment || "설비 미확인"}
-                              />
+                              {pointRack?.name ??
+                                (point.rack
+                                  ? point.rack.includes("랙")
+                                    ? point.rack
+                                    : `${point.rack} 랙`
+                                  : "랙 미확인")}
+                            </td>
+                            <td>
+                              <div>{point.name || "포인트 미확인"}</div>
+                              {point.equipment && (
+                                <small
+                                  style={{
+                                    display: "block",
+                                    color: "var(--muted)",
+                                    fontSize: "var(--type-caption)",
+                                  }}
+                                >
+                                  {point.equipment}
+                                </small>
+                              )}
                             </td>
                             <td>{count}장</td>
                             <td>
@@ -4499,7 +4528,9 @@ function PhotoTable({
             )}
             <th scope="col">검사 사진</th>
             <th scope="col">검사계획</th>
-            <th scope="col">검사 위치</th>
+            <th scope="col">생산팀</th>
+            <th scope="col">파이프랙</th>
+            <th scope="col">검사포인트</th>
             <th scope="col">AI 판독</th>
             <th scope="col">현재 분류</th>
             <th scope="col">후속 표시</th>
@@ -4515,14 +4546,16 @@ function PhotoTable({
           {photos.map((photo) =>
             (() => {
               const point = points.find((item) => item.id === photo.pointId);
+              const plan = plans.find((p) => p.id === photo.planId);
               const rack = locations.racks.find(
                 (item) => item.id === (photo.rackId ?? point?.rackId),
               );
               const team = locations.teams.find(
-                (item) => item.id === (photo.teamId ?? rack?.teamId),
+                (item) =>
+                  item.id === (photo.teamId ?? rack?.teamId ?? plan?.teamId),
               );
               const planTitle =
-                plans.find((plan) => plan.id === photo.planId)?.title ||
+                plan?.title ||
                 (photo.planId ? "계획 정보 확인 필요" : "계획 미지정");
               const selectableForRepair = eligiblePhotos.some(
                 (eligible) => eligible.id === photo.id,
@@ -4593,25 +4626,21 @@ function PhotoTable({
                   <td>
                     <b className="photo-plan-name">{planTitle}</b>
                   </td>
+                  <td>{team?.name ?? "팀 미확인"}</td>
                   <td>
-                    <InspectionLocation
-                      teamName={team?.name ?? null}
-                      rackNames={
-                        rack?.name
-                          ? [rack.name]
-                          : point?.rack
-                            ? [point.rack]
-                            : []
-                      }
-                      pointName={
-                        point
-                          ? point.name || "포인트 이름 확인 필요"
-                          : photo.pointId
-                            ? "포인트 정보 확인 필요"
-                            : "포인트 미연결"
-                      }
-                      equipmentName={point?.equipment || null}
-                    />
+                    {rack?.name ??
+                      (point?.rack
+                        ? point.rack.includes("랙")
+                          ? point.rack
+                          : `${point.rack} 랙`
+                        : "랙 미확인")}
+                  </td>
+                  <td>
+                    {point
+                      ? point.name || "포인트 이름 확인 필요"
+                      : photo.pointId
+                        ? "포인트 정보 확인 필요"
+                        : "—"}
                   </td>
                   <td>
                     <PhotoStatus photo={photo} />

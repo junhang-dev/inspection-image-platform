@@ -8,7 +8,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { InspectionLocation } from "./InspectionLocation";
 import styles from "./MaintenancePanel.module.css";
 import { useAuth } from "./AuthProvider";
 
@@ -655,7 +654,9 @@ export function MaintenanceWorklist({
                 {onSelectionChange && <th scope="col">묶음 선택</th>}
                 <th scope="col">검사 사진</th>
                 <th scope="col">검사계획</th>
-                <th scope="col">검사 위치</th>
+                <th scope="col">생산팀</th>
+                <th scope="col">파이프랙</th>
+                <th scope="col">검사포인트</th>
                 <th scope="col">등급</th>
                 <th scope="col">진행 상태</th>
               </tr>
@@ -725,23 +726,14 @@ export function MaintenanceWorklist({
                       {item.planTitle || "계획 미지정"}
                     </span>
                   </td>
-                  <td
-                    data-column="location"
-                    data-label="검사 위치"
-                    className={styles.workLocationCell}
-                  >
-                    <InspectionLocation
-                      teamName={item.locationTeamName}
-                      rackNames={
-                        item.locationRackName ? [item.locationRackName] : []
-                      }
-                      pointName={
-                        item.locationPointName !== undefined
-                          ? item.locationPointName
-                          : item.pointLabel || null
-                      }
-                      equipmentName={item.locationEquipmentName}
-                    />
+                  <td data-column="team" data-label="생산팀">
+                    {item.locationTeamName || "팀 미확인"}
+                  </td>
+                  <td data-column="rack" data-label="파이프랙">
+                    {item.locationRackName || "랙 미확인"}
+                  </td>
+                  <td data-column="point" data-label="검사포인트">
+                    {item.locationPointName || "—"}
                   </td>
                   <td data-column="grade" data-label="등급">
                     {Number.isInteger(item.photoGrade) &&
@@ -750,7 +742,7 @@ export function MaintenanceWorklist({
                       ? `${item.photoGrade}등급`
                       : "등급 미확인"}
                   </td>
-                  <td data-column="status" data-label="상태">
+                  <td data-column="status" data-label="진행 상태">
                     <span className={styles.workStatusGroup}>
                       <span
                         className={`${styles.badge} ${statusClass[item.repairStatus] || styles.muted}`}

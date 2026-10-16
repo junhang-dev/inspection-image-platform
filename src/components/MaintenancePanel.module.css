@@ -777,7 +777,7 @@
 }
 .workTable {
   width: 100%;
-  min-width: 850px;
+  min-width: 960px;
   border-collapse: collapse;
   text-align: left;
 }
@@ -937,7 +937,9 @@
   }
   .workTable td[data-column="photo"],
   .workTable td[data-column="plan"],
-  .workTable td[data-column="location"] {
+  .workTable td[data-column="team"],
+  .workTable td[data-column="rack"],
+  .workTable td[data-column="point"] {
     grid-column: 1 / -1;
   }
   .workTable td[data-column="photo"] {
@@ -948,19 +950,25 @@
   .workTable td[data-column="plan"] {
     grid-row: 2;
   }
-  .workTable td[data-column="location"] {
+  .workTable td[data-column="team"] {
     grid-row: 3;
+  }
+  .workTable td[data-column="rack"] {
+    grid-row: 4;
+  }
+  .workTable td[data-column="point"] {
+    grid-row: 5;
   }
   .workTable td[data-column="grade"] {
     grid-column: 1;
-    grid-row: 4;
+    grid-row: 6;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 6px;
   }
   .workTable td[data-column="status"] {
     grid-column: 2;
-    grid-row: 4;
+    grid-row: 6;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 6px;
@@ -971,13 +979,13 @@
     align-items: center;
     gap: 6px;
     grid-column: 3;
-    grid-row: 4;
+    grid-row: 6;
     align-self: center;
     padding: 7px 0;
   }
   .workTableSelectable td[data-column="selection"] {
     grid-column: 1 / -1;
-    grid-row: 5;
+    grid-row: 7;
     justify-self: end;
   }
   .workTable td[data-column="selection"]::before {
