@@ -777,7 +777,7 @@
 }
 .workTable {
   width: 100%;
-  min-width: 720px;
+  min-width: 850px;
   border-collapse: collapse;
   text-align: left;
 }
@@ -844,24 +844,15 @@
   flex: 0 0 58px;
   aspect-ratio: 4 / 3;
 }
-.workContext {
-  display: grid;
-  gap: 3px;
+.workPlan {
+  display: block;
   min-width: 180px;
   max-width: 330px;
-}
-.workContext strong {
   overflow: hidden;
   color: var(--maintenance-ink);
   text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 600;
-}
-.workContext small {
-  overflow: hidden;
-  color: var(--maintenance-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .pageEllipsis {
   padding: 0 2px;
@@ -945,7 +936,8 @@
     line-height: 1.4;
   }
   .workTable td[data-column="photo"],
-  .workTable td[data-column="context"] {
+  .workTable td[data-column="plan"],
+  .workTable td[data-column="location"] {
     grid-column: 1 / -1;
   }
   .workTable td[data-column="photo"] {
@@ -953,19 +945,22 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
-  .workTable td[data-column="context"] {
+  .workTable td[data-column="plan"] {
     grid-row: 2;
+  }
+  .workTable td[data-column="location"] {
+    grid-row: 3;
   }
   .workTable td[data-column="grade"] {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 4;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 6px;
   }
   .workTable td[data-column="status"] {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 4;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 6px;
@@ -976,13 +971,13 @@
     align-items: center;
     gap: 6px;
     grid-column: 3;
-    grid-row: 3;
+    grid-row: 4;
     align-self: center;
     padding: 7px 0;
   }
   .workTableSelectable td[data-column="selection"] {
     grid-column: 1 / -1;
-    grid-row: 4;
+    grid-row: 5;
     justify-self: end;
   }
   .workTable td[data-column="selection"]::before {
@@ -993,8 +988,11 @@
     min-width: 0;
     gap: 8px;
   }
-  .workTable .workContext {
+  .workTable .workPlan {
     max-width: none;
+    min-width: 0;
+  }
+  .workTable .workLocationCell {
     min-width: 0;
   }
   .workTable .clickableRow:hover td {

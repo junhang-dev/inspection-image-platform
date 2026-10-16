@@ -13,6 +13,7 @@ import HomeDashboard from "@/components/HomeDashboard";
 import PlantDashboard from "@/components/PlantDashboard";
 import RoiPanel from "@/components/RoiPanel";
 import MaintenanceContext from "@/components/MaintenanceContext";
+import { InspectionLocation } from "@/components/InspectionLocation";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthAccountButton } from "@/components/AuthPanel";
 import {
@@ -604,7 +605,34 @@ export default function Home() {
     : worklistStatusSnapshot?.scopeKey === worklistCountScopeKey
       ? worklistStatusSnapshot.counts
       : (maintenance.data?.statusCounts ?? null);
-  const worklistItems = isMaintenanceTab ? (maintenance.data?.items ?? []) : [];
+  const enrichMaintenanceRowLocation = useCallback(
+    <T extends MaintenanceWorklistRow>(item: T): T => {
+      const point = item.pointId
+        ? points.find((candidate) => candidate.id === item.pointId)
+        : undefined;
+      const rack = locations.racks.find(
+        (candidate) => candidate.id === (item.rackId ?? point?.rackId),
+      );
+      const team = locations.teams.find(
+        (candidate) => candidate.id === (item.teamId ?? rack?.teamId),
+      );
+      return {
+        ...item,
+        locationTeamName: team?.name ?? null,
+        locationRackName: rack?.name ?? (point?.rack || null),
+        locationPointName: point
+          ? point.name || "포인트 이름 확인 필요"
+          : item.pointId
+            ? item.pointLabel || "포인트 이름 확인 필요"
+            : "포인트 미연결",
+        locationEquipmentName: point?.equipment || null,
+      };
+    },
+    [points],
+  );
+  const worklistItems = isMaintenanceTab
+    ? (maintenance.data?.items ?? []).map(enrichMaintenanceRowLocation)
+    : [];
   const bundleSearch = scope.search.trim().toLocaleLowerCase("ko-KR");
   const visibleMaintenanceBundles = (maintenanceBundles.data ?? []).flatMap(
     (bundle) => {
@@ -628,7 +656,10 @@ export default function Home() {
       return matchingMembers.length
         ? [
             {
-              bundle,
+              bundle: {
+                ...bundle,
+                members: bundle.members.map(enrichMaintenanceRowLocation),
+              },
               matchingMemberIds: new Set(
                 matchingMembers.map((member) => member.id),
               ),
@@ -2152,7 +2183,9 @@ export default function Home() {
                 />
               )}
               <MaintenanceWorklist
-                items={maintenance.data?.items ?? []}
+                items={(maintenance.data?.items ?? []).map(
+                  enrichMaintenanceRowLocation,
+                )}
                 total={maintenance.data?.total ?? null}
                 page={maintenance.data?.page}
                 pages={maintenance.data?.pages}
@@ -2513,8 +2546,7 @@ export default function Home() {
                     <thead>
                       <tr>
                         <th scope="col">검사계획</th>
-                        <th scope="col">생산팀</th>
-                        <th scope="col">검사 범위</th>
+                        <th scope="col">검사 위치</th>
                         <th scope="col">예정일</th>
                         <th scope="col">등록 사진 · 판독</th>
                         <th scope="col">
@@ -2592,23 +2624,20 @@ export default function Home() {
                                 </span>
                               </button>
                             </td>
-                            <td data-label="생산팀">
-                              {locations.teams.find(
-                                (team) => team.id === plan.teamId,
-                              )?.name ?? "생산팀 확인 필요"}
-                            </td>
-                            <td
-                              data-label="검사 범위"
-                              title={plan.rackIds
-                                .map(
+                            <td data-label="검사 위치">
+                              <InspectionLocation
+                                teamName={
+                                  locations.teams.find(
+                                    (team) => team.id === plan.teamId,
+                                  )?.name ?? null
+                                }
+                                rackNames={plan.rackIds.map(
                                   (id) =>
                                     locations.racks.find(
                                       (rack) => rack.id === id,
                                     )?.name ?? "랙 확인 필요",
-                                )
-                                .join(", ")}
-                            >
-                              {planRackSummary(plan.rackIds)}
+                                )}
+                              />
                             </td>
                             <td data-label="예정일">{plan.date || "미지정"}</td>
                             <td data-label="등록 사진 · 판독">
@@ -2718,7 +2747,7 @@ export default function Home() {
                           </tr>
                           {expandedPlanPreviewId === plan.id && (
                             <tr className="plan-photo-row">
-                              <td colSpan={6}>
+                              <td colSpan={5}>
                                 <section
                                   id={`plan-photo-preview-${plan.id}`}
                                   className={`plan-card-photos${draggingPhotoPlanId === plan.id && !plansError ? " is-drop-active" : ""}${planAcceptsPhotoDrop(plan) && !plansError ? " can-add-photos" : ""}`}
@@ -2951,9 +2980,7 @@ export default function Home() {
                   <table>
                     <thead>
                       <tr>
-                        <th scope="col">설비</th>
-                        <th scope="col">생산팀 · 파이프랙</th>
-                        <th scope="col">포인트</th>
+                        <th scope="col">검사 위치</th>
                         <th scope="col">연결 사진</th>
                         <th scope="col">보수 상태</th>
                         <th scope="col">
@@ -2965,6 +2992,16 @@ export default function Home() {
                       {pagePoints.map((point) => {
                         const count =
                           photoList.data?.pointCounts?.[point.id] ?? 0;
+                        const pointRack = point.rackId
+                          ? locations.racks.find(
+                              (rack) => rack.id === point.rackId,
+                            )
+                          : undefined;
+                        const pointTeam = pointRack
+                          ? locations.teams.find(
+                              (team) => team.id === pointRack.teamId,
+                            )
+                          : undefined;
                         return (
                           <tr
                             key={point.id}
@@ -2984,13 +3021,20 @@ export default function Home() {
                               }
                             }}
                           >
-                            <td>{point.equipment || "설비 미확인"}</td>
                             <td>
-                              {point.rackId
-                                ? rackName(point.rackId)
-                                : point.rack || "위치 미확인"}
+                              <InspectionLocation
+                                teamName={pointTeam?.name ?? null}
+                                rackNames={
+                                  pointRack?.name
+                                    ? [pointRack.name]
+                                    : point.rack
+                                      ? [point.rack]
+                                      : []
+                                }
+                                pointName={point.name || "포인트 미확인"}
+                                equipmentName={point.equipment || "설비 미확인"}
+                              />
                             </td>
-                            <td>{point.name || "포인트 미확인"}</td>
                             <td>{count}장</td>
                             <td>
                               {point.repairStatus === "progress"
@@ -4455,9 +4499,7 @@ function PhotoTable({
             )}
             <th scope="col">검사 사진</th>
             <th scope="col">검사계획</th>
-            <th scope="col">생산팀</th>
-            <th scope="col">파이프랙</th>
-            <th scope="col">검사 포인트</th>
+            <th scope="col">검사 위치</th>
             <th scope="col">AI 판독</th>
             <th scope="col">현재 분류</th>
             <th scope="col">후속 표시</th>
@@ -4472,10 +4514,10 @@ function PhotoTable({
         <tbody>
           {photos.map((photo) =>
             (() => {
-              const rack = locations.racks.find(
-                (item) => item.id === photo.rackId,
-              );
               const point = points.find((item) => item.id === photo.pointId);
+              const rack = locations.racks.find(
+                (item) => item.id === (photo.rackId ?? point?.rackId),
+              );
               const team = locations.teams.find(
                 (item) => item.id === (photo.teamId ?? rack?.teamId),
               );
@@ -4551,11 +4593,25 @@ function PhotoTable({
                   <td>
                     <b className="photo-plan-name">{planTitle}</b>
                   </td>
-                  <td>{team?.name ?? "팀 미확인"}</td>
-                  <td>{rack?.name ?? "랙 미확인"}</td>
                   <td>
-                    <span>{point?.name ?? "포인트 미연결"}</span>
-                    <small>{point?.equipment || "설비 미확인"}</small>
+                    <InspectionLocation
+                      teamName={team?.name ?? null}
+                      rackNames={
+                        rack?.name
+                          ? [rack.name]
+                          : point?.rack
+                            ? [point.rack]
+                            : []
+                      }
+                      pointName={
+                        point
+                          ? point.name || "포인트 이름 확인 필요"
+                          : photo.pointId
+                            ? "포인트 정보 확인 필요"
+                            : "포인트 미연결"
+                      }
+                      equipmentName={point?.equipment || null}
+                    />
                   </td>
                   <td>
                     <PhotoStatus photo={photo} />

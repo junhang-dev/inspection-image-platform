@@ -135,7 +135,7 @@
 }
 .memberTable {
   width: 100%;
-  min-width: 680px;
+  min-width: 780px;
   border-collapse: collapse;
   text-align: left;
 }
@@ -158,6 +158,15 @@
 }
 .memberRow:hover td {
   background: var(--surface-muted, #f8fafc);
+}
+.memberPlan {
+  display: block;
+  min-width: 140px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
 }
 .memberContext {
   display: grid;

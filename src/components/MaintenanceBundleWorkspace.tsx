@@ -4,6 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, type RefObject } from "react
 import { ChevronDown } from "lucide-react";
 import type { MaintenanceBundle } from "@/lib/maintenance";
 import type { MaintenanceWorklistRow } from "./MaintenancePanel";
+import { InspectionLocation } from "./InspectionLocation";
 import styles from "./MaintenanceBundleWorkspace.module.css";
 import { useAuth } from "./AuthProvider";
 
@@ -159,8 +160,9 @@ export function MaintenanceBundleWorkspace({
                     <table className={styles.memberTable}>
                       <thead>
                         <tr>
-                          <th scope="col">사진</th>
-                          <th scope="col">검사계획 · 위치</th>
+                          <th scope="col">검사 사진</th>
+                          <th scope="col">검사계획</th>
+                          <th scope="col">검사 위치</th>
                           <th scope="col">등급</th>
                           <th scope="col">진행 상태</th>
                           <th scope="col">
@@ -233,14 +235,25 @@ export function MaintenanceBundleWorkspace({
                                 </span>
                               </td>
                               <td>
-                                <span className={styles.memberContext}>
-                                  <strong>
-                                    {member.planTitle || "계획 미확인"}
-                                  </strong>
-                                  <small>
-                                    {member.pointLabel || "위치 미확인"}
-                                  </small>
+                                <span className={styles.memberPlan}>
+                                  {member.planTitle || "계획 미확인"}
                                 </span>
+                              </td>
+                              <td>
+                                <InspectionLocation
+                                  teamName={member.locationTeamName}
+                                  rackNames={
+                                    member.locationRackName
+                                      ? [member.locationRackName]
+                                      : []
+                                  }
+                                  pointName={
+                                    member.locationPointName !== undefined
+                                      ? member.locationPointName
+                                      : member.pointLabel || null
+                                  }
+                                  equipmentName={member.locationEquipmentName}
+                                />
                               </td>
                               <td>
                                 {Number.isInteger(member.photoGrade)
