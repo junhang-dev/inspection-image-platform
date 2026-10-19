@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { formatDateTime } from "@/lib/date-time";
 import styles from "./MaintenancePanel.module.css";
 import { statusAfterMethod } from "@/lib/maintenance-save";
 import { useAuth } from "./AuthProvider";
@@ -21,6 +22,7 @@ export type MaintenanceItem = {
   targetType?: "point" | "photo";
   targetId?: string;
   sourcePointId?: string | null;
+  createdAt?: string;
   photoName?: string;
   photoGrade?: number | null;
   planTitle?: string | null;
@@ -722,6 +724,7 @@ export function MaintenanceWorklist({
                       </span>
                       <span>
                         <strong>{item.photoName || "사진 이름 미조회"}</strong>
+                        <small className={styles.registeredAt}>등록일시 {formatDateTime(item.createdAt)}</small>
                         {!!item.newEvidenceCount && (
                           <small>새 근거 {item.newEvidenceCount}</small>
                         )}

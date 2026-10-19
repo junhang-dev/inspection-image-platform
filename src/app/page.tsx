@@ -8,6 +8,8 @@ import {
   type UploadEntry,
   type UploadSession,
 } from "@/lib/upload";
+import { formatDateTime } from "@/lib/date-time";
+import { compareListRows } from "@/lib/list-order.mjs";
 import locations from "@/lib/virtual-locations.json";
 import HomeDashboard from "@/components/HomeDashboard";
 import PlantDashboard from "@/components/PlantDashboard";
@@ -111,6 +113,7 @@ type Plan = {
   recordPurpose: Photo["recordPurpose"];
   editVersion: number;
   title: string;
+  createdAt?: string;
   date: string;
   pointId: string | null;
   pointIds: string[];
@@ -196,6 +199,7 @@ type Tab =
   | "taWorklist"
   | "labels"
   | "models";
+type ListSort = "newest" | "grade_desc" | "grade_asc";
 type ToastTone = "success" | "error" | "info";
 type Toast = { tone: ToastTone; message: string };
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
@@ -428,6 +432,7 @@ export default function Home() {
     useState<RepairMethod | "auto">("auto");
   const [bulkMaintenanceReason, setBulkMaintenanceReason] = useState("");
   const [bulkMaintenanceTa, setBulkMaintenanceTa] = useState(false);
+  const [photoSort, setPhotoSort] = useState<ListSort>("newest");
   const [photoPageSize, setPhotoPageSize] = useState(10);
   const photoList = usePhotoQuery({
     ...scope,
@@ -458,6 +463,7 @@ export default function Home() {
       : {}),
     classification: "all",
     grade: tab === "photos" ? photoGradeFilter : "all",
+    sort: tab === "photos" ? photoSort : "newest",
     aiStatus: tab === "photos" ? (filter as Photo["status"] | "all") : "all",
     workClassification: tab === "photos" ? workClassificationFilter : "all",
     labeling: tab === "labels" ? "true" : "all",
@@ -501,6 +507,7 @@ export default function Home() {
   const [pendingBundleNavigation, setPendingBundleNavigation] =
     useState<Tab | null>(null);
   const [workStatus, setWorkStatus] = useState<RepairStatus | "all">("all");
+  const [workSort, setWorkSort] = useState<ListSort>("newest");
   const [workMethod, setWorkMethod] = useState("all");
   const [workTa, setWorkTa] = useState("all");
   const [maintenanceTarget, setMaintenanceTarget] =
@@ -537,6 +544,7 @@ export default function Home() {
         (isMaintenanceTab && !showAllWork && workVisibility === "visible")
           ? "true"
           : "all",
+      sort: isMaintenanceTab ? workSort : "newest",
       unbundledOnly: tab === "taWorklist" ? "true" : "false",
       visibility: (tab === "dashboard" || tab === "taWorklist"
         ? "visible"
@@ -647,8 +655,12 @@ export default function Home() {
             {
               bundle: {
                 ...bundle,
-                members: bundle.members.map(enrichMaintenanceRowLocation),
+                members: bundle.members.map(enrichMaintenanceRowLocation).sort((a, b) => compareListRows(a, b, workSort)),
               },
+              sortGrade: (() => {
+                const grades = matchingMembers.map((member) => member.photoGrade).filter((grade): grade is number => Number.isInteger(grade) && grade! >= 1 && grade! <= 5);
+                return grades.length ? (workSort === "grade_asc" ? Math.min(...grades) : Math.max(...grades)) : null;
+              })(),
               matchingMemberIds: new Set(
                 matchingMembers.map((member) => member.id),
               ),
@@ -656,7 +668,7 @@ export default function Home() {
           ]
         : [];
     },
-  );
+  ).sort((a, b) => compareListRows({ ...a.bundle, photoGrade: a.sortGrade }, { ...b.bundle, photoGrade: b.sortGrade }, workSort));
   const maintenanceItemTarget = useCallback(
     (item: MaintenanceWorklistRow): MaintenanceTarget => ({
       planId: item.planId,
@@ -894,6 +906,7 @@ export default function Home() {
     changeScope(nextScope);
     setFilter("all");
     setPhotoGradeFilter("all");
+    setPhotoSort("newest");
     if (target === "photos" || target === "labels") {
       setSelectedPhotoPlanIds(null);
       setPhotoPageSize(10);
@@ -909,6 +922,7 @@ export default function Home() {
     }
     if (target === "worklist" || target === "taWorklist") {
       setWorkStatus("all");
+      setWorkSort("newest");
       setWorkMethod("all");
       setWorkTa(target === "taWorklist" ? "true" : "all");
       setWorkVisibility("visible");
@@ -1680,6 +1694,11 @@ export default function Home() {
                 </h1>
               </div>
               <div className="heading-actions">
+                {isMaintenanceTab && <label className="filter-control">정렬
+                  <select aria-label="보수·워크리스트 정렬" value={workSort} onChange={(event) => { setWorkSort(event.target.value as ListSort); setWorkPage(1); }}>
+                    <option value="newest">최근 등록순</option><option value="grade_desc">위험 등급 높은 순 (5→1)</option><option value="grade_asc">위험 등급 낮은 순 (1→5)</option>
+                  </select>
+                </label>}
                 {tab === "worklist" && (
                   <button
                     className="button secondary"
@@ -1970,27 +1989,18 @@ export default function Home() {
             <section className="panel">
               {tab === "photos" && (
                 <>
+                  <div className="worklist-status-bar photo-grade-filters" role="group" aria-label="사진 등급별 필터">
+                    {(["all", "5", "4", "3", "2", "1", "ungraded"] as const).map((grade) => (
+                      <button key={grade} type="button" className={`worklist-status-chip${photoGradeFilter === grade ? " is-selected" : ""}`} aria-pressed={photoGradeFilter === grade} disabled={!photoList.data} onClick={() => { setPhotoGradeFilter(grade); setPage(1); setSelectedMaintenancePhotos({}); }}>
+                        <span>{grade === "all" ? "전체" : grade === "ungraded" ? "등급 없음" : `${grade}등급`}</span>
+                        <strong>{photoList.data?.gradeCounts ? (grade === "all" ? Object.values(photoList.data.gradeCounts).reduce((sum, count) => sum + count, 0) : photoList.data.gradeCounts[grade as keyof typeof photoList.data.gradeCounts]) : "—"}</strong>
+                      </button>
+                    ))}
+                  </div>
                   <div className="list-toolbar photo-list-toolbar">
-                    <label className="filter-control">
-                      등급
-                      <select
-                        aria-label="사진 등급 필터"
-                        value={photoGradeFilter}
-                        onChange={(event) => {
-                          setPhotoGradeFilter(
-                            event.target.value as PhotoGradeFilter,
-                          );
-                          setPage(1);
-                          setSelectedMaintenancePhotos({});
-                        }}
-                      >
-                        <option value="all">전체 등급</option>
-                        <option value="1">1등급</option>
-                        <option value="2">2등급</option>
-                        <option value="3">3등급</option>
-                        <option value="4">4등급</option>
-                        <option value="5">5등급</option>
-                        <option value="ungraded">등급 없음</option>
+                    <label className="filter-control">정렬
+                      <select aria-label="사진 정렬" value={photoSort} onChange={(event) => { setPhotoSort(event.target.value as ListSort); setPage(1); setSelectedMaintenancePhotos({}); }}>
+                        <option value="newest">최근 등록순</option><option value="grade_desc">위험 등급 높은 순 (5→1)</option><option value="grade_asc">위험 등급 낮은 순 (1→5)</option>
                       </select>
                     </label>
                     <label className="filter-control">
@@ -2561,6 +2571,7 @@ export default function Home() {
                                           : "취소"}
                                   </span>
                                 </span>
+                                <small className="registration-time">등록일시 {formatDateTime(plan.createdAt)}</small>
                                 <span className="plan-card-open-label">
                                   사진·판독 목록{" "}
                                   <ChevronRight size={14} aria-hidden="true" />
@@ -2668,14 +2679,14 @@ export default function Home() {
                                 )}
                                 {planAcceptsPhotoDrop(plan) && (
                                   <button
-                                    className="button secondary plan-inline-add"
+                                    className="button primary plan-inline-add"
                                     type="button"
                                     disabled={!canWrite || plansUnavailable}
                                     onClick={() => uploadForPlan(plan)}
                                     aria-label={`${plan.title} 사진 추가`}
                                   >
-                                    <ImagePlus size={13} aria-hidden="true" />
-                                    추가
+                                    <ImagePlus size={18} aria-hidden="true" />
+                                    사진 추가
                                   </button>
                                 )}
                               </div>
@@ -4475,7 +4486,7 @@ function PhotoTable({
             <th scope="col">AI 판독</th>
             <th scope="col">현재 분류</th>
             <th scope="col">후속 표시</th>
-            <th scope="col">등록 일시</th>
+            <th scope="col">등록일시</th>
             {onVisibilityChange && (
               <th scope="col">
                 <span className="sr-only">사진 관리</span>
@@ -4607,12 +4618,7 @@ function PhotoTable({
                     )}
                   </td>
                   <td className="faint">
-                    {new Date(photo.createdAt).toLocaleString("ko-KR", {
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    <time dateTime={photo.createdAt}>{formatDateTime(photo.createdAt)}</time>
                   </td>
                   {onVisibilityChange && (
                     <td>

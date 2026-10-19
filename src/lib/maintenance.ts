@@ -21,6 +21,7 @@ export type MaintenanceQuery = {
   teamId?: string;
   rackId?: string;
   search?: string;
+  sort?: "newest" | "grade_desc" | "grade_asc";
   page?: number;
   pageSize?: number;
 };

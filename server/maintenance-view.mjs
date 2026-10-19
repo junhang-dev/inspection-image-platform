@@ -1,3 +1,4 @@
+import { compareListRows } from "../src/lib/list-order.mjs";
 import { createHash } from "node:crypto";
 import { locations } from "./relations.mjs";
 import { maintenanceId, photoMaintenanceId } from "./maintenance-domain.mjs";
@@ -168,7 +169,7 @@ export function maintenancePage(items, query) {
   const statusCounts = { none: 0, review: 0, planned: 0, progress: 0, done: 0 };
   for (const item of scoped) if (Object.hasOwn(statusCounts, item.repairStatus)) statusCounts[item.repairStatus]++;
   const filtered = scoped.filter((item) => query.repairStatus === "all" || item.repairStatus === query.repairStatus)
-    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id));
+    .sort((a, b) => compareListRows(a, b, query.sort));
   const total = filtered.length, pages = Math.max(1, Math.ceil(total / query.pageSize)), page = Math.min(query.page, pages);
   const pointSummaries = {};
   for (const item of filtered) {

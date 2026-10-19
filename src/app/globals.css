@@ -2924,3 +2924,9 @@ button.stat-card:hover {
   background: var(--badge-muted-bg);
   color: var(--badge-muted-text);
 }
+
+/* Primary plan upload action and lightweight registration metadata. */
+.plan-inline-actions .plan-inline-add { min-height: 44px; min-width: 116px; padding: 10px 14px; gap: 8px; font-size: var(--type-small); font-weight: 650; }
+.plan-inline-actions { gap: 8px; flex-wrap: wrap; }
+.registration-time { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; font-weight: 400; }
+.photo-grade-filters { margin: 0 0 14px; }

@@ -38,6 +38,7 @@ export const photoQuerySchema = z
     aiStatus: z.enum(["all", "pending", "processing", "done", "error", "unread"]).default("all"),
     workClassification: z.enum(["all", "repair", "retake"]).default("all"),
     labeling: z.enum(["all", "true"]).default("all"),
+    sort: z.enum(["newest", "grade_desc", "grade_asc"]).default("newest"),
     page: z.coerce.number().int().min(1).max(1000000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(50),
   })
@@ -54,6 +55,11 @@ export const photoQuerySchema = z
 
 const text = (alias, field) =>
   `NULLIF(JSON_UNQUOTE(JSON_EXTRACT(${alias}.data, '$.${field}')), 'null')`;
+const numericGrade = `(COALESCE(${text("i", "humanGrade")}, ${text("i", "ai.grade")}) + 0)`;
+const validGrade = `(CASE WHEN ${numericGrade} IN (1,2,3,4,5) THEN ${numericGrade} ELSE NULL END)`;
+export const photoOrder = (sort) => sort === "grade_desc" || sort === "grade_asc"
+  ? `${validGrade} IS NULL ASC, ${validGrade} ${sort === "grade_desc" ? "DESC" : "ASC"}, i.created_at DESC, i.id DESC`
+  : "i.created_at DESC, i.id DESC";
 const rackLocation = `COALESCE(${text("i", "rackId")}, ${text("p", "rackId")})`;
 export const photoConditions = {
   repair: `(COALESCE(${text("i", "humanGrade")}, ${text("i", "ai.grade")}, 0) + 0 BETWEEN 3 AND 5) AND COALESCE(${text("i", "retake")}, 'false') <> 'true'`,
@@ -172,26 +178,17 @@ export async function queryPhotos(pool, decodeEntity, query) {
     const [summaries] = await connection.execute(
       `SELECT COUNT(*) AS total, ${Object.entries(photoConditions)
         .map(([key, condition]) => `COALESCE(SUM(${condition}), 0) AS ${key}`)
-        .concat(Array.from({ length: 5 }, (_, index) => {
-          const grade = index + 1;
-          return `COALESCE(SUM(${gradeCondition(grade)}), 0) AS grade_${grade}`;
-        }))
         .join(", ")} ${from} WHERE ${base.sql}`,
       base.values,
     );
-    const gradeCounts = Object.fromEntries([
-      ...Array.from({ length: 5 }, (_, index) => {
-        const grade = index + 1;
-        return [grade, Number(summaries[0][`grade_${grade}`])];
-      }),
-      [
-        "ungraded",
-        Number(summaries[0].total) -
-          Array.from({ length: 5 }, (_, index) =>
-            Number(summaries[0][`grade_${index + 1}`]),
-          ).reduce((sum, value) => sum + value, 0),
-      ],
-    ]);
+    // Grade chips retain the complete current scope when a grade is selected.
+    const gradeScope = photoWhere({ ...query, grade: "all" });
+    const [gradeRows] = await connection.execute(
+      `SELECT ${validGrade} AS grade, COUNT(*) AS total ${from} WHERE ${gradeScope.sql} GROUP BY ${validGrade}`,
+      gradeScope.values,
+    );
+    const gradeCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, ungraded: 0 };
+    for (const row of gradeRows) gradeCounts[row.grade == null ? "ungraded" : Number(row.grade)] = Number(row.total);
     const summary = Object.fromEntries(
       Object.entries(summaries[0])
         .filter(([key]) => !key.startsWith("grade_"))
@@ -205,7 +202,7 @@ export async function queryPhotos(pool, decodeEntity, query) {
     const pages = Math.max(1, Math.ceil(total / query.pageSize));
     const page = Math.min(query.page, pages);
     const [rows] = await connection.execute(
-      `SELECT i.data, ${rackLocation} AS resolvedRackId ${from} WHERE ${filtered.sql} ORDER BY i.created_at DESC, i.id DESC LIMIT ${query.pageSize} OFFSET ${(page - 1) * query.pageSize}`,
+      `SELECT i.data, ${rackLocation} AS resolvedRackId ${from} WHERE ${filtered.sql} ORDER BY ${photoOrder(query.sort)} LIMIT ${query.pageSize} OFFSET ${(page - 1) * query.pageSize}`,
       filtered.values,
     );
     const [counts] = await connection.execute(

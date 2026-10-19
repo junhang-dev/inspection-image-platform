@@ -70,6 +70,7 @@ export type PhotoQuery = Partial<PhotoScope> & {
   aiStatus?: "all" | "pending" | "processing" | "done" | "error" | "unread";
   workClassification?: "all" | "repair" | "retake";
   labeling?: "all" | "true";
+  sort?: "newest" | "grade_desc" | "grade_asc";
   page?: number;
   pageSize?: number;
 };

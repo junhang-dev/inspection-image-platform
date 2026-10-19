@@ -42,6 +42,7 @@ export const maintenanceQuerySchema = z
       .enum(["all", ...locations.racks.map((rack) => rack.id)])
       .default("all"),
     search: z.string().trim().max(200).default(""),
+    sort: z.enum(["newest", "grade_desc", "grade_asc"]).default("newest"),
     page: z.coerce.number().int().min(1).max(1000000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(50),
   })

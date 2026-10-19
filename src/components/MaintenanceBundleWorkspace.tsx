@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDateTime } from "@/lib/date-time";
 import { useEffect, useId, useLayoutEffect, useRef, type RefObject } from "react";
 import { ChevronDown } from "lucide-react";
 import type { MaintenanceBundle } from "@/lib/maintenance";
@@ -107,6 +108,7 @@ export function MaintenanceBundleWorkspace({
                 <summary className={styles.summary}>
                   <span className={styles.bundleTitle}>
                     <strong>{bundle.name}</strong>
+                    <small>등록일시 {formatDateTime(bundle.createdAt)}</small>
                     <small>
                       {bundle.members.length}장 ·{" "}
                       {plans.length === 1
@@ -213,6 +215,7 @@ export function MaintenanceBundleWorkspace({
                                     <strong>
                                       {member.photoName || "사진 이름 미조회"}
                                     </strong>
+                                    <small>등록일시 {formatDateTime(member.createdAt)}</small>
                                     {!!member.newEvidenceCount && (
                                       <small className={styles.attention}>
                                         새 근거 {member.newEvidenceCount}
