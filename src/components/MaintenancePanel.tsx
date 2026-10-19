@@ -730,7 +730,7 @@ export function MaintenanceWorklist({
                   <td data-column="method" data-label="후속 조치">
                     <strong className={styles.methodBadge}>{methodLabels[item.repairMethod] || "조치 미확인"}</strong>
                     <small className={styles.methodSource}>{item.repairMethodMode === "manual" ? "담당자 지정" : "등급 자동 분류"}</small>
-                    {item.methodMismatch && <small className={styles.warning}>등급 기준과 다름</small>}
+                    {item.methodMismatch && <small className={styles.methodMismatch}>등급 기준과 다름</small>}
                   </td>
                   <td data-column="grade" data-label="등급">
                     {Number.isInteger(item.photoGrade) &&

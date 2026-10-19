@@ -1076,3 +1076,10 @@
 .secondarySettings { padding: 12px 0; border-top: 1px solid var(--maintenance-border, #ddd); }
 .secondarySettings summary { cursor: pointer; margin-bottom: 12px; }
 @media (max-width: 900px) { .workTable td[data-column="method"] { grid-column: 1 / -1; grid-row: 6; } .workTable td[data-column="grade"], .workTable td[data-column="status"] { grid-row: 7; } }
+
+.methodMismatch {
+  display: block;
+  margin-top: 5px;
+  color: var(--maintenance-warning-text);
+  font-size: 12px;
+}

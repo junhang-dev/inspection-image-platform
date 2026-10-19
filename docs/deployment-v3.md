@@ -14,6 +14,13 @@
 
 Worker·VPC Service·named Tunnel을 각각 하나 생성했다. 기존 Workers Free($0) 계정에서 진행했고, 추가 유료 지출·결제 등록·새 OAuth 또는 관리 API token 발급은 없었다. 기존 quick tunnel은 복구용으로 유지한다. DB·사진 저장소·모델 포트를 외부에 직접 연결하지 않는다.
 
+### 2026-10-19 등급별 후속 조치 개편
+
+- 웹·API 소스 `6e17dcefeafae4f63116206dab92bcee62c1330b`, 웹 BUILD_ID `jv3qnKg4itTKk8fLrbYCk`를 `grade-follow-up-20261019` 릴리스로 반영했다. 이 항목이 아래의 이전 릴리스보다 최신 운영 전환 기록이다.
+- 3등급 추적관리·4등급 도장교체·5등급 배관교체를 기본 조치로 분류한다. 1~2등급은 기본 목록에서 제외하고 수동 지정·작업 중·완료 기록은 보존한다. 기본 대상 111건이며, 과거 담당자 지정값을 보존하므로 조치별 수는 순수 등급별 수와 다를 수 있다.
+- 고정 주소의 웹·health·조치별 필터·사진 및 상세 읽기를 확인했다. DB 전체 행과 사진 객체 메타데이터 목록 해시는 전후 일치했다. 사진 300, 보수 저장 93, TA 묶음 3, 연결 7, 이력 558을 보존했다.
+- 기존 LaunchAgent 설정과 SQL·객체 목록 백업, 이전 릴리스를 로컬에 보존했다. 모델·터널·운영 인증은 바꾸지 않았다. 검증 내용과 미실행 범위는 [실행 기록](../records/maintenance-follow-up-20261019.md)을 따른다.
+
 ### 2026-10-15 반응형·재촬영 흐름 스프린트 (현재)
 
 - 소스 커밋 `e9059f3f329c34569ae1b3a438a983a66a7bc663`의 웹을 `local/shared-v3-final/releases/ux-responsive-retake-20261015/web`에 배포했다. BUILD_ID는 `Dh6ryl_CKTgB4C5oXrnyc`다.
