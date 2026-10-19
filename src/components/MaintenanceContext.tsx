@@ -14,7 +14,7 @@ import {
   type SavedMaintenance,
 } from "@/lib/maintenance";
 import { usePhotoQuery } from "@/lib/photo-query";
-import { finishMaintenanceSave } from "@/lib/maintenance-save";
+import { finishMaintenanceSave, statusAfterMethod } from "@/lib/maintenance-save";
 import { useAuth } from "./AuthProvider";
 
 type Audit = {
@@ -378,7 +378,6 @@ export default function MaintenanceContext({
     );
   if (photoTargetMode) {
     const photo = photos.data?.items[0];
-    const statusValues: MaintenanceDraft["repairStatus"][] = ["review", "planned", "progress", "done"];
     const statusLabels: Record<MaintenanceDraft["repairStatus"], string> = {
       none: "등록 전",
       review: "검토 필요",
@@ -426,27 +425,26 @@ export default function MaintenanceContext({
             <span>후속 조치</span><strong>{methodLabels[draft.repairMethod]}</strong>
             {Number.isInteger(photo?.humanGrade ?? photo?.ai?.grade) && <small>사진 등급 {photo?.humanGrade ?? photo?.ai?.grade}등급</small>}
           </div>
-          <fieldset className={styles.photoReviewStages} disabled={busy || editingBlocked || !canWrite}>
-            <legend>진행 상태</legend>
-            {statusValues.map((status) => (
-              <button key={status} type="button" className={draft.repairStatus === status ? styles.selectedStage : ""} aria-pressed={draft.repairStatus === status} onClick={() => { if (canWrite && !busy && !editingBlocked) setDraft((current) => ({ ...current, repairStatus: status })); }}>{statusLabels[status]}</button>
-            ))}
-          </fieldset>
+          <label className={styles.field}>
+            후속 조치
+            <select aria-label="후속 조치" value={draft.repairMethod} disabled={busy || editingBlocked || !canWrite} onChange={(event) => {
+              const repairMethod = event.target.value as MaintenanceDraft["repairMethod"];
+              setDraft((current) => ({ ...current, repairMethod, repairMethodMode: "manual", repairStatus: statusAfterMethod(current.repairStatus, repairMethod) }));
+            }}>
+              {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className={styles.field}>
+            진행 상태
+            <select aria-label="진행 상태" value={draft.repairStatus} disabled={busy || editingBlocked || !canWrite} onChange={(event) => setDraft((current) => ({ ...current, repairStatus: event.target.value as MaintenanceDraft["repairStatus"] }))}>
+              {Object.entries(statusLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}
+            </select>
+          </label>
           {statusWillLeaveFilter && (
             <p className={styles.warning} role="status">
               저장하면 현재 ‘{statusFilterLabels[visibleStatusFilter]}’ 상태 필터 결과에서는 보이지 않습니다.
             </p>
           )}
-          <label className={styles.field}>
-            후속 조치
-            <select aria-label="후속 조치" value={draft.repairMethod} disabled={busy || editingBlocked || !canWrite} onChange={(event) => setDraft((current) => ({ ...current, repairMethod: event.target.value as MaintenanceDraft["repairMethod"], repairMethodMode: "manual" }))}>
-              {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <p className={styles.help}>
-            등급 기준: {methodLabels[basis.item?.automaticRepairMethod ?? "undecided"]} · {draft.repairMethodMode === "manual" ? "담당자 지정" : "자동 분류"}
-          </p>
-          {basis.item?.methodMismatch && <p className={styles.warning}>현재 등급 기준과 저장된 조치가 다릅니다. 기존 작업 기록을 확인해 주세요.</p>}
           <label className={styles.field}>
             변경 사유
             <textarea aria-label="변경 사유" required maxLength={1000} value={draft.reason} disabled={busy || editingBlocked || !canWrite} placeholder="조치·진행 상태 등을 변경하는 이유" onChange={(event) => setDraft((current) => ({ ...current, reason: event.target.value }))} />

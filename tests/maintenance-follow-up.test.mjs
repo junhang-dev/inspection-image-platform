@@ -48,3 +48,15 @@ test('조치별 집계는 필터와 페이지 전에 계산하고 하향된 수�
   assert.equal(preserved.repairMethod, 'replace');
   assert.equal(preserved.methodMismatch, true);
 });
+
+test('후속 조치 선택은 초기 상태를 작업 예정으로 연결하고 진행·완료는 유지한다', async () => {
+  const { statusAfterMethod } = await import('../src/lib/maintenance-save.ts');
+  for (const method of ['monitor', 'paint', 'replace']) {
+    for (const status of ['none', 'review', 'planned']) assert.equal(statusAfterMethod(status, method), 'planned');
+  }
+  assert.equal(statusAfterMethod('review', 'none'), 'none');
+  assert.equal(statusAfterMethod('planned', 'undecided'), 'review');
+  for (const status of ['progress', 'done']) {
+    for (const method of ['none', 'undecided', 'monitor', 'paint', 'replace']) assert.equal(statusAfterMethod(status, method), status);
+  }
+});

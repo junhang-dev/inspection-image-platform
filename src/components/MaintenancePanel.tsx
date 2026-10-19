@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from "react";
 import styles from "./MaintenancePanel.module.css";
+import { statusAfterMethod } from "@/lib/maintenance-save";
 import { useAuth } from "./AuthProvider";
 
 export type RepairStatus = "none" | "review" | "planned" | "progress" | "done";
@@ -202,6 +203,28 @@ export function MaintenanceEditor({
           <legend className={styles.srOnly}>보수 기록 편집</legend>
           <div className={styles.formGrid}>
             <label className={styles.field}>
+              <span>후속 조치</span>
+              <select
+                value={draft.repairMethod}
+                onChange={(event) =>
+                  update({ repairMethod: event.target.value as RepairMethod, repairMethodMode: "manual", repairStatus: statusAfterMethod(draft.repairStatus, event.target.value as RepairMethod) })
+                }
+              >
+                {!validMethod && (
+                  <option value={draft.repairMethod} disabled>
+                    확인되지 않은 방법
+                  </option>
+                )}
+                {(Object.entries(methodLabels) as [RepairMethod, string][]).map(
+                  ([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+            <label className={styles.field}>
               <span>업무 상태</span>
               <select
                 value={draft.repairStatus}
@@ -215,28 +238,6 @@ export function MaintenanceEditor({
                   </option>
                 )}
                 {(Object.entries(statusLabels) as [RepairStatus, string][]).map(
-                  ([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
-            <label className={styles.field}>
-              <span>후속 조치</span>
-              <select
-                value={draft.repairMethod}
-                onChange={(event) =>
-                  update({ repairMethod: event.target.value as RepairMethod, repairMethodMode: "manual" })
-                }
-              >
-                {!validMethod && (
-                  <option value={draft.repairMethod} disabled>
-                    확인되지 않은 방법
-                  </option>
-                )}
-                {(Object.entries(methodLabels) as [RepairMethod, string][]).map(
                   ([value, label]) => (
                     <option key={value} value={value}>
                       {label}
@@ -729,8 +730,6 @@ export function MaintenanceWorklist({
                   </td>
                   <td data-column="method" data-label="후속 조치">
                     <strong className={styles.methodBadge}>{methodLabels[item.repairMethod] || "조치 미확인"}</strong>
-                    <small className={styles.methodSource}>{item.repairMethodMode === "manual" ? "담당자 지정" : "등급 자동 분류"}</small>
-                    {item.methodMismatch && <small className={styles.methodMismatch}>등급 기준과 다름</small>}
                   </td>
                   <td data-column="grade" data-label="등급">
                     {Number.isInteger(item.photoGrade) &&

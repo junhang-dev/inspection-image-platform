@@ -1,3 +1,12 @@
+import type { RepairMethod, RepairStatus } from "@/components/MaintenancePanel";
+
+export function statusAfterMethod(status: RepairStatus, method: RepairMethod): RepairStatus {
+  if (status === "progress" || status === "done") return status;
+  if (method === "none") return "none";
+  if (method === "undecided") return "review";
+  return "planned";
+}
+
 /** A confirmed write stays saved even when its following reads fail. */
 export async function finishMaintenanceSave<
   T extends { id: string; editVersion: number },

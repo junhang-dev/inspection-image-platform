@@ -190,34 +190,6 @@
   grid-column: 1 / -1;
   color: var(--maintenance-muted);
 }
-.photoReviewStages {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  min-width: 0;
-  border: 0;
-  margin: 0;
-  padding: 0;
-}
-.photoReviewStages legend {
-  margin-bottom: 8px;
-  font-weight: 650;
-}
-.photoReviewStages button {
-  min-width: 0;
-  min-height: 40px;
-  padding: 7px 9px;
-  border: 1px solid var(--maintenance-line);
-  border-radius: 7px;
-  color: var(--maintenance-ink);
-  background: var(--maintenance-surface);
-}
-.photoReviewStages .selectedStage {
-  border-color: var(--maintenance-green);
-  color: var(--maintenance-green-hover);
-  background: var(--maintenance-green-soft);
-  font-weight: 700;
-}
 .taToggle {
   display: flex;
   align-items: center;
@@ -1072,14 +1044,6 @@
 }
 
 .methodBadge { display: inline-block; padding: 7px 10px; border-radius: 8px; background: #e7f2ee; color: #155c47; white-space: nowrap; font-size: 15px; }
-.methodSource { display: block; margin-top: 5px; color: var(--maintenance-muted); font-size: 12px; }
 .secondarySettings { padding: 12px 0; border-top: 1px solid var(--maintenance-border, #ddd); }
 .secondarySettings summary { cursor: pointer; margin-bottom: 12px; }
 @media (max-width: 900px) { .workTable td[data-column="method"] { grid-column: 1 / -1; grid-row: 6; } .workTable td[data-column="grade"], .workTable td[data-column="status"] { grid-row: 7; } }
-
-.methodMismatch {
-  display: block;
-  margin-top: 5px;
-  color: var(--maintenance-warning-text);
-  font-size: 12px;
-}

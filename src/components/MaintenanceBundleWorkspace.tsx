@@ -3,7 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, type RefObject } from "react";
 import { ChevronDown } from "lucide-react";
 import type { MaintenanceBundle } from "@/lib/maintenance";
-import type { MaintenanceWorklistRow } from "./MaintenancePanel";
+import { methodLabels, type MaintenanceWorklistRow } from "./MaintenancePanel";
 import styles from "./MaintenanceBundleWorkspace.module.css";
 import { useAuth } from "./AuthProvider";
 
@@ -160,6 +160,7 @@ export function MaintenanceBundleWorkspace({
                       <thead>
                         <tr>
                           <th scope="col">검사 사진</th>
+                          <th scope="col">후속 조치</th>
                           <th scope="col">검사계획</th>
                           <th scope="col">생산팀</th>
                           <th scope="col">파이프랙</th>
@@ -235,6 +236,7 @@ export function MaintenanceBundleWorkspace({
                                   </span>
                                 </span>
                               </td>
+                              <td><strong>{methodLabels[member.repairMethod] || "조치 미확인"}</strong></td>
                               <td>
                                 <span className={styles.memberPlan}>
                                   {member.planTitle || "계획 미확인"}
