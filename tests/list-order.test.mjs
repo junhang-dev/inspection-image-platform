@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compareListRows } from '../src/lib/list-order.mjs';
 import { formatDateTime } from '../src/lib/date-time.ts';
-import { photoOrder, photoQuerySchema } from '../server/photo-query.mjs';
+import { photoOrder, photoQuerySchema, photoWhere } from '../server/photo-query.mjs';
 import { maintenanceQuerySchema } from '../server/maintenance-query.mjs';
 import { maintenancePage } from '../server/maintenance-view.mjs';
 
@@ -29,6 +29,7 @@ test('정렬 입력은 허용 목록만 받고 사진 SQL도 사람 등급 우�
     assert.equal(schema.parse({}).sort,'newest');
     assert.equal(schema.safeParse({sort:'grade_desc; DROP TABLE entities'}).success,false);
   }
+  assert.match(photoWhere(photoQuerySchema.parse({grade:'ungraded'})).sql, /CASE WHEN.*IS NULL/);
   assert.match(photoOrder('grade_desc'), /humanGrade.*ai\.grade/);
   assert.match(photoOrder('grade_desc'), /IS NULL ASC.*DESC.*i\.created_at DESC, i\.id DESC/);
   assert.match(photoOrder('grade_asc'), /IS NULL ASC.*ASC.*i\.created_at DESC, i\.id DESC/);

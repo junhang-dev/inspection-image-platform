@@ -152,7 +152,7 @@ export function photoWhere(query, { classification = true, aiStatus = true, work
   if (query.grade !== "all") {
     clauses.push(
       query.grade === "ungraded"
-        ? `(${text("i", "humanGrade")} IS NULL AND ${text("i", "ai.grade")} IS NULL)`
+        ? `${validGrade} IS NULL`
         : gradeCondition(Number(query.grade)),
     );
   }
