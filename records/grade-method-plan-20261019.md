@@ -24,7 +24,7 @@
 
 - `npm run typecheck` 통과.
 - `npm test` 통과: 206개 중 195개 성공, 0개 실패, 선택 인프라 검사 11개 건너뜀.
-- `npm run build -- --webpack` 통과. 운영 웹 BUILD_ID는 `hPi15fEMumPIc3Qpg5Nhg`다. API 조치 기준 파일 SHA-256은 `7c6ff93c45fc7ec7e98b6fbd337582230ce3c22f0230b482fd92c9cfc0422bcc`다.
+- `npm run build -- --webpack` 통과. 배포 소스 커밋은 `dce3ca65deebebcdc3239bc0dce1e05fe8cdd0d5`, 운영 웹 BUILD_ID는 `hPi15fEMumPIc3Qpg5Nhg`다. API 조치 기준 파일 SHA-256은 `7c6ff93c45fc7ec7e98b6fbd337582230ce3c22f0230b482fd92c9cfc0422bcc`다.
 - API와 웹 LaunchAgent의 작업 경로를 `local/shared-v3-final/releases/grade-method-20261019/`로 순차 전환했다. 사전 LaunchAgent plist와 직전 릴리스는 복구용으로 보존했다.
 - 로컬 웹, 로컬 API health, 고정 주소 웹, 고정 주소 API health는 모두 HTTP 200이다. API health는 `ready=true`, `dataScope=shared`, 모델 준비 상태 `true`다. 각 포트 3000·4000에는 활성 listener 하나씩만 남았다.
 - 운영 브라우저 1280×720에서 검사계획 화면을 확인했다. 진행 중 1, 전체 5, 완료 4, 취소 0이 숫자형 버튼으로 보이고, 전체 버튼을 누르면 계획 5건이 표시됐다. 예정일 아래 등록일시와 눈에 띄는 사진 추가 버튼을 확인했다. 사용자 탭은 유지하고 확인용 탭만 닫았다.
