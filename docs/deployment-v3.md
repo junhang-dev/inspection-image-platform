@@ -14,7 +14,16 @@
 
 Worker·VPC Service·named Tunnel을 각각 하나 생성했다. 기존 Workers Free($0) 계정에서 진행했고, 추가 유료 지출·결제 등록·새 OAuth 또는 관리 API token 발급은 없었다. 기존 quick tunnel은 복구용으로 유지한다. DB·사진 저장소·모델 포트를 외부에 직접 연결하지 않는다.
 
-### 2026-10-19 검사계획 UI·등급별 보수 기준 (최신)
+### 2026-10-19 UI 기본 조작 기준 마이너 패치 (최신)
+
+- 소스 커밋 `3025f15`의 UI 규칙 보완을 `local/shared-v3-final/releases/ui-ux-rules-20261019/web-final`에 반영했다. 웹 BUILD_ID는 `QQ_5koVvclb-lXeiF0bXq`다.
+- 11px 미만 텍스트를 제거하고 본문·입력은 14px 기준으로 맞췄다. 주요 버튼은 최소 40px, `focus-visible` 표시는 3px로 맞췄다. 펼침 아이콘은 기존 SVG/CSS 방식 그대로 유지했다.
+- 웹만 전환했다. API는 `grade-method-20261019` 릴리스와 포트 4000을 유지했고 전환 전후 API PID는 `39227`로 같았다. DB·MinIO·모델·터널은 변경하지 않았다.
+- 전환 전후 DB 6개 테이블 전체 행 해시와 사진 객체 300개의 키·크기·ETag 해시가 일치했다. 진행 중 업로드·판독·분석 작업은 모두 0건이었다.
+- 로컬·고정 주소 웹과 API health는 HTTP 200이며 API `ready=true`, `dataScope=shared`, 모델 `ready=true`다. 기존 브라우저 탭에서 홈·보수 관리·검사계획을 열어 목록과 주요 버튼을 확인했다. 신규 업로드·추론·업무 저장은 실행하지 않았다.
+- 이전 웹 릴리스와 LaunchAgent·서비스 경로 설정 사본은 `local/shared-v3-final/runtime/backups/ui-ux-rules-20261019/`에 보존했다. 상세 검사·첫 전환 복구 기록은 [실행 기록](../records/ui-ux-rules-minor-patch-20261019.md)을 따른다.
+
+### 2026-10-19 검사계획 UI·등급별 보수 기준 (이전 릴리스)
 
 - 소스 커밋 `dce3ca65deebebcdc3239bc0dce1e05fe8cdd0d5`의 변경을 `grade-method-20261019` API와 `web-final`에 반영했다. 웹 BUILD_ID는 `hPi15fEMumPIc3Qpg5Nhg`다. API 조치 기준 파일 SHA-256은 `7c6ff93c45fc7ec7e98b6fbd337582230ce3c22f0230b482fd92c9cfc0422bcc`다.
 - 자동 후속 조치는 1~2등급 없음(기본 목록 제외), 3등급 도장교체, 4~5등급 배관교체다. 담당자 지정·작업 중·완료 기록은 보존하고, 사람이 기본값을 바꿀 때 변경 사유를 남긴다.
