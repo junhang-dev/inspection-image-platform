@@ -240,6 +240,10 @@
   font-weight: 650;
   cursor: pointer;
 }
+.openButton,
+.createButton {
+  min-height: 40px;
+}
 .openButton:hover,
 .clearButton:hover,
 .selectedRemoveButton:hover:not(:disabled) {
