@@ -200,12 +200,7 @@ type ToastTone = "success" | "error" | "info";
 type Toast = { tone: ToastTone; message: string };
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const publicUploads = process.env.NEXT_PUBLIC_PUBLIC_UPLOADS_ALLOWED === "1";
-const workStatusStages = [
-  { id: "review", label: "검토 필요" },
-  { id: "planned", label: "작업 예정" },
-  { id: "progress", label: "작업 중" },
-  { id: "done", label: "완료" },
-] as const;
+
 const navGroups: {
   label: string;
   items: { id: Tab; label: string; icon: typeof Compass }[];
@@ -430,7 +425,8 @@ export default function Home() {
   const [bulkMaintenanceBusy, setBulkMaintenanceBusy] = useState(false);
   const [bulkMaintenanceError, setBulkMaintenanceError] = useState("");
   const [bulkMaintenanceMethod, setBulkMaintenanceMethod] =
-    useState<RepairMethod>("undecided");
+    useState<RepairMethod | "auto">("auto");
+  const [bulkMaintenanceReason, setBulkMaintenanceReason] = useState("");
   const [bulkMaintenanceTa, setBulkMaintenanceTa] = useState(false);
   const [photoPageSize, setPhotoPageSize] = useState(10);
   const photoList = usePhotoQuery({
@@ -507,10 +503,6 @@ export default function Home() {
   const [workStatus, setWorkStatus] = useState<RepairStatus | "all">("all");
   const [workMethod, setWorkMethod] = useState("all");
   const [workTa, setWorkTa] = useState("all");
-  const [worklistStatusSnapshot, setWorklistStatusSnapshot] = useState<{
-    scopeKey: string;
-    counts: MaintenancePage["statusCounts"];
-  } | null>(null);
   const [maintenanceTarget, setMaintenanceTarget] =
     useState<MaintenanceTarget | null>(null);
   const [pendingMaintenanceLeave, setPendingMaintenanceLeave] =
@@ -571,14 +563,6 @@ export default function Home() {
       (tab === "dashboard" && scope.teamId !== "all"),
   );
   useEffect(() => {
-    if (isMaintenanceTab && maintenance.data) {
-      setWorklistStatusSnapshot({
-        scopeKey: worklistCountScopeKey,
-        counts: maintenance.data.statusCounts,
-      });
-    }
-  }, [isMaintenanceTab, maintenance.data, worklistCountScopeKey]);
-  useEffect(() => {
     if (
       !pendingBundleMembership ||
       !maintenanceBundles.data ||
@@ -599,11 +583,6 @@ export default function Home() {
   ]);
   const bundleMembershipRefreshPending =
     tab === "taWorklist" && pendingBundleMembership !== null;
-  const worklistStatusCounts = bundleMembershipRefreshPending
-    ? null
-    : worklistStatusSnapshot?.scopeKey === worklistCountScopeKey
-      ? worklistStatusSnapshot.counts
-      : (maintenance.data?.statusCounts ?? null);
   const enrichMaintenanceRowLocation = useCallback(
     <T extends MaintenanceWorklistRow>(item: T): T => {
       const resolvedPointId = item.pointId ?? item.sourcePointId;
@@ -1429,6 +1408,7 @@ export default function Home() {
   const createMaintenanceForSelectedPhotos = async () => {
     const chosen = Object.values(selectedMaintenancePhotos);
     if (!canWrite || !chosen.length || bulkMaintenanceBusy) return;
+    if (!bulkMaintenanceReason.trim()) { setBulkMaintenanceError("변경 사유를 입력하세요."); return; }
     setBulkMaintenanceBusy(true);
     setBulkMaintenanceError("");
     const savedIds = new Set<string>();
@@ -1448,10 +1428,10 @@ export default function Home() {
         }
         const payload = {
           actor,
-          reason: "사진 판독에서 선택한 보수 대상을 작업 예정으로 등록",
+          reason: bulkMaintenanceReason.trim(),
           expectedVersion: current?.persisted ? current.editVersion : null,
           repairStatus: "planned" as const,
-          repairMethod: bulkMaintenanceMethod,
+          ...(bulkMaintenanceMethod === "auto" ? {} : { repairMethod: bulkMaintenanceMethod, repairMethodMode: "manual" as const }),
           inWorklist: true,
           ta: bulkMaintenanceTa,
           inclusionMode: "auto" as const,
@@ -2217,68 +2197,20 @@ export default function Home() {
                 }
                 statusFilter={
                   <>
-                    <div
-                      className="worklist-status-bar"
-                      role="group"
-                      aria-label={
-                        tab === "taWorklist"
-                          ? "미배정 TA 사진 상태 필터"
-                          : "보수 대상 사진 상태 필터"
-                      }
-                    >
-                      <button
-                        type="button"
-                        className={`worklist-status-chip${workStatus === "all" ? " is-selected" : ""}`}
-                        aria-pressed={workStatus === "all"}
-                        disabled={!worklistStatusCounts}
-                        onClick={() => {
-                          setWorkStatus("all");
-                          setWorkPage(1);
-                        }}
-                      >
-                        <span>전체</span>
-                        <strong>
-                          {worklistStatusCounts
-                            ? Object.values(worklistStatusCounts).reduce(
-                                (sum, count) => sum + count,
-                                0,
-                              )
-                            : "—"}
-                        </strong>
-                      </button>
-                      {workStatusStages.map(({ id, label }) => (
-                        <button
-                          type="button"
-                          key={id}
-                          className={`worklist-status-chip${workStatus === id ? " is-selected" : ""}`}
-                          aria-pressed={workStatus === id}
-                          disabled={!worklistStatusCounts}
-                          onClick={() => {
-                            setWorkStatus(id);
-                            setWorkPage(1);
-                          }}
-                        >
-                          <span>{label}</span>
-                          <strong>{worklistStatusCounts?.[id] ?? "—"}</strong>
+                    <div className="worklist-status-bar follow-up-filter" role="group" aria-label="후속 조치 필터">
+                      {([['all', '전체'], ['monitor', '추적관리'], ['paint', '도장교체'], ['replace', '배관교체'], ['undecided', '미정'], ...(showAllWork ? [['none', '후속 조치 없음']] : [])]).map(([method, label]) => (
+                        <button type="button" key={method} className={`worklist-status-chip${workMethod === method ? " is-selected" : ""}`} aria-pressed={workMethod === method} onClick={() => { setWorkMethod(method); setWorkPage(1); }}>
+                          <span>{label}</span><strong>{maintenance.data?.methodCounts ? (method === 'all' ? Object.values(maintenance.data.methodCounts).reduce((sum, count) => sum + count, 0) : maintenance.data.methodCounts[method as keyof MaintenancePage['methodCounts']]) : '—'}</strong>
                         </button>
                       ))}
-                      {(workStatus === "none" ||
-                        !!worklistStatusCounts?.none) && (
-                        <button
-                          type="button"
-                          className={`worklist-status-chip${workStatus === "none" ? " is-selected" : ""}`}
-                          aria-pressed={workStatus === "none"}
-                          disabled={!worklistStatusCounts}
-                          onClick={() => {
-                            setWorkStatus("none");
-                            setWorkPage(1);
-                          }}
-                        >
-                          <span>등록 전</span>
-                          <strong>{worklistStatusCounts?.none ?? "—"}</strong>
-                        </button>
-                      )}
                     </div>
+                    <label className="filter-control" style={{ maxWidth: 240, marginBottom: 14 }}>진행 상태
+                      <select aria-label="진행 상태 필터" value={workStatus} onChange={(event) => { setWorkStatus(event.target.value as RepairStatus | "all"); setWorkPage(1); }}>
+                        <option value="all">전체 상태</option>
+                        <option value="review">검토 필요</option><option value="planned">작업 예정</option><option value="progress">작업 중</option><option value="done">완료</option><option value="none">등록 전</option>
+                      </select>
+                    </label>
+
                   </>
                 }
                 selectionActionLabel={
@@ -3350,7 +3282,7 @@ export default function Home() {
               </span>
             </div>
             <p className="bulk-maintenance-note">
-              작업 방법과 TA 설정은 모든 사진에 적용됩니다. 작업 묶음은
+              후속 조치과 TA 설정은 모든 사진에 적용됩니다. 작업 묶음은
               워크리스트 관리에서 별도로 만듭니다.
             </p>
             <ul className="bulk-maintenance-list">
@@ -3367,18 +3299,21 @@ export default function Home() {
             </ul>
             <div className="bulk-maintenance-fields">
               <label className="field">
-                작업 방법
+                후속 조치
                 <select
                   value={bulkMaintenanceMethod}
                   disabled={!canWrite || bulkMaintenanceBusy}
                   onChange={(event) => {
                     if (canWrite && !bulkMaintenanceBusy)
-                      setBulkMaintenanceMethod(event.target.value as RepairMethod);
+                      setBulkMaintenanceMethod(event.target.value as RepairMethod | "auto");
                   }}
                 >
-                  <option value="undecided">방법 미정</option>
-                  <option value="paint">도장</option>
-                  <option value="replace">교체</option>
+                  <option value="auto">등급 자동 분류 · 기존 담당자 지정 유지</option>
+                  <option value="undecided">조치 미정</option>
+                  <option value="none">후속 조치 없음</option>
+                    <option value="monitor">추적관리</option>
+                    <option value="paint">도장교체</option>
+                  <option value="replace">배관교체</option>
                 </select>
               </label>
               <label className="checkbox">
@@ -3393,6 +3328,9 @@ export default function Home() {
                 TA 작업에 포함
               </label>
             </div>
+            <label className="field">변경 사유
+              <textarea aria-label="일괄 보수 변경 사유" required maxLength={1000} value={bulkMaintenanceReason} disabled={!canWrite || bulkMaintenanceBusy} onChange={(event) => setBulkMaintenanceReason(event.target.value)} />
+            </label>
             <p className="bulk-maintenance-note">
               이미 작업 중이거나 완료된 사진은 건너뜁니다.
             </p>
@@ -3418,6 +3356,7 @@ export default function Home() {
                 disabled={
                   !canWrite ||
                   bulkMaintenanceBusy ||
+                  !bulkMaintenanceReason.trim() ||
                   !Object.keys(selectedMaintenancePhotos).length
                 }
                 onClick={() => void createMaintenanceForSelectedPhotos()}
@@ -3662,7 +3601,7 @@ function PhotoScopeFields({
   }
   if (context === "worklist" && worklistFilters) {
     if (worklistFilters.method !== "all") {
-      activeAdvancedFilterLabels.push("작업 방법");
+      activeAdvancedFilterLabels.push("후속 조치");
     }
     if (!taOnly && worklistFilters.ta === "true") {
       activeAdvancedFilterLabels.push("TA 포함");
@@ -3953,18 +3892,20 @@ function PhotoScopeFields({
             {context === "worklist" && worklistFilters && (
               <>
                 <label>
-                  작업 방법
+                  후속 조치
                   <select
-                    aria-label="보수 방법 필터"
+                    aria-label="후속 조치 상세 필터"
                     value={worklistFilters.method}
                     onChange={(event) =>
                       worklistFilters.changeMethod(event.target.value)
                     }
                   >
-                    <option value="all">모든 방법</option>
+                    <option value="all">모든 조치</option>
                     <option value="undecided">미정</option>
-                    <option value="paint">도장</option>
-                    <option value="replace">교체</option>
+                    <option value="none">후속 조치 없음</option>
+                    <option value="monitor">추적관리</option>
+                    <option value="paint">도장교체</option>
+                    <option value="replace">배관교체</option>
                   </select>
                 </label>
                 {!taOnly && (

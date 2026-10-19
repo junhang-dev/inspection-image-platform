@@ -7,7 +7,7 @@ export const REPAIR_STATUSES = Object.freeze([
   "progress",
   "done",
 ]);
-export const REPAIR_METHODS = Object.freeze(["undecided", "paint", "replace"]);
+export const REPAIR_METHODS = Object.freeze(["undecided", "none", "monitor", "paint", "replace"]);
 export const LEGACY_MIGRATION_VERSION = 1;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,6 +17,7 @@ const EDITABLE = Object.freeze([
   "photoIds",
   "repairStatus",
   "repairMethod",
+  "repairMethodMode",
   "inWorklist",
   "ta",
   "inclusionMode",
@@ -142,6 +143,7 @@ function shape(item) {
     "invalid_repair_method",
     "보수 방법",
   );
+  if (item.repairMethodMode !== undefined) enumeration(item.repairMethodMode, ["auto", "manual"], "invalid_method_mode", "후속 조치 분류 방식");
   boolean(item.inWorklist, "워크리스트 포함 여부");
   boolean(item.ta, "TA 포함 여부");
   if (item.inclusionMode !== undefined) enumeration(item.inclusionMode, ["auto", "include", "exclude"], "invalid_inclusion", "목록 반영 방식");
@@ -234,6 +236,7 @@ export function createMaintenanceItem(input, photos = []) {
     repairMethod: Object.hasOwn(input, "repairMethod")
       ? input.repairMethod
       : "undecided",
+    ...(input.repairMethodMode !== undefined ? { repairMethodMode: input.repairMethodMode } : {}),
     inWorklist: Object.hasOwn(input, "inWorklist") ? input.inWorklist : false,
     ta: Object.hasOwn(input, "ta") ? input.ta : false,
     editVersion: 0,

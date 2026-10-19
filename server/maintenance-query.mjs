@@ -33,7 +33,7 @@ export const maintenanceQuerySchema = z
       .enum(["all", "none", "review", "planned", "progress", "done"])
       .default("all"),
     repairMethod: z
-      .enum(["all", "undecided", "paint", "replace"])
+      .enum(["all", "undecided", "none", "monitor", "paint", "replace"])
       .default("all"),
     teamId: z
       .enum(["all", ...locations.teams.map((team) => team.id)])

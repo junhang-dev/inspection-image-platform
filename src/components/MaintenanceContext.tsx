@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   MaintenanceEditor,
+  methodLabels,
   type MaintenanceDraft,
   type RepairStatus,
 } from "./MaintenancePanel";
@@ -26,7 +27,8 @@ type Audit = {
 };
 const fields = {
   repairStatus: "상태",
-  repairMethod: "방법",
+  repairMethod: "후속 조치",
+  repairMethodMode: "분류 방식",
   inWorklist: "보수 대상 반영",
   ta: "TA 작업 포함",
   photoIds: "근거 사진",
@@ -50,8 +52,11 @@ const names: Record<string, string> = {
   progress: "작업 중",
   done: "완료",
   undecided: "미정",
-  paint: "도장",
-  replace: "교체",
+  monitor: "추적관리",
+  paint: "도장교체",
+  replace: "배관교체",
+  auto: "자동",
+  manual: "담당자 지정",
   inspection: "업무 검사",
   presentation: "발표용",
   verification: "검증용",
@@ -116,7 +121,7 @@ function MaintenanceHistoryDetails({
               )
               .map(([key, label]) => (
                 <small key={key}>
-                  {label}: {value(row.before?.[key])} → {value(row.after[key])}
+                  {label}: {key === "repairMethod" ? methodLabels[row.before?.[key] as keyof typeof methodLabels] ?? "미지정" : value(row.before?.[key])} → {key === "repairMethod" ? methodLabels[row.after[key] as keyof typeof methodLabels] ?? "미지정" : value(row.after[key])}
                 </small>
               ))}
             <time>{new Date(row.at).toLocaleString("ko-KR")}</time>
@@ -133,6 +138,7 @@ const initialDraft = (
 ): MaintenanceDraft => ({
   repairStatus: item?.repairStatus ?? "none",
   repairMethod: item?.repairMethod ?? "undecided",
+  repairMethodMode: item?.repairMethodMode ?? "auto",
   inWorklist: item?.inWorklist ?? false,
   ta: item?.ta ?? false,
   photoIds: item?.targetType === "photo" ? [item.targetId!] : item?.photoIds ?? (photoId ? [photoId] : []),
@@ -145,6 +151,7 @@ const draftSignature = (draft: MaintenanceDraft) =>
   JSON.stringify([
     draft.repairStatus,
     draft.repairMethod,
+    draft.repairMethodMode,
     draft.inWorklist,
     draft.ta,
     draft.photoIds,
@@ -302,6 +309,7 @@ export default function MaintenanceContext({
       return;
     }
     if (!basis || lock.current || editingBlocked) return;
+    if (!draft.reason.trim()) { setError("변경 사유를 입력하세요."); return; }
     lock.current = true;
     setBusy(true);
     setError("");
@@ -312,7 +320,6 @@ export default function MaintenanceContext({
         actor: sessionActor ?? draft.actor,
         ...(targetType === "photo" ? {
           actor: sessionActor ?? "현업 엔지니어",
-          reason: "보수 단계·작업 방법·TA 설정 변경",
           photoIds: [photoId ?? targetId!],
         } : {}),
         expectedVersion: basis.item?.persisted ? basis.item.editVersion : null,
@@ -412,15 +419,15 @@ export default function MaintenanceContext({
             </p>
           )}
         </section>
-        <form className={styles.photoReviewForm} onSubmit={(event) => { event.preventDefault(); if (canWrite && dirty && !busy && !editingBlocked) void save(); }}>
+        <form className={styles.photoReviewForm} onSubmit={(event) => { event.preventDefault(); if (canWrite && dirty && draft.reason.trim() && !busy && !editingBlocked) void save(); }}>
           <p className={styles.photoReviewContext}>{planTitle || "계획 미지정"} · {pointLabel || "위치 미확인"}</p>
           {!canWrite && <p className={styles.help} role="status">조회 권한에서는 보수 기록을 변경할 수 없습니다.</p>}
           <div className={`${styles.photoReviewGrade} ${draft.repairStatus === "done" ? styles.green : draft.repairStatus === "progress" ? styles.blue : styles.amber}`}>
-            <span>진행 상태</span><strong>{statusLabels[draft.repairStatus]}</strong>
+            <span>후속 조치</span><strong>{methodLabels[draft.repairMethod]}</strong>
             {Number.isInteger(photo?.humanGrade ?? photo?.ai?.grade) && <small>사진 등급 {photo?.humanGrade ?? photo?.ai?.grade}등급</small>}
           </div>
           <fieldset className={styles.photoReviewStages} disabled={busy || editingBlocked || !canWrite}>
-            <legend>업무 단계</legend>
+            <legend>진행 상태</legend>
             {statusValues.map((status) => (
               <button key={status} type="button" className={draft.repairStatus === status ? styles.selectedStage : ""} aria-pressed={draft.repairStatus === status} onClick={() => { if (canWrite && !busy && !editingBlocked) setDraft((current) => ({ ...current, repairStatus: status })); }}>{statusLabels[status]}</button>
             ))}
@@ -431,25 +438,36 @@ export default function MaintenanceContext({
             </p>
           )}
           <label className={styles.field}>
-            작업 방법
-            <select value={draft.repairMethod} disabled={busy || editingBlocked || !canWrite} onChange={(event) => { if (canWrite && !busy && !editingBlocked) setDraft((current) => ({ ...current, repairMethod: event.target.value as MaintenanceDraft["repairMethod"] })); }}>
-              <option value="undecided">방법 미정</option>
-              <option value="paint">도장</option>
-              <option value="replace">교체</option>
+            후속 조치
+            <select aria-label="후속 조치" value={draft.repairMethod} disabled={busy || editingBlocked || !canWrite} onChange={(event) => setDraft((current) => ({ ...current, repairMethod: event.target.value as MaintenanceDraft["repairMethod"], repairMethodMode: "manual" }))}>
+              {Object.entries(methodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          <button type="button" className={`${styles.taToggle} ${draft.ta ? styles.taSelected : ""}`} aria-pressed={draft.ta} disabled={busy || editingBlocked || !canWrite} onClick={() => { if (canWrite && !busy && !editingBlocked) setDraft((current) => ({ ...current, ta: !current.ta })); }}>
-            <span className={styles.taCheck} aria-hidden="true">{draft.ta ? "✓" : ""}</span>
-            TA 작업에 포함
-          </button>
-          <div className={styles.photoReviewWorklist}>
-            <span>보수 대상 반영</span>
-            <strong>{draft.inWorklist ? "반영됨" : "미반영"}</strong>
-            <small>TA 작업 포함과는 별도 설정입니다.</small>
-          </div>
+          <p className={styles.help}>
+            등급 기준: {methodLabels[basis.item?.automaticRepairMethod ?? "undecided"]} · {draft.repairMethodMode === "manual" ? "담당자 지정" : "자동 분류"}
+          </p>
+          {basis.item?.methodMismatch && <p className={styles.warning}>현재 등급 기준과 저장된 조치가 다릅니다. 기존 작업 기록을 확인해 주세요.</p>}
+          <label className={styles.field}>
+            변경 사유
+            <textarea aria-label="변경 사유" required maxLength={1000} value={draft.reason} disabled={busy || editingBlocked || !canWrite} placeholder="조치·진행 상태 등을 변경하는 이유" onChange={(event) => setDraft((current) => ({ ...current, reason: event.target.value }))} />
+          </label>
+          <details className={styles.secondarySettings}>
+            <summary>TA 포함 · 목록 설정</summary>
+            <label className={styles.checkbox}>
+              <input type="checkbox" checked={draft.ta} disabled={busy || editingBlocked || !canWrite} onChange={(event) => setDraft((current) => ({ ...current, ta: event.target.checked }))} /> TA 작업에 포함
+            </label>
+            <label className={styles.field}>목록 표시
+              <select value={draft.inclusionMode} disabled={busy || editingBlocked || !canWrite} onChange={(event) => setDraft((current) => ({ ...current, inclusionMode: event.target.value as MaintenanceDraft["inclusionMode"] }))}>
+                <option value="auto">등급에 따라 자동 반영</option>
+                <option value="include">보수 대상에 포함</option>
+                <option value="exclude">수동 제외 유지</option>
+              </select>
+            </label>
+            <p className={styles.help}>1~2등급은 기본 목록에서 제외됩니다. 기존 기록과 이력은 보존됩니다.</p>
+          </details>
           {refreshWarning && <p className={styles.warning} role="status">{refreshWarning}</p>}
           {error && <p className={styles.error} role="alert">{error}<span>입력 내용은 유지됩니다.</span></p>}
-          <button type="submit" className={styles.primaryButton} disabled={!canWrite || !dirty || busy || !photo || editingBlocked}>
+          <button type="submit" className={styles.primaryButton} disabled={!canWrite || !dirty || !draft.reason.trim() || busy || !photo || editingBlocked}>
             {busy ? "저장 중…" : dirty ? "변경 사항 저장" : "저장할 변경 사항 없음"}
           </button>
         </form>

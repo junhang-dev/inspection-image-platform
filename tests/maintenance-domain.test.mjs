@@ -116,7 +116,7 @@ test("duplicate evidence and ambiguous snapshots are rejected without mutation",
 test("unknown enums, malformed booleans and invalid versions are never normalized", () => {
   for (const value of ["repair", "Review", " review ", "", null, undefined])
     rejects(() => create({ repairStatus: value }), "invalid_repair_status");
-  for (const value of ["none", "replacement", "", null, undefined])
+  for (const value of ["welding", "replacement", "", null, undefined])
     rejects(() => create({ repairMethod: value }), "invalid_repair_method");
   for (const value of ["true", 1, null, undefined]) {
     rejects(() => create({ ta: value }), "invalid_boolean");

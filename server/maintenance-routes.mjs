@@ -25,7 +25,8 @@ const fields = {
   repairStatus: z
     .enum(["none", "review", "planned", "progress", "done"])
     .optional(),
-  repairMethod: z.enum(["undecided", "paint", "replace"]).optional(),
+  repairMethod: z.enum(["undecided", "none", "monitor", "paint", "replace"]).optional(),
+  repairMethodMode: z.enum(["auto", "manual"]).optional(),
   inWorklist: z.boolean().optional(),
   ta: z.boolean().optional(),
   inclusionMode: z.enum(["auto", "include", "exclude"]).optional(),
@@ -79,8 +80,8 @@ export function registerMaintenanceRoutes(app) {
   );
   app.get("/api/maintenance/:id", async (req, res) => {
     const id = uuid.parse(req.params.id);
-    const item = (await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === id)
-      ?? (await allMaintenanceViews(pool, decodeEntity, { photoBased: true })).find((item) => item.id === id);
+    const item = (await allMaintenanceViews(pool, decodeEntity, { photoBased: true })).find((item) => item.id === id)
+      ?? (await allMaintenanceViews(pool, decodeEntity)).find((item) => item.id === id);
     if (!item) throw fail(404, "보수 기록을 찾을 수 없습니다.");
     res.json(item);
   });

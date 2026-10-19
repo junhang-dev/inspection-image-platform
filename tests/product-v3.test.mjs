@@ -44,7 +44,7 @@ test("포인트 없는 사진은 같은 계획·랙·바이트라도 서로 다�
   const saved = createMaintenanceItem({ planId, pointId: null, targetType: "photo", targetId: a.id, photoIds: [a.id], inclusionMode: "auto" }, [a]);
   assert.equal(saved.id, items[0].id);
 });
-test("보수 관리 사진 단위는 계획·포인트 사진을 나누고 기존 수동 포함 결정을 승계한다", () => {
+test("보수 관리 사진 단위는 기존 기록을 승계하되 1~2등급을 기본 목록에서 제외한다", () => {
   const linkedRepair = photo({ pointId, rackId: "team-1-rack-1", humanGrade: 4 });
   const linkedException = photo({ pointId, rackId: "team-1-rack-1", humanGrade: 1 });
   const legacy = {
@@ -59,14 +59,14 @@ test("보수 관리 사진 단위는 계획·포인트 사진을 나누고 기�
   }, { photoBased: true });
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map((row) => row.id), [photoMaintenanceId(linkedRepair.id), photoMaintenanceId(linkedException.id)]);
-  assert.deepEqual(rows.map((row) => row.inWorklist), [true, true]);
+  assert.deepEqual(rows.map((row) => row.inWorklist), [true, false]);
   assert.deepEqual(rows.map((row) => row.repairStatus), ["planned", "planned"]);
   assert.deepEqual(rows.map((row) => row.repairMethod), ["replace", "replace"]);
   assert.deepEqual(rows.map((row) => row.ta), [true, true]);
   assert.equal(rows[0].pointLabel, "배관 · 파이프랙 1 · 지지대");
   assert.equal(rows[0].sourcePointId, pointId);
   const page = query(rows, { targetType: "photo", pointId, inWorklist: "true" });
-  assert.equal(page.total, 2);
+  assert.equal(page.total, 1);
   assert.equal(query(rows, { targetType: "point", inWorklist: "all" }).total, 0);
 });
 test("사진별 저장은 같은 포인트의 과거 설정보다 해당 사진의 최신 설정을 우선한다", () => {

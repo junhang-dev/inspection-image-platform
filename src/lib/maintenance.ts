@@ -29,6 +29,7 @@ export type MaintenancePage = {
   total: number;
   page: number;
   pages: number;
+  methodCounts: Record<import("@/components/MaintenancePanel").RepairMethod, number>;
   statusCounts: { none: number; review: number; planned: number; progress: number; done: number };
   summary: { automatic: number; newEvidence: number; worklist: number };
   pointSummaries: Record<

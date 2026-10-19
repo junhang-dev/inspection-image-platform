@@ -12,7 +12,7 @@ import styles from "./MaintenancePanel.module.css";
 import { useAuth } from "./AuthProvider";
 
 export type RepairStatus = "none" | "review" | "planned" | "progress" | "done";
-export type RepairMethod = "undecided" | "paint" | "replace";
+export type RepairMethod = "undecided" | "none" | "monitor" | "paint" | "replace";
 export type MaintenanceItem = {
   id: string;
   planId: string | null;
@@ -32,6 +32,9 @@ export type MaintenanceItem = {
   photoIds: readonly string[];
   repairStatus: RepairStatus;
   repairMethod: RepairMethod;
+  repairMethodMode?: "auto" | "manual";
+  automaticRepairMethod?: RepairMethod;
+  methodMismatch?: boolean;
   inWorklist: boolean;
   ta: boolean;
   editVersion: number;
@@ -40,6 +43,7 @@ export type MaintenanceDraft = Pick<
   MaintenanceItem,
   "repairStatus" | "repairMethod" | "inWorklist" | "ta" | "photoIds"
 > & {
+  repairMethodMode?: "auto" | "manual";
   actor: string;
   reason: string;
   inclusionMode: "auto" | "include" | "exclude";
@@ -59,10 +63,12 @@ const statusLabels: Record<RepairStatus, string> = {
   progress: "작업 중",
   done: "완료",
 };
-const methodLabels: Record<RepairMethod, string> = {
+export const methodLabels: Record<RepairMethod, string> = {
   undecided: "미정",
-  paint: "도장",
-  replace: "교체",
+  none: "후속 조치 없음",
+  monitor: "추적관리",
+  paint: "도장교체",
+  replace: "배관교체",
 };
 const statusClass: Record<RepairStatus, string> = {
   none: styles.muted,
@@ -218,11 +224,11 @@ export function MaintenanceEditor({
               </select>
             </label>
             <label className={styles.field}>
-              <span>작업 방법</span>
+              <span>후속 조치</span>
               <select
                 value={draft.repairMethod}
                 onChange={(event) =>
-                  update({ repairMethod: event.target.value as RepairMethod })
+                  update({ repairMethod: event.target.value as RepairMethod, repairMethodMode: "manual" })
                 }
               >
                 {!validMethod && (
@@ -241,8 +247,7 @@ export function MaintenanceEditor({
             </label>
           </div>
           <p className={styles.help}>
-            상태와 방법은 별도로 기록합니다. 사진 등급만으로 보수 방법이나 완료
-            여부가 결정되지 않습니다.
+            3등급은 추적관리, 4등급은 도장교체, 5등급은 배관교체로 자동 분류됩니다. 변경 시 사유를 남겨 주세요.
           </p>
           <label className={styles.checkbox}>
             <input
@@ -438,7 +443,7 @@ export function MaintenanceEditor({
         )}
         {(!validStatus || !validMethod) && (
           <p className={styles.error} role="alert">
-            업무 상태와 작업 방법을 확인한 뒤 저장해 주세요.
+            업무 상태와 후속 조치을 확인한 뒤 저장해 주세요.
           </p>
         )}
         <footer className={styles.editorFooter}>
@@ -653,12 +658,13 @@ export function MaintenanceWorklist({
               <tr>
                 {onSelectionChange && <th scope="col">묶음 선택</th>}
                 <th scope="col">검사 사진</th>
+                <th scope="col">후속 조치</th>
+                <th scope="col">등급</th>
+                <th scope="col">진행 상태</th>
                 <th scope="col">검사계획</th>
                 <th scope="col">생산팀</th>
                 <th scope="col">파이프랙</th>
                 <th scope="col">검사포인트</th>
-                <th scope="col">등급</th>
-                <th scope="col">진행 상태</th>
               </tr>
             </thead>
             <tbody>
@@ -721,19 +727,10 @@ export function MaintenanceWorklist({
                       </span>
                     </button>
                   </td>
-                  <td data-column="plan" data-label="검사계획">
-                    <span className={styles.workPlan}>
-                      {item.planTitle || "계획 미지정"}
-                    </span>
-                  </td>
-                  <td data-column="team" data-label="생산팀">
-                    {item.locationTeamName || "팀 미확인"}
-                  </td>
-                  <td data-column="rack" data-label="파이프랙">
-                    {item.locationRackName || "랙 미확인"}
-                  </td>
-                  <td data-column="point" data-label="검사포인트">
-                    {item.locationPointName || "—"}
+                  <td data-column="method" data-label="후속 조치">
+                    <strong className={styles.methodBadge}>{methodLabels[item.repairMethod] || "조치 미확인"}</strong>
+                    <small className={styles.methodSource}>{item.repairMethodMode === "manual" ? "담당자 지정" : "등급 자동 분류"}</small>
+                    {item.methodMismatch && <small className={styles.warning}>등급 기준과 다름</small>}
                   </td>
                   <td data-column="grade" data-label="등급">
                     {Number.isInteger(item.photoGrade) &&
@@ -756,6 +753,21 @@ export function MaintenanceWorklist({
                       )}
                     </span>
                   </td>
+                  <td data-column="plan" data-label="검사계획">
+                    <span className={styles.workPlan}>
+                      {item.planTitle || "계획 미지정"}
+                    </span>
+                  </td>
+                  <td data-column="team" data-label="생산팀">
+                    {item.locationTeamName || "팀 미확인"}
+                  </td>
+                  <td data-column="rack" data-label="파이프랙">
+                    {item.locationRackName || "랙 미확인"}
+                  </td>
+                  <td data-column="point" data-label="검사포인트">
+                    {item.locationPointName || "—"}
+                  </td>
+
                 </tr>
               ))}
             </tbody>

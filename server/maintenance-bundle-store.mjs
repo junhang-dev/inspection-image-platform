@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { pool, list, decodeEntity, insertEntity } from "./store.mjs";
 import { allMaintenanceViews } from "./maintenance-query.mjs";
 import { maintenanceTransaction } from "./maintenance-store.mjs";
-import { repairNeeded, legacyInclusionMode } from "./maintenance-view.mjs";
+import { repairNeeded, effectiveGrade, legacyInclusionMode } from "./maintenance-view.mjs";
 import { photoMaintenanceId } from "./maintenance-domain.mjs";
 import {
   assertMaintenanceBundleMember,
@@ -85,6 +85,7 @@ async function validateMember(connection, id, expectedVersion) {
     inWorklist:
       visibility === "visible" &&
       photoVisibility === "visible" &&
+      ![1, 2].includes(effectiveGrade(photo)) &&
       (mode === "include" || (mode === "auto" && repairNeeded(photo))),
     ta: item.ta === true,
     repairStatus: item.repairStatus,

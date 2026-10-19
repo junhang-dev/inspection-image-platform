@@ -3,6 +3,19 @@ import { locations } from "./relations.mjs";
 import { maintenanceId, photoMaintenanceId } from "./maintenance-domain.mjs";
 
 export const effectiveGrade = (photo) => photo.humanGrade ?? photo.ai?.grade ?? null;
+export const defaultRepairMethod = (grade) => ({ 1: "none", 2: "none", 3: "monitor", 4: "paint", 5: "replace" })[grade] ?? "undecided";
+
+// Old explicit methods remain manual. An undecided legacy record can adopt the rule.
+export function followUp(item, grade) {
+  const automaticRepairMethod = defaultRepairMethod(grade);
+  const repairMethodMode = item?.repairMethodMode ?? (item?.repairMethod && item.repairMethod !== "undecided" ? "manual" : "auto");
+  const preserved = repairMethodMode === "manual" || ["progress", "done"].includes(item?.repairStatus);
+  const repairMethod = repairMethodMode === "manual"
+    ? item?.repairMethod ?? automaticRepairMethod
+    : preserved && item?.repairMethod && item.repairMethod !== "undecided" ? item.repairMethod : automaticRepairMethod;
+  return { repairMethod, repairMethodMode, automaticRepairMethod, methodMismatch: preserved && repairMethod !== automaticRepairMethod };
+}
+
 export const repairNeeded = (photo) =>
   effectiveGrade(photo) >= 3 && effectiveGrade(photo) <= 5 &&
   photo.visibility !== "hidden" && !photo.retake;
@@ -62,14 +75,14 @@ export function deriveMaintenance({ photos, saved, points, plans, history = [] }
         photoGrade: effectiveGrade(photo),
         photoIds: [photo.id],
         repairStatus: item?.repairStatus ?? (eligible ? "review" : "none"),
-        repairMethod: item?.repairMethod ?? "undecided",
+        ...followUp(item, effectiveGrade(photo)),
         ta: item?.ta ?? false,
         editVersion: photoItem?.editVersion ?? 0,
         recordPurpose: photo.recordPurpose ?? "inspection",
         createdAt: photo.createdAt,
         visibility,
         inclusionMode: mode,
-        inWorklist: visibility === "visible" && (mode === "include" || (mode === "auto" && eligible)),
+        inWorklist: visibility === "visible" && ![1, 2].includes(effectiveGrade(photo)) && (mode === "include" || (mode === "auto" && eligible)),
         automaticEligible: eligible,
         inclusionSource: mode === "include" ? "manual" : mode === "exclude" ? "excluded" : "automatic",
         rackId,
@@ -103,7 +116,8 @@ export function deriveMaintenance({ photos, saved, points, plans, history = [] }
     const eligible = currentPhotos.filter(repairNeeded);
     const mode = item ? legacyInclusionMode(item, history) : "auto";
     const visibility = item?.visibility ?? "visible";
-    const included = visibility === "visible" && (mode === "include" || (mode === "auto" && eligible.length > 0));
+    const grade = currentPhotos.length ? Math.max(...currentPhotos.map((photo) => effectiveGrade(photo) ?? 0)) || null : null;
+    const included = visibility === "visible" && ![1, 2].includes(grade) && (mode === "include" || (mode === "auto" && eligible.length > 0));
     const rackId = source?.rackId ?? point?.rackId ?? null;
     const rack = locations.racks.find((rack) => rack.id === rackId);
     const reviewed = item?.reviewedEvidence;
@@ -116,6 +130,7 @@ export function deriveMaintenance({ photos, saved, points, plans, history = [] }
       recordPurpose: group.targetType === "photo" ? source?.recordPurpose ?? "inspection" : purpose,
       createdAt: group.photos[0]?.createdAt,
       ...item,
+      ...followUp(item, grade),
       targetType: group.targetType, targetId: group.targetId,
       persisted: Boolean(item), visibility, inclusionMode: mode,
       inWorklist: included, automaticEligible: eligible.length > 0,
@@ -143,11 +158,13 @@ export function maintenancePage(items, query) {
     (query.visibility === "all" || item.visibility === query.visibility) &&
     (query.inWorklist === "all" || item.inWorklist) &&
     (query.ta === "all" || item.ta === (query.ta === "true")) &&
-    (query.repairMethod === "all" || item.repairMethod === query.repairMethod) &&
     (query.teamId === "all" || item.teamId === query.teamId) &&
     (query.rackId === "all" || item.rackId === query.rackId) &&
     (!query.search || `${item.planTitle} ${item.pointLabel} ${item.photoName ?? ""}`.toLocaleLowerCase().includes(query.search.toLocaleLowerCase()));
-  const scoped = items.filter(inScope);
+  const scope = items.filter(inScope);
+  const methodCounts = { undecided: 0, none: 0, monitor: 0, paint: 0, replace: 0 };
+  for (const item of scope) if ((query.repairStatus === "all" || item.repairStatus === query.repairStatus) && Object.hasOwn(methodCounts, item.repairMethod)) methodCounts[item.repairMethod]++;
+  const scoped = scope.filter((item) => query.repairMethod === "all" || item.repairMethod === query.repairMethod);
   const statusCounts = { none: 0, review: 0, planned: 0, progress: 0, done: 0 };
   for (const item of scoped) if (Object.hasOwn(statusCounts, item.repairStatus)) statusCounts[item.repairStatus]++;
   const filtered = scoped.filter((item) => query.repairStatus === "all" || item.repairStatus === query.repairStatus)
@@ -160,5 +177,5 @@ export function maintenancePage(items, query) {
     const row = pointSummaries[pointId] ??= { total: 0, registered: 0, none: 0, review: 0, planned: 0, progress: 0, done: 0 };
     row.total++; if (item.inWorklist) row.registered++; row[item.repairStatus]++;
   }
-  return { items: filtered.slice((page - 1) * query.pageSize, page * query.pageSize), total, pages, page, pageSize: query.pageSize, pointSummaries, statusCounts, summary: { automatic: filtered.filter((item) => item.automaticEligible).length, newEvidence: filtered.filter((item) => item.newEvidenceCount > 0).length, worklist: filtered.filter((item) => item.inWorklist).length }, scope: query };
+  return { items: filtered.slice((page - 1) * query.pageSize, page * query.pageSize), total, pages, page, pageSize: query.pageSize, pointSummaries, statusCounts, methodCounts, summary: { automatic: filtered.filter((item) => item.automaticEligible).length, newEvidence: filtered.filter((item) => item.newEvidenceCount > 0).length, worklist: filtered.filter((item) => item.inWorklist).length }, scope: query };
 }

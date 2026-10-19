@@ -9,7 +9,7 @@ import {
 } from "./maintenance-domain.mjs";
 import { planPointIds } from "./relations.mjs";
 import { getPlan } from "./plan-store.mjs";
-import { evidenceFingerprint, repairNeeded, legacyInclusionMode } from "./maintenance-view.mjs";
+import { evidenceFingerprint, repairNeeded, legacyInclusionMode, effectiveGrade, followUp } from "./maintenance-view.mjs";
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const conflict = () =>
@@ -126,6 +126,16 @@ export async function saveMaintenance(input) {
       current?.photoIds ?? [],
       [...(patch.photoIds ?? current?.photoIds ?? []), ...Object.keys(acknowledgedEvidence ?? {})],
     );
+    if (target.targetType === "photo") {
+      const grade = effectiveGrade(photos.find((photo) => photo.id === target.targetId));
+      const basis = followUp(current, grade);
+      const mode = patch.repairMethodMode ?? (patch.repairMethod !== undefined && patch.repairMethod !== basis.repairMethod ? "manual" : basis.repairMethodMode);
+      patch.repairMethodMode = mode;
+      patch.repairMethod = mode === "auto"
+        ? followUp(current && { ...current, repairMethodMode: "auto" }, grade).repairMethod
+        : patch.repairMethod ?? basis.repairMethod;
+      if (!reason?.trim()) throw fail(422, "후속 조치 변경 사유를 입력하세요.");
+    }
     const now = new Date().toISOString();
     if (Object.hasOwn(patch, "inWorklist") && patch.inclusionMode === undefined) patch.inclusionMode = patch.inWorklist ? "include" : "exclude";
     if (patch.inclusionMode === undefined && !current?.inclusionMode) {

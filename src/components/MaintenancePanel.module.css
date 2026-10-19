@@ -1070,3 +1070,9 @@
     flex: 1;
   }
 }
+
+.methodBadge { display: inline-block; padding: 7px 10px; border-radius: 8px; background: #e7f2ee; color: #155c47; white-space: nowrap; font-size: 15px; }
+.methodSource { display: block; margin-top: 5px; color: var(--maintenance-muted); font-size: 12px; }
+.secondarySettings { padding: 12px 0; border-top: 1px solid var(--maintenance-border, #ddd); }
+.secondarySettings summary { cursor: pointer; margin-bottom: 12px; }
+@media (max-width: 900px) { .workTable td[data-column="method"] { grid-column: 1 / -1; grid-row: 6; } .workTable td[data-column="grade"], .workTable td[data-column="status"] { grid-row: 7; } }
