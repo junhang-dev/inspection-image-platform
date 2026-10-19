@@ -4,7 +4,7 @@ import { locations } from "./relations.mjs";
 import { maintenanceId, photoMaintenanceId } from "./maintenance-domain.mjs";
 
 export const effectiveGrade = (photo) => photo.humanGrade ?? photo.ai?.grade ?? null;
-export const defaultRepairMethod = (grade) => ({ 1: "none", 2: "none", 3: "monitor", 4: "paint", 5: "replace" })[grade] ?? "undecided";
+export const defaultRepairMethod = (grade) => ({ 1: "none", 2: "none", 3: "paint", 4: "replace", 5: "replace" })[grade] ?? "undecided";
 
 // Old explicit methods remain manual. An undecided legacy record can adopt the rule.
 export function followUp(item, grade) {

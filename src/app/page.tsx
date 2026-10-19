@@ -2571,11 +2571,11 @@ export default function Home() {
                                           : "취소"}
                                   </span>
                                 </span>
-                                <small className="registration-time">등록일시 {formatDateTime(plan.createdAt)}</small>
-                                <span className="plan-card-open-label">
-                                  사진·판독 목록{" "}
-                                  <ChevronRight size={14} aria-hidden="true" />
-                                </span>
+                                <ChevronRight
+                                  className="plan-card-open-icon"
+                                  size={16}
+                                  aria-hidden="true"
+                                />
                               </button>
                             </td>
                             <td data-label="생산팀">
@@ -2600,7 +2600,14 @@ export default function Home() {
                             >
                               {planRackSummary(plan.rackIds)}
                             </td>
-                            <td data-label="예정일">{plan.date || "미지정"}</td>
+                            <td data-label="일정">
+                              <span className="plan-schedule-date">
+                                예정일 {plan.date || "미지정"}
+                              </span>
+                              <small className="registration-time">
+                                등록일시 {formatDateTime(plan.createdAt)}
+                              </small>
+                            </td>
                             <td data-label="등록 사진 · 판독">
                               <span className="plan-photo-total">
                                 {photoList.error
@@ -2651,35 +2658,37 @@ export default function Home() {
                                   </span>
                                 )
                               )}
-                              <div className="plan-inline-actions">
-                                {planPhotoCount !== 0 && (
-                                  <button
-                                    className="plan-preview-toggle"
-                                    type="button"
-                                    aria-expanded={
-                                      expandedPlanPreviewId === plan.id
-                                    }
-                                    aria-controls={
-                                      expandedPlanPreviewId === plan.id
-                                        ? `plan-photo-preview-${plan.id}`
-                                        : undefined
-                                    }
-                                    aria-label={`${plan.title} 사진 미리보기 ${expandedPlanPreviewId === plan.id ? "닫기" : "열기"}`}
-                                    onClick={() =>
-                                      setExpandedPlanPreviewId((current) =>
-                                        current === plan.id ? null : plan.id,
-                                      )
-                                    }
-                                  >
-                                    {expandedPlanPreviewId === plan.id
-                                      ? "닫기"
-                                      : "미리보기"}
-                                    <ChevronDown size={12} aria-hidden="true" />
-                                  </button>
-                                )}
+                              {planPhotoCount !== 0 && (
+                                <button
+                                  className="plan-preview-toggle"
+                                  type="button"
+                                  aria-expanded={
+                                    expandedPlanPreviewId === plan.id
+                                  }
+                                  aria-controls={
+                                    expandedPlanPreviewId === plan.id
+                                      ? `plan-photo-preview-${plan.id}`
+                                      : undefined
+                                  }
+                                  aria-label={`${plan.title} 사진 미리보기 ${expandedPlanPreviewId === plan.id ? "닫기" : "열기"}`}
+                                  onClick={() =>
+                                    setExpandedPlanPreviewId((current) =>
+                                      current === plan.id ? null : plan.id,
+                                    )
+                                  }
+                                >
+                                  {expandedPlanPreviewId === plan.id
+                                    ? "닫기"
+                                    : "미리보기"}
+                                  <ChevronDown size={12} aria-hidden="true" />
+                                </button>
+                              )}
+                            </td>
+                            <td data-label="작업">
+                              <div className="plan-row-actions">
                                 {planAcceptsPhotoDrop(plan) && (
                                   <button
-                                    className="button primary plan-inline-add"
+                                    className="button primary plan-row-add"
                                     type="button"
                                     disabled={!canWrite || plansUnavailable}
                                     onClick={() => uploadForPlan(plan)}
@@ -2689,21 +2698,19 @@ export default function Home() {
                                     사진 추가
                                   </button>
                                 )}
+                                <button
+                                  className="button secondary plan-card-manage plan-table-manage"
+                                  type="button"
+                                  onClick={() => setPlanManagement(plan)}
+                                  aria-label={`${plan.title} 계획 관리`}
+                                >
+                                  <SlidersHorizontal
+                                    size={14}
+                                    aria-hidden="true"
+                                  />
+                                  계획 관리
+                                </button>
                               </div>
-                            </td>
-                            <td data-label="관리">
-                              <button
-                                className="button secondary plan-card-manage plan-table-manage"
-                                type="button"
-                                onClick={() => setPlanManagement(plan)}
-                                aria-label={`${plan.title} 계획 관리`}
-                              >
-                                <SlidersHorizontal
-                                  size={14}
-                                  aria-hidden="true"
-                                />
-                                계획 관리
-                              </button>
                             </td>
                           </tr>
                           {expandedPlanPreviewId === plan.id && (

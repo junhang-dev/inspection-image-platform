@@ -250,7 +250,7 @@ export function MaintenanceEditor({
             </label>
           </div>
           <p className={styles.help}>
-            3등급은 추적관리, 4등급은 도장교체, 5등급은 배관교체로 자동 분류됩니다. 변경 시 사유를 남겨 주세요.
+            3등급은 도장교체, 4~5등급은 배관교체로 자동 분류됩니다. 변경 시 사유를 남겨 주세요.
           </p>
           <label className={styles.checkbox}>
             <input
