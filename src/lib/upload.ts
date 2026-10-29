@@ -1,5 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
+import { getAuthUserId, getCsrfToken } from "@/lib/auth";
 
 export type UploadPhoto = {
   id: string;
@@ -55,10 +56,16 @@ export class UploadError extends Error {
 }
 const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 const storageKey = "plantpilot-upload-queue-v1";
+const accountStorageKey = (ownerId: string | null) =>
+  ownerId ? `${storageKey}:${ownerId}` : storageKey;
 
-export function readUploadQueue(): UploadEntry[] {
+export function readUploadQueue(
+  ownerId: string | null = getAuthUserId(),
+): UploadEntry[] {
   try {
-    const rows = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    const rows = JSON.parse(
+      localStorage.getItem(accountStorageKey(ownerId)) || "[]",
+    );
     if (!Array.isArray(rows)) return [];
     return rows
       .filter(
@@ -82,9 +89,13 @@ export function readUploadQueue(): UploadEntry[] {
     return [];
   }
 }
-export function persistUploadQueue(rows: UploadEntry[]) {
+export function persistUploadQueue(
+  rows: UploadEntry[],
+  ownerId: string | null = getAuthUserId(),
+) {
+  if (ownerId !== getAuthUserId()) return false;
   try {
-    localStorage.setItem(storageKey, JSON.stringify(rows));
+    localStorage.setItem(accountStorageKey(ownerId), JSON.stringify(rows));
     return true;
   } catch {
     return false;
@@ -97,10 +108,21 @@ export async function uploadRequest(
   signal?: AbortSignal,
 ): Promise<UploadSession> {
   let response;
+  const headers = new Headers(options.headers);
+  if (!headers.has("Content-Type"))
+    headers.set("Content-Type", "application/json");
+  const csrfToken = getCsrfToken();
+  const userId = getAuthUserId();
+  if (
+    !["GET", "HEAD"].includes((options.method ?? "GET").toUpperCase()) &&
+    csrfToken
+  )
+    headers.set("X-CSRF-Token", csrfToken);
   try {
     response = await fetch(`${base}/api/upload-sessions${path}`, {
       ...options,
-      headers: { "Content-Type": "application/json", ...options.headers },
+      credentials: "same-origin",
+      headers,
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(120000)])
         : AbortSignal.timeout(120000),
@@ -111,6 +133,13 @@ export async function uploadRequest(
       "연결이 끊겼거나 응답이 늦어졌습니다. 저장 상태 확인 후 같은 항목을 다시 시도하세요.",
     );
   }
+  if (
+    response.status === 401 &&
+    userId === getAuthUserId() &&
+    csrfToken === getCsrfToken() &&
+    typeof window !== "undefined"
+  )
+    window.dispatchEvent(new Event("inspection-auth-expired"));
   let data;
   try {
     data = await response.json();

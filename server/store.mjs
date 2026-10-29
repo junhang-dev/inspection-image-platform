@@ -2,6 +2,7 @@ import mysql from "mysql2/promise";
 import { randomUUID } from "node:crypto";
 import { planPointIds } from "./relations.mjs";
 import { maintenanceId, photoMaintenanceId } from "./maintenance-domain.mjs";
+import { currentPrincipal } from "./auth-context.mjs";
 
 export const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || "127.0.0.1",
@@ -152,13 +153,15 @@ export async function append(
   actor,
   reason,
 ) {
+  const principal = currentPrincipal();
   const event = {
     id: randomUUID(),
     entityId: id,
     action,
     before,
     after,
-    actor,
+    actor: principal?.displayName ?? actor,
+    ...(principal ? { actorId: principal.id, actorUsername: principal.username } : {}),
     reason,
     at: new Date().toISOString(),
   };

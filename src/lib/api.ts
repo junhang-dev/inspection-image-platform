@@ -1,3 +1,5 @@
+import { getAuthUserId, getCsrfToken } from "./auth.ts";
+
 export async function requestJson<T>(
   url: string,
   options: RequestInit = {},
@@ -9,16 +11,18 @@ export async function requestJson<T>(
     ? " 저장된 목록에서 반영 여부를 확인한 후 다시 시도하세요."
     : " 연결 상태를 확인하고 다시 시도하세요.";
   let response: Response;
+  const headers = new Headers(options.headers);
+  if (!(options.body instanceof FormData) && !headers.has("Content-Type"))
+    headers.set("Content-Type", "application/json");
+  const csrfToken = getCsrfToken();
+  const userId = getAuthUserId();
+  if (changesData && csrfToken) headers.set("X-CSRF-Token", csrfToken);
   try {
     response = await fetch(url, {
       ...options,
+      credentials: "same-origin",
       signal: options.signal ?? AbortSignal.timeout(10000),
-      headers: {
-        ...(options.body instanceof FormData
-          ? {}
-          : { "Content-Type": "application/json" }),
-        ...options.headers,
-      },
+      headers,
     });
   } catch (cause) {
     throw new Error(
@@ -27,6 +31,14 @@ export async function requestJson<T>(
         : "서버에 연결할 수 없습니다.") + nextStep,
     );
   }
+  if (
+    response.status === 401 &&
+    !/\/api\/auth\/(?:login|bootstrap|session)(?:\?|$)/.test(url) &&
+    userId === getAuthUserId() &&
+    csrfToken === getCsrfToken() &&
+    typeof window !== "undefined"
+  )
+    window.dispatchEvent(new Event("inspection-auth-expired"));
   if (response.status >= 500) {
     void response.body?.cancel().catch(() => {});
     throw new Error(

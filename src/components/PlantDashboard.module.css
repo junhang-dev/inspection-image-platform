@@ -663,6 +663,9 @@
   right: 22px;
   bottom: 15px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
 }
 .bottom button {
   display: inline-flex;
@@ -677,6 +680,20 @@
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
+}
+.bottom .planStart {
+  border: 1px solid #087f78;
+  background: #087f78;
+  color: #fff;
+}
+.bottom button:not(.planStart) {
+  border: 1px solid #b7d8d2;
+  background: #fff;
+  color: #126e64;
+}
+.bottom button:focus-visible {
+  outline: 3px solid #174e48;
+  outline-offset: 3px;
 }
 .error {
   position: absolute;
@@ -745,7 +762,7 @@
   }
   .startHint {
     left: 12px;
-    bottom: 62px;
+    bottom: 100px;
   }
   .bottom {
     right: 10px;

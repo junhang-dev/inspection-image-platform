@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "viewer": {
+      "label": "조회자",
+      "permissions": ["read"]
+    },
+    "editor": {
+      "label": "업무담당",
+      "permissions": ["read", "work.write"]
+    },
+    "admin": {
+      "label": "관리자",
+      "permissions": ["read", "work.write", "records.manage", "accounts.manage"]
+    }
+  }
+}

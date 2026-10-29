@@ -1,7 +1,16 @@
 "use client";
 
-import { useId } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { InspectionLocation } from "./InspectionLocation";
 import styles from "./MaintenancePanel.module.css";
+import { useAuth } from "./AuthProvider";
 
 export type RepairStatus = "none" | "review" | "planned" | "progress" | "done";
 export type RepairMethod = "undecided" | "paint" | "replace";
@@ -83,6 +92,7 @@ export type MaintenanceEditorProps = {
   pointLabel: string;
   photos: readonly MaintenancePhoto[];
   selectedPhotoNames?: Readonly<Record<string, string>>;
+  editingBlocked?: boolean;
 };
 
 /**
@@ -101,13 +111,22 @@ export function MaintenanceEditor({
   pointLabel,
   photos,
   selectedPhotoNames = {},
+  editingBlocked = false,
 }: MaintenanceEditorProps) {
+  const { session, can } = useAuth();
+  const canWrite = can("work.write");
+  const canManageRecords = can("records.manage");
+  const sessionActor = session?.authenticated ? session.user?.displayName : null;
+  const actor = sessionActor ?? draft.actor;
   const uid = useId();
   const titleId = `${uid}-heading`,
     errorId = `${uid}-error`,
     membershipId = `${uid}-membership`;
   const update = (patch: Partial<MaintenanceDraft>) => {
-    if (!busy) onChange({ ...draft, ...patch });
+    if (!canWrite || busy || editingBlocked) return;
+    if (!canManageRecords && Object.hasOwn(patch, "visibility")) return;
+    if (sessionActor && Object.hasOwn(patch, "actor")) return;
+    onChange({ ...draft, ...patch });
   };
   const uniquePhotos = [
     ...new Map(photos.map((photo) => [photo.id, photo])).values(),
@@ -152,22 +171,29 @@ export function MaintenanceEditor({
           <dd>{pointLabel || "포인트 이름 미조회"}</dd>
         </div>
       </dl>
+      {!canWrite && (
+        <p className={styles.help} role="status">
+          조회 권한에서는 보수 기록을 변경할 수 없습니다.
+        </p>
+      )}
       <form
         className={styles.form}
         aria-describedby={error ? errorId : undefined}
         onSubmit={(event) => {
           event.preventDefault();
           if (
+            canWrite &&
             !busy &&
+            !editingBlocked &&
             validStatus &&
             validMethod &&
-            draft.actor.trim() &&
+            actor.trim() &&
             draft.reason.trim()
           )
             onSave();
         }}
       >
-        <fieldset disabled={busy} className={styles.fields}>
+        <fieldset disabled={!canWrite || busy || editingBlocked} className={styles.fields}>
           <legend className={styles.srOnly}>보수 기록 편집</legend>
           <div className={styles.formGrid}>
             <label className={styles.field}>
@@ -225,11 +251,11 @@ export function MaintenanceEditor({
               checked={draft.ta}
               onChange={(event) => update({ ta: event.target.checked })}
             />
-            <span>TA에 포함</span>
+            <span>TA 작업에 포함</span>
           </label>
           <div className={styles.formGrid}>
             <label className={styles.field}>
-              워크리스트 반영
+              보수 대상 반영
               <select
                 value={draft.inclusionMode}
                 onChange={(event) =>
@@ -245,9 +271,10 @@ export function MaintenanceEditor({
               </select>
             </label>
             <label className={styles.field}>
-              항목 표시
+              <span>항목 표시 {!canManageRecords && <small>관리자만 변경</small>}</span>
               <select
                 value={draft.visibility}
+                disabled={!canManageRecords}
                 onChange={(event) =>
                   update({
                     visibility: event.target
@@ -262,7 +289,7 @@ export function MaintenanceEditor({
           </div>
           <p className={styles.help}>
             유효 3~5등급은 자동 반영됩니다. 수동 제외·삭제는 재판독 뒤에도
-            유지되고, 상태와 이력은 보존됩니다.
+            유지됩니다. TA 작업 포함과는 별도입니다.
           </p>
           {!!saved?.newEvidenceCount && (
             <p className={styles.warning}>
@@ -382,7 +409,8 @@ export function MaintenanceEditor({
               수정자 <small>필수</small>
             </span>
             <input
-              value={draft.actor}
+              value={actor}
+              readOnly={Boolean(sessionActor)}
               onChange={(event) => update({ actor: event.target.value })}
               required
               maxLength={60}
@@ -399,7 +427,7 @@ export function MaintenanceEditor({
               required
               maxLength={1000}
               rows={3}
-              placeholder="상태·방법 변경 또는 워크리스트 등록·해제 이유"
+              placeholder="상태·방법 변경 또는 보수 대상 등록·해제 이유"
             />
           </label>
         </fieldset>
@@ -421,9 +449,11 @@ export function MaintenanceEditor({
             className={styles.primaryButton}
             disabled={
               busy ||
+              !canWrite ||
+              editingBlocked ||
               !validStatus ||
               !validMethod ||
-              !draft.actor.trim() ||
+              !actor.trim() ||
               !draft.reason.trim()
             }
           >
@@ -442,6 +472,10 @@ export type MaintenanceWorklistRow = MaintenanceItem & {
   recordPurpose?: "inspection" | "presentation" | "verification";
   planTitle: string | null;
   pointLabel: string;
+  locationTeamName?: string | null;
+  locationRackName?: string | null;
+  locationPointName?: string | null;
+  locationEquipmentName?: string | null;
   photoName?: string;
   photoGrade?: number | null;
   teamId?: string | null;
@@ -462,13 +496,21 @@ export type MaintenanceWorklistProps = {
   pageSize?: number;
   onPageSizeChange?: (pageSize: number) => void;
   title?: string;
+  showTaIndicator?: boolean;
   selectionActionLabel?: string;
   selectionActionExpanded?: boolean;
+  selectionActionHidden?: boolean;
+  selectionActionRef?: RefObject<HTMLButtonElement | null>;
+  selectionStartRef?: RefObject<HTMLInputElement | null>;
   onSelectionAction?: () => void;
+  busyMessage?: string;
+  statusFilter?: ReactNode;
   emptyDescription?: string;
   onPageChange?: (page: number) => void;
   busy?: boolean;
   error?: string | null;
+  onRetry?: () => void;
+  retryScopeKey?: string;
   onOpen: (item: MaintenanceWorklistRow) => void;
   selectedIds?: ReadonlySet<string>;
   onSelectionChange?: (item: MaintenanceWorklistRow, selected: boolean) => void;
@@ -482,18 +524,42 @@ export function MaintenanceWorklist({
   pageSize = 10,
   onPageSizeChange,
   title = "대상 목록",
+  showTaIndicator = false,
   selectionActionLabel,
   selectionActionExpanded = false,
+  selectionActionHidden = false,
+  selectionActionRef,
+  selectionStartRef,
   onSelectionAction,
-  emptyDescription = "보수 필요 사진이 자동으로 모입니다. 목록에서 사진을 선택해 작업 방법과 TA 포함 여부를 관리하세요.",
+  busyMessage,
+  statusFilter,
+  emptyDescription = "상태나 검색·상세 조건을 바꿔 보세요.",
   onPageChange,
   busy = false,
   error,
+  onRetry,
+  retryScopeKey,
   onOpen,
   selectedIds,
   onSelectionChange,
 }: MaintenanceWorklistProps) {
+  const { can } = useAuth();
+  const canWrite = can("work.write");
   const titleId = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const retryFocus = useRef<{ scopeKey: string | undefined } | null>(null);
+  const [selectionActionFocused, setSelectionActionFocused] = useState(false);
+  useLayoutEffect(() => {
+    if (!retryFocus.current) return;
+    if (retryFocus.current.scopeKey !== retryScopeKey) {
+      retryFocus.current = null;
+      return;
+    }
+    if (error) return;
+    retryFocus.current = null;
+    if (document.activeElement === document.body)
+      headingRef.current?.focus({ preventScroll: true });
+  }, [error, retryScopeKey]);
   const validTotal =
     total !== null && Number.isSafeInteger(total) && total >= 0;
   const pagination =
@@ -501,60 +567,135 @@ export function MaintenanceWorklist({
     page! >= 1 &&
     Number.isSafeInteger(pages) &&
     pages! >= 1;
+  const compactPagination =
+    pagination && validTotal && total! <= 10 && pages === 1;
+  const showPageSizeControl = !validTotal || total! > 10;
+  const showPageNavigation = pagination && pages! > 1;
+  const selectionStartId = items.find(
+    (item) => item.persisted && !item.missing,
+  )?.id;
   return (
     <section className={styles.root} aria-labelledby={titleId} aria-busy={busy}>
       <header className={`${styles.heading} ${styles.worklistHeading}`}>
-        <h3 id={titleId}>{title}</h3>
-        {onSelectionChange && onSelectionAction && (
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            aria-expanded={selectionActionExpanded}
-            onClick={onSelectionAction}
-          >
-            {selectionActionLabel || "작업 묶음 만들기"}
-          </button>
-        )}
+        <h3 id={titleId} ref={headingRef} tabIndex={-1}>
+          {title}
+        </h3>
+        {onSelectionChange &&
+          onSelectionAction &&
+          (!selectionActionHidden || selectionActionFocused) && (
+            <button
+              type="button"
+              className={
+                selectionActionExpanded
+                  ? styles.secondaryButton
+                  : styles.primaryButton
+              }
+              ref={selectionActionRef}
+              aria-expanded={selectionActionExpanded}
+              disabled={busy || !canWrite}
+              onFocus={() => setSelectionActionFocused(true)}
+              onBlur={() => setSelectionActionFocused(false)}
+              onClick={() => {
+                if (!canWrite || busy) return;
+                setSelectionActionFocused(true);
+                onSelectionAction();
+              }}
+            >
+              {selectionActionLabel || "작업 묶음 만들기"}
+            </button>
+          )}
       </header>
+      {statusFilter}
       {error && (
-        <p className={styles.error} role="alert">
-          {error}
-          {items.length > 0 && <span>마지막으로 조회한 목록입니다.</span>}
+        <>
+          <p className={styles.error} role="alert">
+            {error}
+            {items.length > 0 && <span>마지막으로 조회한 목록입니다.</span>}
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              className="text-button"
+              aria-label={`${title} 다시 조회`}
+              onFocus={() => {
+                retryFocus.current = { scopeKey: retryScopeKey };
+              }}
+              onBlur={() => {
+                retryFocus.current = null;
+              }}
+              onClick={onRetry}
+            >
+              다시 조회
+            </button>
+          )}
+        </>
+      )}
+      {busy && busyMessage && items.length > 0 && (
+        <p className={styles.help} role="status">
+          {busyMessage}
         </p>
       )}
       {items.length > 0 ? (
-        <div className={styles.workTableWrap}>
-          <table className={styles.workTable}>
+        <div
+          className={
+            onSelectionChange
+              ? `${styles.workTableWrap} ${styles.workTableSelectableWrap}`
+              : styles.workTableWrap
+          }
+        >
+          <table
+            className={
+              onSelectionChange
+                ? `${styles.workTable} ${styles.workTableSelectable}`
+                : styles.workTable
+            }
+          >
             <thead>
               <tr>
-                {onSelectionChange && (
-                  <th scope="col">
-                    <span className={styles.srOnly}>묶음 선택</span>
-                  </th>
-                )}
+                {onSelectionChange && <th scope="col">묶음 선택</th>}
                 <th scope="col">검사 사진</th>
-                <th scope="col">검사계획 · 위치</th>
+                <th scope="col">검사계획</th>
+                <th scope="col">검사 위치</th>
                 <th scope="col">등급</th>
                 <th scope="col">진행 상태</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id}>
+                <tr
+                  key={item.id}
+                  className={styles.clickableRow}
+                  onClick={(event) => {
+                    const target = event.target;
+                    if (
+                      target instanceof Element &&
+                      target.closest("button, input, a, select, label")
+                    ) {
+                      return;
+                    }
+                    if (!busy) onOpen(item);
+                  }}
+                >
                   {onSelectionChange && (
-                    <td>
+                    <td data-column="selection" data-label="묶음 선택">
                       <input
                         type="checkbox"
+                        ref={
+                          item.id === selectionStartId
+                            ? selectionStartRef
+                            : undefined
+                        }
                         aria-label={`${item.photoName || "검사 사진"} 작업 묶음에 선택`}
                         checked={selectedIds?.has(item.id) ?? false}
-                        disabled={busy || !item.persisted || item.missing}
-                        onChange={(event) =>
-                          onSelectionChange(item, event.currentTarget.checked)
-                        }
+                        disabled={busy || !canWrite || !item.persisted || item.missing}
+                        onChange={(event) => {
+                          if (canWrite && !busy)
+                            onSelectionChange(item, event.currentTarget.checked);
+                        }}
                       />
                     </td>
                   )}
-                  <td>
+                  <td data-column="photo" data-label="검사 사진">
                     <button
                       type="button"
                       className={styles.workPhotoButton}
@@ -579,24 +720,42 @@ export function MaintenanceWorklist({
                       </span>
                     </button>
                   </td>
-                  <td>
-                    <span className={styles.workContext}>
-                      <strong>{item.planTitle || "계획 미지정"}</strong>
-                      <small>{item.pointLabel || "위치 미확인"}</small>
+                  <td data-column="plan" data-label="검사계획">
+                    <span className={styles.workPlan}>
+                      {item.planTitle || "계획 미지정"}
                     </span>
                   </td>
-                  <td>
+                  <td
+                    className={styles.workLocationCell}
+                    data-column="location"
+                    data-label="검사 위치"
+                  >
+                    <InspectionLocation
+                      teamName={item.locationTeamName}
+                      rackNames={item.locationRackName ? [item.locationRackName] : []}
+                      pointName={item.locationPointName}
+                      equipmentName={item.locationEquipmentName}
+                    />
+                  </td>
+                  <td data-column="grade" data-label="등급">
                     {Number.isInteger(item.photoGrade) &&
                     item.photoGrade! >= 1 &&
                     item.photoGrade! <= 5
                       ? `${item.photoGrade}등급`
                       : "등급 미확인"}
                   </td>
-                  <td>
-                    <span
-                      className={`${styles.badge} ${statusClass[item.repairStatus] || styles.muted}`}
-                    >
-                      {statusLabels[item.repairStatus] || "상태 미확인"}
+                  <td data-column="status" data-label="상태">
+                    <span className={styles.workStatusGroup}>
+                      <span
+                        className={`${styles.badge} ${statusClass[item.repairStatus] || styles.muted}`}
+                      >
+                        {statusLabels[item.repairStatus] || "상태 미확인"}
+                      </span>
+                      {showTaIndicator && item.ta && (
+                        <span className={styles.workTaBadge} aria-label="TA 작업 포함">
+                          TA 포함
+                        </span>
+                      )}
                     </span>
                   </td>
                 </tr>
@@ -608,107 +767,131 @@ export function MaintenanceWorklist({
         <div className={styles.empty} role="status">
           <strong>
             {busy
-              ? "워크리스트를 불러오는 중입니다."
+              ? `${title}을 불러오는 중입니다.`
               : error
-                ? "워크리스트를 조회하지 못했습니다."
+                ? `${title}을 조회하지 못했습니다.`
                 : validTotal && total > 0
                   ? "이 페이지에 표시할 항목이 없습니다."
-                  : "표시할 워크리스트 항목이 없습니다."}
+                  : validTotal && total === 0
+                    ? `조건에 맞는 ${title}이 없습니다.`
+                    : "표시할 항목이 없습니다."}
           </strong>
-          {!busy && !error && <p>{emptyDescription}</p>}
+          {!busy &&
+            !error &&
+            (validTotal && total > 0 ? (
+              <p>다른 페이지로 이동하거나 조회 조건을 바꿔 보세요.</p>
+            ) : (
+              <p>{emptyDescription}</p>
+            ))}
         </div>
       )}
-      {pagination && (
-        <nav className={styles.pagination} aria-label="워크리스트 페이지">
-          <span className={styles.paginationSummary}>
-            {validTotal ? `전체 ${total}건 · ` : ""}
-            {page} / {pages}페이지
-          </span>
-          <div className={styles.paginationControls}>
-            <label className={styles.pageSizeControl}>
-              한 화면에 보기
-              <select
-                aria-label="한 화면에 보기"
-                value={pageSize}
-                disabled={busy || !onPageSizeChange}
-                onChange={(event) =>
-                  onPageSizeChange?.(Number(event.target.value))
-                }
-              >
-                <option value={10}>10장</option>
-                <option value={25}>25장</option>
-                <option value={50}>50장</option>
-              </select>
-            </label>
-            {onPageChange && (
-              <div className={styles.paginationButtons}>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  disabled={busy || page! <= 1}
-                  onClick={() => {
-                    if (!busy && page! > 1) onPageChange(1);
-                  }}
-                >
-                  처음
-                </button>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  disabled={busy || page! <= 1}
-                  onClick={() => {
-                    if (!busy && page! > 1) onPageChange(page! - 1);
-                  }}
-                >
-                  이전
-                </button>
-                {page! > 3 && pages! > 5 && (
-                  <span className={styles.pageEllipsis} aria-hidden="true">
-                    …
-                  </span>
+      {pagination &&
+        (compactPagination ? (
+          <div className={styles.pagination}>
+            <span className={styles.paginationSummary}>
+              조회 결과 {total}건
+            </span>
+          </div>
+        ) : (
+          <nav
+            className={styles.pagination}
+            aria-label={`${title} 페이지 이동`}
+          >
+            <span className={styles.paginationSummary}>
+              {validTotal ? `조회 결과 ${total}건` : `${page} / ${pages}페이지`}
+              {validTotal &&
+                showPageNavigation &&
+                ` · ${page} / ${pages}페이지`}
+            </span>
+            {(showPageSizeControl || showPageNavigation) && (
+              <div className={styles.paginationControls}>
+                {showPageSizeControl && (
+                  <label className={styles.pageSizeControl}>
+                    한 화면에 보기
+                    <select
+                      aria-label={`${title} 한 화면에 보기`}
+                      value={pageSize}
+                      disabled={busy || !onPageSizeChange}
+                      onChange={(event) =>
+                        onPageSizeChange?.(Number(event.target.value))
+                      }
+                    >
+                      <option value={10}>10장</option>
+                      <option value={25}>25장</option>
+                      <option value={50}>50장</option>
+                    </select>
+                  </label>
                 )}
-                {pageNumberWindow(page!, pages!).map((pageNumber) => (
-                  <button
-                    key={pageNumber}
-                    type="button"
-                    className={`${styles.secondaryButton} ${styles.pageNumber}${pageNumber === page ? ` ${styles.pageNumberSelected}` : ""}`}
-                    aria-current={pageNumber === page ? "page" : undefined}
-                    disabled={busy || pageNumber === page}
-                    onClick={() => onPageChange(pageNumber)}
-                  >
-                    {pageNumber}
-                  </button>
-                ))}
-                {page! < pages! - 2 && pages! > 5 && (
-                  <span className={styles.pageEllipsis} aria-hidden="true">
-                    …
-                  </span>
+                {onPageChange && showPageNavigation && (
+                  <div className={styles.paginationButtons}>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={busy || page! <= 1}
+                      onClick={() => {
+                        if (!busy && page! > 1) onPageChange(1);
+                      }}
+                    >
+                      처음
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={busy || page! <= 1}
+                      onClick={() => {
+                        if (!busy && page! > 1) onPageChange(page! - 1);
+                      }}
+                    >
+                      이전
+                    </button>
+                    {page! > 3 && pages! > 5 && (
+                      <span className={styles.pageEllipsis} aria-hidden="true">
+                        …
+                      </span>
+                    )}
+                    {pageNumberWindow(page!, pages!).map((pageNumber) => (
+                      <button
+                        key={pageNumber}
+                        type="button"
+                        className={`${styles.secondaryButton} ${styles.pageNumber}${pageNumber === page ? ` ${styles.pageNumberSelected}` : ""}`}
+                        aria-current={pageNumber === page ? "page" : undefined}
+                        disabled={busy || pageNumber === page}
+                        onClick={() => onPageChange(pageNumber)}
+                      >
+                        {pageNumber}
+                      </button>
+                    ))}
+                    {page! < pages! - 2 && pages! > 5 && (
+                      <span className={styles.pageEllipsis} aria-hidden="true">
+                        …
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={busy || page! >= pages!}
+                      onClick={() => {
+                        if (!busy && page! < pages!) onPageChange(page! + 1);
+                      }}
+                    >
+                      다음
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={busy || page! >= pages!}
+                      onClick={() => {
+                        if (!busy && page! < pages!) onPageChange(pages!);
+                      }}
+                    >
+                      마지막
+                    </button>
+                  </div>
                 )}
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  disabled={busy || page! >= pages!}
-                  onClick={() => {
-                    if (!busy && page! < pages!) onPageChange(page! + 1);
-                  }}
-                >
-                  다음
-                </button>
-                <button
-                  type="button"
-                  className={styles.secondaryButton}
-                  disabled={busy || page! >= pages!}
-                  onClick={() => {
-                    if (!busy && page! < pages!) onPageChange(pages!);
-                  }}
-                >
-                  마지막
-                </button>
               </div>
             )}
-          </div>
-        </nav>
-      )}
+          </nav>
+        ))}
     </section>
   );
 }
