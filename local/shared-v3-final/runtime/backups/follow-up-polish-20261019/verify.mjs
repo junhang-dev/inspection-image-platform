@@ -1,0 +1,10 @@
+import 'dotenv/config';import assert from 'node:assert/strict';import {readFile,writeFile} from 'node:fs/promises';import {pool} from '../../../../../server/store.mjs';
+const folder=new URL('./',import.meta.url);const before=JSON.parse(await readFile(new URL('before.local.json',folder),'utf8'));
+try{
+const [rows]=await pool.query('SELECT kind,id,data FROM entities ORDER BY kind,id');const actual=new Map(rows.map(r=>[r.id,r]));const changes=new Map(before.proposed.map(p=>[p.after.id,p.after]));assert.equal(rows.length,before.entities.length);
+let changed=0;for(const row of before.entities){const expected=changes.get(row.id);if(expected){assert.deepEqual(actual.get(row.id).data,expected);changed++;}else assert.deepEqual(actual.get(row.id),row);}
+const [history]=await pool.query('SELECT id,entity_id,data FROM history ORDER BY id');const historyById=new Map(history.map(r=>[r.id,r]));for(const row of before.history)assert.deepEqual(historyById.get(row.id),row);assert.equal(history.length,before.history.length+45);
+const [members]=await pool.query('SELECT * FROM maintenance_bundle_members ORDER BY maintenance_id');assert.deepEqual(JSON.parse(JSON.stringify(members)),before.memberships);
+const base='http://127.0.0.1:4000/api';const all=[];for(let page=1;page<=3;page++){const d=await(await fetch(base+'/maintenance/query?targetType=photo&inWorklist=all&pageSize=100&page='+page)).json();all.push(...d.items);}assert.equal(all.length,300);assert.ok(all.every(row=>!row.methodMismatch));
+const summary=await(await fetch(base+'/maintenance/query?targetType=photo')).json();const result={changed,historyAdded:history.length-before.history.length,unchangedOtherEntities:rows.length-changed,oldHistoryPreserved:before.history.length,membershipsUnchanged:true,remainingMismatches:all.filter(r=>r.methodMismatch).length,total:summary.total,methodCounts:summary.methodCounts};await writeFile(new URL('verified.local.json',folder),JSON.stringify(result,null,2),{mode:0o600});console.log(JSON.stringify(result));
+}finally{await pool.end();}
