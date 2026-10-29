@@ -5,18 +5,18 @@ import {
   ArrowRight,
   Camera,
   CheckCircle2,
-  Compass,
   FolderKanban,
   RefreshCw,
   Wrench,
 } from "lucide-react";
 import { requestJson } from "@/lib/api";
 import locations from "@/lib/virtual-locations.json";
-import type { PhotoPage } from "@/lib/photo-query";
+import type { PhotoGradeFilter, PhotoPage } from "@/lib/photo-query";
 import type { MaintenancePage } from "@/lib/maintenance";
 import styles from "./HomeDashboard.module.css";
 
 type Destination = "dashboard" | "plans" | "photos" | "worklist" | "taWorklist";
+type WorkStatus = "review" | "planned" | "progress" | "done";
 const query = "recordPurpose=inspection&visibility=visible&pageSize=1";
 const base = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
@@ -96,9 +96,11 @@ function TeamRow({
 export default function HomeDashboard({
   onNavigate,
   onTeamPhotos,
+  onGradePhotos,
 }: {
-  onNavigate: (tab: Destination, status?: "done") => void;
+  onNavigate: (tab: Destination, status?: WorkStatus) => void;
   onTeamPhotos: (teamId: string) => void;
+  onGradePhotos: (grade: Exclude<PhotoGradeFilter, "all">) => void;
 }) {
   const [revision, setRevision] = useState(0);
   const photos = useSummary<PhotoPage>(`inspections/query?${query}`, revision);
@@ -232,7 +234,17 @@ export default function HomeDashboard({
         </div>
         <div className={styles.gradeCounts}>
           {grades.map((grade) => (
-            <div key={grade.key}>
+            <button
+              key={grade.key}
+              type="button"
+              disabled={!p || (p.gradeCounts?.[grade.key] ?? 0) === 0}
+              aria-label={`${grade.label} ${count(p?.gradeCounts?.[grade.key])} 사진 보기`}
+              onClick={() =>
+                onGradePhotos(
+                  String(grade.key) as Exclude<PhotoGradeFilter, "all">,
+                )
+              }
+            >
               <span>
                 <i style={{ background: grade.color }} />
                 {grade.label}
@@ -248,7 +260,7 @@ export default function HomeDashboard({
                     : "—"}
                 </em>
               </strong>
-            </div>
+            </button>
           ))}
         </div>
       </section>
@@ -259,18 +271,8 @@ export default function HomeDashboard({
             alt="공장 배치를 보여주는 AI 보강 항공 참고 이미지"
           />
           <div className={styles.mapShade} />
-          <div className={styles.mapTop}>
-            <span>
-              <Compass size={15} />
-              공장 현황
-            </span>
-            <span>{locations.teams.length}개 생산팀 · 가상 구역</span>
-          </div>
           <div className={styles.mapBottom}>
             <h2 id="home-map-title">공장 3D 탐색</h2>
-            <span>
-              {locations.teams.length}개 생산팀 · {locations.racks.length}개 랙
-            </span>
             <button onClick={() => onNavigate("dashboard")}>
               3D 지도로 이동
               <ArrowRight size={18} />
@@ -334,7 +336,13 @@ export default function HomeDashboard({
           </div>
           <div className={styles.statuses}>
             {statuses.map((status) => (
-              <div key={status.key}>
+              <button
+                key={status.key}
+                type="button"
+                disabled={!m || (m.statusCounts[status.key] ?? 0) === 0}
+                aria-label={`${status.label} 보수 목록 ${count(m?.statusCounts[status.key])}건 보기`}
+                onClick={() => onNavigate("worklist", status.key)}
+              >
                 <span>
                   <i style={{ background: status.color }} />
                   {status.label}
@@ -343,7 +351,7 @@ export default function HomeDashboard({
                   {count(m?.statusCounts[status.key])}
                   <small> 건</small>
                 </strong>
-              </div>
+              </button>
             ))}
           </div>
         </section>

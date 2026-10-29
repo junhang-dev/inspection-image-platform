@@ -39,6 +39,7 @@ import {
   type Photo,
   type PhotoScope,
   type PhotoPage,
+  type PhotoGradeFilter,
 } from "@/lib/photo-query";
 import { requestJson } from "@/lib/api";
 import { getAuthUserId } from "@/lib/auth";
@@ -410,6 +411,8 @@ export default function Home() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [scope, setScope] = useState<PhotoScope>(defaultPhotoScope);
   const [filter, setFilter] = useState("all");
+  const [photoGradeFilter, setPhotoGradeFilter] =
+    useState<PhotoGradeFilter>("all");
   const [workClassificationFilter, setWorkClassificationFilter] = useState<
     "all" | "repair" | "retake"
   >("all");
@@ -457,6 +460,7 @@ export default function Home() {
         }
       : {}),
     classification: "all",
+    grade: tab === "photos" ? photoGradeFilter : "all",
     aiStatus: tab === "photos" ? (filter as Photo["status"] | "all") : "all",
     workClassification: tab === "photos" ? workClassificationFilter : "all",
     labeling: tab === "labels" ? "true" : "all",
@@ -868,6 +872,7 @@ export default function Home() {
   const resetFilters = (target: Tab, nextScope = defaultPhotoScope) => {
     changeScope(nextScope);
     setFilter("all");
+    setPhotoGradeFilter("all");
     if (target === "photos" || target === "labels") {
       setSelectedPhotoPlanIds(null);
       setPhotoPageSize(10);
@@ -1015,10 +1020,6 @@ export default function Home() {
           );
         })
       : filteredPlans;
-  const planOptionsSummary = [
-    ...(planVisibility === "hidden" ? ["삭제한 계획 보기"] : []),
-    ...(planSort === "date" ? ["예정일 빠른 순"] : []),
-  ].join(" · ");
   const planPageCount = Math.max(
     1,
     Math.ceil(visiblePlans.length / plansPerPage),
@@ -1240,7 +1241,7 @@ export default function Home() {
   };
   const pageTitle =
     tab === "taWorklist"
-      ? "워크리스트 관리"
+      ? "TA 작업 묶음"
       : nav.find((item) => item.id === tab)?.label;
   const daysInMonth = new Date(
     month.getFullYear(),
@@ -1631,15 +1632,26 @@ export default function Home() {
                 <h1 ref={pageHeadingRef} tabIndex={-1}>
                   {pageTitle}
                 </h1>
-                {tab === "plans" && <p>팀·랙별 계획과 사진 판독 현황</p>}
-                {tab === "worklist" && (
-                  <p>사진별 보수 상태·이력을 관리합니다.</p>
-                )}
-                {tab === "taWorklist" && (
-                  <p>TA 작업 묶음 관리 · 보수 기록은 사진별로 유지</p>
-                )}
               </div>
               <div className="heading-actions">
+                {tab === "worklist" && (
+                  <button
+                    className="button secondary"
+                    onClick={() => go("taWorklist")}
+                  >
+                    <Wrench size={16} />
+                    워크리스트 보기
+                  </button>
+                )}
+                {tab === "taWorklist" && (
+                  <button
+                    className="button secondary"
+                    onClick={() => go("worklist")}
+                  >
+                    <ChevronLeft size={16} />
+                    보수 관리
+                  </button>
+                )}
                 {tab === "plans" && (
                   <button
                     className="button primary"
@@ -1792,6 +1804,10 @@ export default function Home() {
               if (target === "photos" && status) setFilter(status);
               if (target === "worklist" && status) setWorkStatus(status);
             }}
+            onGradePhotos={(grade) => {
+              go("photos");
+              setPhotoGradeFilter(grade);
+            }}
             onTeamPhotos={(teamId) => {
               go("photos");
               changeScope({ ...defaultPhotoScope, teamId });
@@ -1910,6 +1926,28 @@ export default function Home() {
                 <>
                   <div className="list-toolbar photo-list-toolbar">
                     <label className="filter-control">
+                      등급
+                      <select
+                        aria-label="사진 등급 필터"
+                        value={photoGradeFilter}
+                        onChange={(event) => {
+                          setPhotoGradeFilter(
+                            event.target.value as PhotoGradeFilter,
+                          );
+                          setPage(1);
+                          setSelectedMaintenancePhotos({});
+                        }}
+                      >
+                        <option value="all">전체 등급</option>
+                        <option value="1">1등급</option>
+                        <option value="2">2등급</option>
+                        <option value="3">3등급</option>
+                        <option value="4">4등급</option>
+                        <option value="5">5등급</option>
+                        <option value="ungraded">등급 없음</option>
+                      </select>
+                    </label>
+                    <label className="filter-control">
                       AI 판독 상태
                       <select
                         aria-label="AI 판독 상태 필터"
@@ -1992,7 +2030,6 @@ export default function Home() {
                   plans={plans}
                   onSelect={selectPhoto}
                   onVisibilityChange={(photo) => { if (canManageRecords) setPhotoVisibilityTarget(photo); }}
-                  compact={tab === "photos"}
                   selectedPhotoIds={
                     new Set(Object.keys(selectedMaintenancePhotos))
                   }
@@ -2112,7 +2149,6 @@ export default function Home() {
                 }
                 statusFilter={
                   <>
-                    <p className="worklist-status-label">상태</p>
                     <div
                       className="worklist-status-bar"
                       role="group"
@@ -2245,6 +2281,9 @@ export default function Home() {
           {tab === "plans" && (
             <section className="panel plan-panel">
               <div className="plan-query-area">
+                <div className="panel-title">
+                  <h2>조회 조건</h2>
+                </div>
                 <PhotoScopeFields
                   context={tab}
                   scope={scope}
@@ -2259,7 +2298,7 @@ export default function Home() {
                 />
                 <div className="plan-list-toolbar">
                   <div className="plan-status-section">
-                    <span className="plan-filter-label">상태</span>
+                    <span className="plan-filter-label">진행 상태</span>
                     <div
                       className="plan-status-filters"
                       role="group"
@@ -2299,7 +2338,39 @@ export default function Home() {
                       ))}
                     </div>
                   </div>
-                  <div className="plan-list-controls">
+                  <div className="plan-list-tools">
+                    <label className="filter-control plan-visibility">
+                      계획 범위
+                      <select
+                        value={planVisibility}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          setPlanVisibility(next);
+                          setPlanStatus(
+                            next === "visible" ? "planned" : "all",
+                          );
+                          setPlanPage(1);
+                        }}
+                      >
+                        <option value="visible">현재 계획</option>
+                        <option value="hidden">삭제한 계획 보기</option>
+                      </select>
+                    </label>
+                    <label className="filter-control plan-sort">
+                      정렬
+                      <select
+                        value={planSort}
+                        onChange={(event) => {
+                          setPlanSort(
+                            event.target.value as "created" | "date",
+                          );
+                          setPlanPage(1);
+                        }}
+                      >
+                        <option value="created">최근 등록 순</option>
+                        <option value="date">예정일 빠른 순</option>
+                      </select>
+                    </label>
                     <label className="filter-control plan-search-control">
                       계획 검색
                       <span className="plan-list-search">
@@ -2316,46 +2387,6 @@ export default function Home() {
                         />
                       </span>
                     </label>
-                    <details className="plan-list-options">
-                      <summary>
-                        목록 옵션
-                        {planOptionsSummary ? ` · ${planOptionsSummary}` : ""}
-                      </summary>
-                      <div className="plan-list-tools">
-                        <label className="filter-control plan-visibility">
-                          계획 범위
-                          <select
-                            value={planVisibility}
-                            onChange={(event) => {
-                              const next = event.target.value;
-                              setPlanVisibility(next);
-                              setPlanStatus(
-                                next === "visible" ? "planned" : "all",
-                              );
-                              setPlanPage(1);
-                            }}
-                          >
-                            <option value="visible">현재 계획</option>
-                            <option value="hidden">삭제한 계획 보기</option>
-                          </select>
-                        </label>
-                        <label className="filter-control plan-sort">
-                          정렬
-                          <select
-                            value={planSort}
-                            onChange={(event) => {
-                              setPlanSort(
-                                event.target.value as "created" | "date",
-                              );
-                              setPlanPage(1);
-                            }}
-                          >
-                            <option value="created">최근 등록 순</option>
-                            <option value="date">예정일 빠른 순</option>
-                          </select>
-                        </label>
-                      </div>
-                    </details>
                   </div>
                 </div>
               </div>
@@ -2483,6 +2514,8 @@ export default function Home() {
                         <tbody key={plan.id} className="plan-row-group">
                           <tr
                             className="plan-data-row"
+                            tabIndex={0}
+                            aria-label={`${plan.title} 계획의 사진·판독 보기`}
                             onClick={(event) => {
                               if (
                                 (event.target as HTMLElement).closest(
@@ -2491,6 +2524,13 @@ export default function Home() {
                               )
                                 return;
                               viewPlanPhotos(plan);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) return;
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                viewPlanPhotos(plan);
+                              }
                             }}
                           >
                             <td data-label="검사계획">
@@ -2741,9 +2781,12 @@ export default function Home() {
                                           photo.status === "pending" ||
                                           photo.status === "processing";
                                         return (
-                                          <figure
+                                          <button
+                                            type="button"
                                             className={`plan-photo-card${isWaiting ? " is-waiting" : ""}${photo.status === "done" ? " is-done" : ""}${photo.status === "error" ? " is-error" : ""}`}
                                             key={photo.id}
+                                            onClick={() => viewPlanPhotos(plan)}
+                                            aria-label={`${photo.name}, ${status}. ${plan.title} 사진·판독 목록 보기`}
                                           >
                                             <span className="plan-photo-image">
                                               <img
@@ -2765,13 +2808,13 @@ export default function Home() {
                                                 </span>
                                               )}
                                             </span>
-                                            <figcaption className="plan-photo-caption">
+                                            <span className="plan-photo-caption">
                                               <strong title={photo.name}>
                                                 {photo.name}
                                               </strong>
                                               <small>{status}</small>
-                                            </figcaption>
-                                          </figure>
+                                            </span>
+                                          </button>
                                         );
                                       })}
                                     </div>
@@ -3532,7 +3575,7 @@ function PhotoScopeFields({
   }
   const hasActiveAdvancedFilter = activeAdvancedFilterLabels.length > 0;
   const activeAdvancedFilterSummary = hasActiveAdvancedFilter
-    ? ` · ${activeAdvancedFilterLabels.join(" · ")}`
+    ? " · 적용 중"
     : "";
   const detailSummary = context === "worklist" ? "검색·상세 조건" : "상세 조건";
   const worklistPlans = inspectionPlans.filter(
@@ -4333,7 +4376,6 @@ function PhotoTable({
   onTogglePhoto,
   onTogglePage,
   selectable = false,
-  compact = false,
 }: {
   photos: Photo[];
   points: Point[];
@@ -4344,7 +4386,6 @@ function PhotoTable({
   onTogglePhoto?: (photo: Photo) => void;
   onTogglePage?: (eligiblePhotos: Photo[], checked: boolean) => void;
   selectable?: boolean;
-  compact?: boolean;
 }) {
   const { can } = useAuth();
   const canWrite = can("work.write"), canManageRecords = can("records.manage");
@@ -4365,20 +4406,8 @@ function PhotoTable({
   const allSelected =
     eligiblePhotos.length > 0 && selectedCount === eligiblePhotos.length;
   return (
-    <div className={`table-wrap${compact ? " photo-table-wrap" : ""}`}>
-      <table className={compact ? "photo-list-table" : undefined}>
-        {compact && (
-          <colgroup>
-            <col className="photo-select-column" />
-            <col className="photo-image-column" />
-            <col className="photo-plan-column" />
-            <col className="photo-context-column" />
-            <col className="photo-reading-column" />
-            <col className="photo-followup-column" />
-            <col className="photo-created-column" />
-            <col className="photo-manage-column" />
-          </colgroup>
-        )}
+    <div className="table-wrap">
+      <table>
         <thead>
           <tr>
             {selectable && (
@@ -4396,24 +4425,13 @@ function PhotoTable({
             )}
             <th scope="col">검사 사진</th>
             <th scope="col">검사계획</th>
-            {compact ? (
-              <>
-                <th scope="col">팀 · 랙 · 포인트</th>
-                <th scope="col">AI 판독 · 현재 분류</th>
-                <th scope="col">후속 표시</th>
-                <th scope="col">등록</th>
-              </>
-            ) : (
-              <>
-                <th scope="col">생산팀</th>
-                <th scope="col">파이프랙</th>
-                <th scope="col">검사 포인트</th>
-                <th scope="col">AI 판독</th>
-                <th scope="col">현재 분류</th>
-                <th scope="col">후속 표시</th>
-                <th scope="col">등록 일시</th>
-              </>
-            )}
+            <th scope="col">생산팀</th>
+            <th scope="col">파이프랙</th>
+            <th scope="col">검사 포인트</th>
+            <th scope="col">AI 판독</th>
+            <th scope="col">현재 분류</th>
+            <th scope="col">후속 표시</th>
+            <th scope="col">등록 일시</th>
             {onVisibilityChange && (
               <th scope="col">
                 <span className="sr-only">사진 관리</span>
@@ -4440,6 +4458,8 @@ function PhotoTable({
               return (
                 <tr
                   key={photo.id}
+                  tabIndex={0}
+                  aria-label={`${photo.name} 상세 열기`}
                   className="photo-clickable-row"
                   onClick={(event) => {
                     if (
@@ -4450,12 +4470,16 @@ function PhotoTable({
                       return;
                     onSelect(photo);
                   }}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect(photo);
+                    }
+                  }}
                 >
                   {selectable && (
-                    <td
-                      className={compact ? "photo-select-cell" : undefined}
-                      data-label={compact ? "보수 선택" : undefined}
-                    >
+                    <td>
                       <input
                         type="checkbox"
                         aria-label={`${photo.name} 보수 작업 대상 선택`}
@@ -4476,12 +4500,9 @@ function PhotoTable({
                       />
                     </td>
                   )}
-                  <td
-                    className={compact ? "photo-image-cell" : undefined}
-                    data-label={compact ? "검사 사진" : undefined}
-                  >
+                  <td>
                     <button
-                      className={`photo-name${compact ? " photo-list-name" : ""}`}
+                      className="photo-name"
                       type="button"
                       aria-label={`${photo.name} 상세 보기`}
                       onClick={() => onSelect(photo)}
@@ -4497,111 +4518,48 @@ function PhotoTable({
                       <span>{photo.name}</span>
                     </button>
                   </td>
-                  {compact ? (
-                    <>
-                      <td className="photo-plan-cell" data-label="검사계획">
-                        <b className="photo-plan-name">{planTitle}</b>
-                      </td>
-                      <td
-                        className="photo-context-cell"
-                        data-label="팀 · 랙 · 포인트"
-                      >
-                        <span>
-                          {team?.name ?? "팀 미확인"} ·{" "}
-                          {rack?.name ?? "랙 미확인"}
-                        </span>
+                  <td>
+                    <b className="photo-plan-name">{planTitle}</b>
+                  </td>
+                  <td>{team?.name ?? "팀 미확인"}</td>
+                  <td>{rack?.name ?? "랙 미확인"}</td>
+                  <td>
+                    <span>{point?.name ?? "포인트 미연결"}</span>
+                    <small>{point?.equipment || "설비 미확인"}</small>
+                  </td>
+                  <td>
+                    <PhotoStatus photo={photo} />
+                  </td>
+                  <td>
+                    <Grade photo={photo} />
+                    {photo.humanGrade !== null &&
+                      photo.humanGrade !== photo.ai?.grade && (
                         <small>
-                          {point?.name ?? "포인트 미연결"} ·{" "}
-                          {point?.equipment || "설비 미확인"}
+                          AI {photo.ai?.grade ?? "미판독"}등급에서 수정
                         </small>
-                      </td>
-                      <td
-                        className="photo-reading-cell"
-                        data-label="AI 판독 · 현재 분류"
-                      >
-                        <PhotoStatus photo={photo} />
-                        <Grade photo={photo} />
-                        {photo.humanGrade !== null &&
-                          photo.humanGrade !== photo.ai?.grade && (
-                            <small>
-                              AI {photo.ai?.grade ?? "미판독"}등급에서 수정
-                            </small>
-                          )}
-                      </td>
-                      <td
-                        className="photo-followup-cell"
-                        data-label="후속 표시"
-                      >
-                        <div className="photo-followup-badges">
-                          {photo.retake && (
-                            <span className="badge amber">재촬영</span>
-                          )}
-                          {photo.labeling && (
-                            <span className="badge muted">라벨링 후보</span>
-                          )}
-                          {!photo.retake && !photo.labeling && (
-                            <span className="faint">—</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="photo-created-cell" data-label="등록">
-                        {new Date(photo.createdAt).toLocaleString("ko-KR", {
-                          month: "2-digit",
-                          day: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td>
-                        <b className="photo-plan-name">{planTitle}</b>
-                      </td>
-                      <td>{team?.name ?? "팀 미확인"}</td>
-                      <td>{rack?.name ?? "랙 미확인"}</td>
-                      <td>
-                        <span>{point?.name ?? "포인트 미연결"}</span>
-                        <small>{point?.equipment || "설비 미확인"}</small>
-                      </td>
-                      <td>
-                        <PhotoStatus photo={photo} />
-                      </td>
-                      <td>
-                        <Grade photo={photo} />
-                        {photo.humanGrade !== null &&
-                          photo.humanGrade !== photo.ai?.grade && (
-                            <small>
-                              AI {photo.ai?.grade ?? "미판독"}등급에서 수정
-                            </small>
-                          )}
-                      </td>
-                      <td>
-                        {photo.retake && (
-                          <span className="badge amber">재촬영</span>
-                        )}{" "}
-                        {photo.labeling && (
-                          <span className="badge muted">라벨링 후보</span>
-                        )}
-                        {!photo.retake && !photo.labeling && (
-                          <span className="faint">—</span>
-                        )}
-                      </td>
-                      <td className="faint">
-                        {new Date(photo.createdAt).toLocaleString("ko-KR", {
-                          month: "2-digit",
-                          day: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                    </>
-                  )}
+                      )}
+                  </td>
+                  <td>
+                    {photo.retake && (
+                      <span className="badge amber">재촬영</span>
+                    )}{" "}
+                    {photo.labeling && (
+                      <span className="badge muted">라벨링 후보</span>
+                    )}
+                    {!photo.retake && !photo.labeling && (
+                      <span className="faint">—</span>
+                    )}
+                  </td>
+                  <td className="faint">
+                    {new Date(photo.createdAt).toLocaleString("ko-KR", {
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </td>
                   {onVisibilityChange && (
-                    <td
-                      className={compact ? "photo-manage-cell" : undefined}
-                      data-label={compact ? "사진 관리" : undefined}
-                    >
+                    <td>
                       <div className="photo-row-actions">
                         <button
                           type="button"

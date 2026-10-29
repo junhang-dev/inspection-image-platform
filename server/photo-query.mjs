@@ -31,6 +31,7 @@ export const photoQuerySchema = z
       .enum(["all", ...locations.racks.map((rack) => rack.id)])
       .default("all"),
     search: z.string().trim().max(200).default(""),
+    grade: z.enum(["all", "1", "2", "3", "4", "5", "ungraded"]).default("all"),
     classification: z
       .enum(["all", "repair", "pending", "retake", "done", "error", "unread"])
       .default("all"),
@@ -141,6 +142,13 @@ export function photoWhere(query, { classification = true, aiStatus = true, work
       `CONCAT_WS(' ', ${[text("i", "name"), text("p", "equipment"), text("p", "rack"), text("p", "name")].join(", ")}) LIKE ? ESCAPE '='`,
     );
     values.push(literalLike(query.search));
+  }
+  if (query.grade !== "all") {
+    clauses.push(
+      query.grade === "ungraded"
+        ? `(${text("i", "humanGrade")} IS NULL AND ${text("i", "ai.grade")} IS NULL)`
+        : gradeCondition(Number(query.grade)),
+    );
   }
   if (query.labeling === "true") clauses.push(photoConditions.labeling);
   if (classification && query.classification !== "all")
