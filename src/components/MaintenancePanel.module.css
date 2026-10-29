@@ -732,7 +732,7 @@
 }
 .workTable {
   width: 100%;
-  min-width: 720px;
+  min-width: 850px;
   border-collapse: collapse;
   text-align: left;
 }
@@ -785,24 +785,15 @@
   flex: 0 0 58px;
   aspect-ratio: 4 / 3;
 }
-.workContext {
-  display: grid;
-  gap: 3px;
+.workPlan {
+  display: block;
   min-width: 180px;
   max-width: 330px;
-}
-.workContext strong {
   overflow: hidden;
   color: var(--maintenance-ink);
   text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 600;
-}
-.workContext small {
-  overflow: hidden;
-  color: var(--maintenance-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .pageEllipsis {
   padding: 0 2px;

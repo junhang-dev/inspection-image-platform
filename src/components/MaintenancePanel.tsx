@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { InspectionLocation } from "./InspectionLocation";
 import styles from "./MaintenancePanel.module.css";
 
 export type RepairStatus = "none" | "review" | "planned" | "progress" | "done";
@@ -442,6 +443,10 @@ export type MaintenanceWorklistRow = MaintenanceItem & {
   recordPurpose?: "inspection" | "presentation" | "verification";
   planTitle: string | null;
   pointLabel: string;
+  locationTeamName?: string | null;
+  locationRackName?: string | null;
+  locationPointName?: string | null;
+  locationEquipmentName?: string | null;
   photoName?: string;
   photoGrade?: number | null;
   teamId?: string | null;
@@ -533,7 +538,8 @@ export function MaintenanceWorklist({
                   </th>
                 )}
                 <th scope="col">검사 사진</th>
-                <th scope="col">검사계획 · 위치</th>
+                <th scope="col">검사계획</th>
+                <th scope="col">검사 위치</th>
                 <th scope="col">등급</th>
                 <th scope="col">진행 상태</th>
               </tr>
@@ -580,10 +586,19 @@ export function MaintenanceWorklist({
                     </button>
                   </td>
                   <td>
-                    <span className={styles.workContext}>
-                      <strong>{item.planTitle || "계획 미지정"}</strong>
-                      <small>{item.pointLabel || "위치 미확인"}</small>
+                    <span className={styles.workPlan}>
+                      {item.planTitle || "계획 미지정"}
                     </span>
+                  </td>
+                  <td>
+                    <InspectionLocation
+                      teamName={item.locationTeamName}
+                      rackNames={
+                        item.locationRackName ? [item.locationRackName] : []
+                      }
+                      pointName={item.locationPointName}
+                      equipmentName={item.locationEquipmentName}
+                    />
                   </td>
                   <td>
                     {Number.isInteger(item.photoGrade) &&
